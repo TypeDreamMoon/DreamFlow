@@ -8,9 +8,13 @@
 #include "DreamFlowNode.h"
 #include "Widgets/SDreamFlowNodePalette.h"
 #include "Widgets/SDreamFlowValidationView.h"
+#include "EdGraphUtilities.h"
+#include "Editor.h"
 #include "EdGraph/EdGraph.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Framework/Commands/GenericCommands.h"
 #include "GraphEditor.h"
+#include "HAL/PlatformApplicationMisc.h"
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
 #include "ScopedTransaction.h"
@@ -28,6 +32,11 @@ const FName FDreamFlowEditorToolkit::ValidationTabId(TEXT("DreamFlowEditor_Valid
 
 FDreamFlowEditorToolkit::~FDreamFlowEditorToolkit()
 {
+    if (GEditor != nullptr)
+    {
+        GEditor->UnregisterForUndo(this);
+    }
+
     if (FlowAsset != nullptr)
     {
         ActiveEditors.Remove(FlowAsset);
@@ -54,6 +63,11 @@ void FDreamFlowEditorToolkit::InitEditor(const EToolkitMode::Type Mode, const TS
 
     BindCommands();
     CreateWidgets();
+
+    if (GEditor != nullptr)
+    {
+        GEditor->RegisterForUndo(this);
+    }
 
     if (EditingGraph != nullptr)
     {
@@ -214,6 +228,24 @@ FString FDreamFlowEditorToolkit::GetReferencerName() const
     return TEXT("FDreamFlowEditorToolkit");
 }
 
+void FDreamFlowEditorToolkit::PostUndo(bool bSuccess)
+{
+    if (!bSuccess || !GraphEditorWidget.IsValid())
+    {
+        return;
+    }
+
+    GraphEditorWidget->ClearSelectionSet();
+    GraphEditorWidget->NotifyGraphChanged();
+    RefreshValidation();
+    FSlateApplication::Get().DismissAllMenus();
+}
+
+void FDreamFlowEditorToolkit::PostRedo(bool bSuccess)
+{
+    PostUndo(bSuccess);
+}
+
 TSharedRef<SDockTab> FDreamFlowEditorToolkit::SpawnGraphTab(const FSpawnTabArgs& Args)
 {
     (void)Args;
@@ -304,7 +336,36 @@ void FDreamFlowEditorToolkit::BindCommands()
 
     GraphEditorCommands->MapAction(
         FGenericCommands::Get().SelectAll,
-        FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::SelectAllNodes));
+        FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::SelectAllNodes),
+        FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanSelectAllNodes));
+
+    GraphEditorCommands->MapAction(
+        FGenericCommands::Get().Copy,
+        FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CopySelectedNodes),
+        FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanCopySelectedNodes));
+
+    GraphEditorCommands->MapAction(
+        FGenericCommands::Get().Cut,
+        FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CutSelectedNodes),
+        FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanCutSelectedNodes));
+
+    GraphEditorCommands->MapAction(
+        FGenericCommands::Get().Paste,
+        FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::PasteNodes),
+        FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanPasteNodes));
+
+    GraphEditorCommands->MapAction(
+        FGenericCommands::Get().Duplicate,
+        FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::DuplicateNodes),
+        FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanDuplicateNodes));
+
+    GraphEditorCommands->MapAction(
+        FGenericCommands::Get().Undo,
+        FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::UndoGraphAction));
+
+    GraphEditorCommands->MapAction(
+        FGenericCommands::Get().Redo,
+        FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::RedoGraphAction));
 }
 
 void FDreamFlowEditorToolkit::HandleSelectedNodesChanged(const TSet<UObject*>& NewSelection)
@@ -409,6 +470,237 @@ void FDreamFlowEditorToolkit::SelectAllNodes()
     if (GraphEditorWidget.IsValid())
     {
         GraphEditorWidget->SelectAllNodes();
+    }
+}
+
+void FDreamFlowEditorToolkit::DeleteSelectedDuplicatableNodes()
+{
+    if (!GraphEditorWidget.IsValid())
+    {
+        return;
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("CutFlowNodes", "Cut Dream Flow Node"));
+    const FGraphPanelSelectionSet SelectedNodes = GraphEditorWidget->GetSelectedNodes();
+    GraphEditorWidget->ClearSelectionSet();
+
+    for (UObject* SelectedObject : SelectedNodes)
+    {
+        UEdGraphNode* Node = Cast<UEdGraphNode>(SelectedObject);
+        if (Node == nullptr || !Node->CanDuplicateNode() || !Node->CanUserDeleteNode())
+        {
+            continue;
+        }
+
+        Node->Modify();
+        if (Node->GetSchema() != nullptr)
+        {
+            Node->GetSchema()->BreakNodeLinks(*Node);
+        }
+        Node->DestroyNode();
+    }
+
+    if (FlowAsset != nullptr)
+    {
+        FlowAsset->Modify();
+    }
+
+    FDreamFlowEditorUtils::SynchronizeAssetFromGraph(FlowAsset);
+    RefreshValidation();
+}
+
+bool FDreamFlowEditorToolkit::CanSelectAllNodes() const
+{
+    return GraphEditorWidget.IsValid();
+}
+
+void FDreamFlowEditorToolkit::CopySelectedNodes()
+{
+    if (!GraphEditorWidget.IsValid())
+    {
+        return;
+    }
+
+    FGraphPanelSelectionSet SelectedNodes = GraphEditorWidget->GetSelectedNodes();
+    FString ExportedText;
+
+    for (FGraphPanelSelectionSet::TIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
+    {
+        UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter);
+        if (Node == nullptr || !Node->CanDuplicateNode())
+        {
+            SelectedIter.RemoveCurrent();
+            continue;
+        }
+
+        Node->PrepareForCopying();
+    }
+
+    if (SelectedNodes.Num() == 0)
+    {
+        return;
+    }
+
+    FEdGraphUtilities::ExportNodesToText(SelectedNodes, ExportedText);
+    FPlatformApplicationMisc::ClipboardCopy(*ExportedText);
+
+    for (UObject* SelectedObject : SelectedNodes)
+    {
+        if (UDreamFlowEdGraphNode* FlowNode = Cast<UDreamFlowEdGraphNode>(SelectedObject))
+        {
+            FlowNode->RestoreRuntimeNodeOwner();
+        }
+    }
+}
+
+bool FDreamFlowEditorToolkit::CanCopySelectedNodes() const
+{
+    if (!GraphEditorWidget.IsValid())
+    {
+        return false;
+    }
+
+    const FGraphPanelSelectionSet SelectedNodes = GraphEditorWidget->GetSelectedNodes();
+    for (UObject* SelectedObject : SelectedNodes)
+    {
+        const UEdGraphNode* Node = Cast<UEdGraphNode>(SelectedObject);
+        if (Node != nullptr && Node->CanDuplicateNode())
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void FDreamFlowEditorToolkit::CutSelectedNodes()
+{
+    CopySelectedNodes();
+    DeleteSelectedDuplicatableNodes();
+}
+
+bool FDreamFlowEditorToolkit::CanCutSelectedNodes() const
+{
+    return CanCopySelectedNodes() && CanDeleteSelectedNodes();
+}
+
+void FDreamFlowEditorToolkit::PasteNodes()
+{
+    if (!GraphEditorWidget.IsValid())
+    {
+        return;
+    }
+
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
+    const FVector2D PasteLocation = GraphEditorWidget->GetPasteLocation();
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
+    PasteNodesHere(PasteLocation);
+}
+
+void FDreamFlowEditorToolkit::PasteNodesHere(const FVector2D& Location)
+{
+    if (!GraphEditorWidget.IsValid() || EditingGraph == nullptr || FlowAsset == nullptr)
+    {
+        return;
+    }
+
+    FString TextToImport;
+    FPlatformApplicationMisc::ClipboardPaste(TextToImport);
+    if (TextToImport.IsEmpty())
+    {
+        return;
+    }
+
+    const FScopedTransaction Transaction(FGenericCommands::Get().Paste->GetDescription());
+    EditingGraph->Modify();
+    FlowAsset->Modify();
+
+    GraphEditorWidget->ClearSelectionSet();
+
+    TSet<UEdGraphNode*> PastedNodes;
+    FEdGraphUtilities::ImportNodesFromText(EditingGraph, TextToImport, PastedNodes);
+
+    FVector2D AverageNodePosition(0.0f, 0.0f);
+    int32 PositionCount = 0;
+    for (UEdGraphNode* PastedNode : PastedNodes)
+    {
+        if (PastedNode != nullptr)
+        {
+            AverageNodePosition.X += PastedNode->NodePosX;
+            AverageNodePosition.Y += PastedNode->NodePosY;
+            ++PositionCount;
+        }
+    }
+
+    if (PositionCount > 0)
+    {
+        AverageNodePosition /= static_cast<float>(PositionCount);
+    }
+
+    for (UEdGraphNode* PastedNode : PastedNodes)
+    {
+        if (PastedNode == nullptr)
+        {
+            continue;
+        }
+
+        PastedNode->NodePosX = FMath::RoundToInt((PastedNode->NodePosX - AverageNodePosition.X) + Location.X);
+        PastedNode->NodePosY = FMath::RoundToInt((PastedNode->NodePosY - AverageNodePosition.Y) + Location.Y);
+        PastedNode->SnapToGrid(16);
+        GraphEditorWidget->SetNodeSelection(PastedNode, true);
+
+        if (UDreamFlowEdGraphNode* FlowNode = Cast<UDreamFlowEdGraphNode>(PastedNode))
+        {
+            if (UDreamFlowNode* RuntimeNode = FlowNode->GetRuntimeNode())
+            {
+#if WITH_EDITOR
+                RuntimeNode->SetEditorPosition(FVector2D(FlowNode->NodePosX, FlowNode->NodePosY));
+#endif
+            }
+        }
+    }
+
+    FDreamFlowEditorUtils::SynchronizeAssetFromGraph(FlowAsset);
+    GraphEditorWidget->NotifyGraphChanged();
+    RefreshValidation();
+}
+
+bool FDreamFlowEditorToolkit::CanPasteNodes() const
+{
+    if (!GraphEditorWidget.IsValid() || EditingGraph == nullptr)
+    {
+        return false;
+    }
+
+    FString ClipboardContent;
+    FPlatformApplicationMisc::ClipboardPaste(ClipboardContent);
+    return FEdGraphUtilities::CanImportNodesFromText(EditingGraph, ClipboardContent);
+}
+
+void FDreamFlowEditorToolkit::DuplicateNodes()
+{
+    CopySelectedNodes();
+    PasteNodes();
+}
+
+bool FDreamFlowEditorToolkit::CanDuplicateNodes() const
+{
+    return CanCopySelectedNodes();
+}
+
+void FDreamFlowEditorToolkit::UndoGraphAction()
+{
+    if (GEditor != nullptr)
+    {
+        GEditor->UndoTransaction();
+    }
+}
+
+void FDreamFlowEditorToolkit::RedoGraphAction()
+{
+    if (GEditor != nullptr)
+    {
+        GEditor->RedoTransaction();
     }
 }
 

@@ -31,6 +31,8 @@ public:
     virtual bool CanCreateUnderSpecifiedSchema(const UEdGraphSchema* Schema) const override;
     virtual bool IsCompatibleWithGraph(UEdGraph const* Graph) const override;
     virtual TSharedPtr<class SGraphNode> CreateVisualWidget() override;
+    virtual void PrepareForCopying() override;
+    virtual void PostPasteNode() override;
     virtual void NodeConnectionListChanged() override;
     virtual void PinConnectionListChanged(UEdGraphPin* Pin) override;
 #if WITH_EDITOR
@@ -44,6 +46,7 @@ public:
     bool HasBreakpoint() const;
     void SetBreakpointEnabled(bool bEnabled);
     void ToggleBreakpoint();
+    void RestoreRuntimeNodeOwner();
 
 private:
     void SyncOwningAsset() const;

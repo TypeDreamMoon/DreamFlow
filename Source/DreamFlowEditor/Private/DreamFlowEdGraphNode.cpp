@@ -69,7 +69,7 @@ FText UDreamFlowEdGraphNode::GetTooltipText() const
 
 bool UDreamFlowEdGraphNode::CanDuplicateNode() const
 {
-    return false;
+    return !IsEntryNode();
 }
 
 bool UDreamFlowEdGraphNode::CanUserDeleteNode() const
@@ -90,6 +90,34 @@ bool UDreamFlowEdGraphNode::IsCompatibleWithGraph(UEdGraph const* Graph) const
 TSharedPtr<SGraphNode> UDreamFlowEdGraphNode::CreateVisualWidget()
 {
     return SNew(SGraphNode_DreamFlow, this);
+}
+
+void UDreamFlowEdGraphNode::PrepareForCopying()
+{
+    Super::PrepareForCopying();
+
+    if (RuntimeNode != nullptr)
+    {
+        // Temporarily move the runtime node under the graph node so text export serializes it as part of the copy payload.
+        RuntimeNode->Rename(nullptr, this, REN_DontCreateRedirectors | REN_DoNotDirty);
+    }
+}
+
+void UDreamFlowEdGraphNode::PostPasteNode()
+{
+    Super::PostPasteNode();
+
+    RestoreRuntimeNodeOwner();
+    CreateNewGuid();
+
+    if (RuntimeNode != nullptr)
+    {
+        RuntimeNode->SetFlags(RF_Transactional);
+        RuntimeNode->NodeGuid = FGuid::NewGuid();
+#if WITH_EDITOR
+        RuntimeNode->SetEditorPosition(FVector2D(NodePosX, NodePosY));
+#endif
+    }
 }
 
 void UDreamFlowEdGraphNode::NodeConnectionListChanged()
@@ -161,6 +189,24 @@ void UDreamFlowEdGraphNode::SetBreakpointEnabled(bool bEnabled)
 void UDreamFlowEdGraphNode::ToggleBreakpoint()
 {
     SetBreakpointEnabled(!HasBreakpoint());
+}
+
+void UDreamFlowEdGraphNode::RestoreRuntimeNodeOwner()
+{
+    if (RuntimeNode == nullptr)
+    {
+        return;
+    }
+
+    const UDreamFlowEdGraph* FlowGraph = Cast<UDreamFlowEdGraph>(GetGraph());
+    UDreamFlowAsset* FlowAsset = FlowGraph ? FlowGraph->GetFlowAsset() : nullptr;
+    if (FlowAsset == nullptr)
+    {
+        return;
+    }
+
+    RuntimeNode->Rename(nullptr, FlowAsset, REN_DontCreateRedirectors | REN_DoNotDirty);
+    RuntimeNode->ClearFlags(RF_Transient);
 }
 
 void UDreamFlowEdGraphNode::SyncOwningAsset() const

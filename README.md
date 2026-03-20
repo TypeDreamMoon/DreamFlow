@@ -37,6 +37,7 @@ DreamFlow is a lightweight Unreal flow graph framework designed as a reusable ba
 8. Use the right `Validation` tab to inspect broken links, unreachable nodes, duplicate GUIDs, and other structural issues.
 9. Open the `Debugger` tab to inspect live executors while running in PIE or game.
 10. Right click a node and choose `Add Breakpoint` to pause before that node executes.
+11. The graph editor supports undo/redo, copy, cut, paste, and duplicate for normal nodes.
 
 ## Node preview area
 

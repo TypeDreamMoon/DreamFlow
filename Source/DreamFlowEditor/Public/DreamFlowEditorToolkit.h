@@ -4,6 +4,7 @@
 #include "DreamFlowTypes.h"
 #include "Toolkits/AssetEditorToolkit.h"
 #include "EdGraph/EdGraph.h"
+#include "EditorUndoClient.h"
 #include "UObject/GCObject.h"
 
 class IDetailsView;
@@ -17,7 +18,7 @@ class UDreamFlowNode;
 struct FPropertyChangedEvent;
 struct FEdGraphEditAction;
 
-class DREAMFLOWEDITOR_API FDreamFlowEditorToolkit : public FAssetEditorToolkit, public FGCObject
+class DREAMFLOWEDITOR_API FDreamFlowEditorToolkit : public FAssetEditorToolkit, public FGCObject, public FEditorUndoClient
 {
 public:
     void InitEditor(const EToolkitMode::Type Mode, const TSharedPtr<class IToolkitHost>& InitToolkitHost, UDreamFlowAsset* InFlowAsset);
@@ -34,6 +35,8 @@ public:
 
     virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
     virtual FString GetReferencerName() const override;
+    virtual void PostUndo(bool bSuccess) override;
+    virtual void PostRedo(bool bSuccess) override;
 
     virtual ~FDreamFlowEditorToolkit() override;
 
@@ -49,8 +52,21 @@ private:
     void HandleObjectPropertyChanged(UObject* ObjectBeingModified, FPropertyChangedEvent& PropertyChangedEvent);
     void HandleGraphChanged(const FEdGraphEditAction& Action);
     void DeleteSelectedNodes();
+    void DeleteSelectedDuplicatableNodes();
     bool CanDeleteSelectedNodes() const;
     void SelectAllNodes();
+    bool CanSelectAllNodes() const;
+    void CopySelectedNodes();
+    bool CanCopySelectedNodes() const;
+    void CutSelectedNodes();
+    bool CanCutSelectedNodes() const;
+    void PasteNodes();
+    void PasteNodesHere(const FVector2D& Location);
+    bool CanPasteNodes() const;
+    void DuplicateNodes();
+    bool CanDuplicateNodes() const;
+    void UndoGraphAction();
+    void RedoGraphAction();
     void CreateNodeFromPalette(TSubclassOf<UDreamFlowNode> NodeClass);
     void JumpToNodeGuid(const FGuid& NodeGuid);
     void OpenNodeEditor(UObject* ObjectToEdit);
