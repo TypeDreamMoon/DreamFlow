@@ -2,10 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "DreamFlowNodeDisplayTypes.h"
+#include "DreamFlowTypes.h"
 #include "UObject/Object.h"
 #include "DreamFlowNode.generated.h"
 
 class UDreamFlowAsset;
+class UDreamFlowExecutor;
 class UDreamFlowNode;
 
 UCLASS(BlueprintType, Blueprintable, EditInlineNew, DefaultToInstanced, CollapseCategories)
@@ -94,6 +96,18 @@ public:
     void ExecuteNode(UObject* Context);
     virtual void ExecuteNode_Implementation(UObject* Context);
 
+    UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Flow|Execution")
+    void ExecuteNodeWithExecutor(UObject* Context, UDreamFlowExecutor* Executor);
+    virtual void ExecuteNodeWithExecutor_Implementation(UObject* Context, UDreamFlowExecutor* Executor);
+
+    UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Flow|Execution")
+    bool SupportsAutomaticTransition(UObject* Context, UDreamFlowExecutor* Executor) const;
+    virtual bool SupportsAutomaticTransition_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const;
+
+    UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Flow|Execution")
+    int32 ResolveAutomaticTransitionChildIndex(UObject* Context, UDreamFlowExecutor* Executor) const;
+    virtual int32 ResolveAutomaticTransitionChildIndex_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const;
+
     UFUNCTION(BlueprintCallable, Category = "Flow")
     void SetChildren(const TArray<UDreamFlowNode*>& InChildren);
 
@@ -104,6 +118,7 @@ public:
     bool SupportsFlowAsset(const UDreamFlowAsset* FlowAsset) const;
     bool SupportsFlowAssetClass(const UClass* FlowAssetClass) const;
     bool CanAcceptChild(const UDreamFlowNode* OtherNode) const;
+    virtual void ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const;
 
 #if WITH_EDITOR
     void SetEditorPosition(const FVector2D& InPosition);

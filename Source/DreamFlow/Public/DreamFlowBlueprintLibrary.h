@@ -2,10 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "DreamFlowTypes.h"
+#include "DreamFlowVariableTypes.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "DreamFlowBlueprintLibrary.generated.h"
 
 class UDreamFlowAsset;
+class UDreamFlowExecutor;
 class UDreamFlowNode;
 
 UCLASS()
@@ -31,6 +33,12 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow")
     static UDreamFlowNode* FindNodeByGuid(const UDreamFlowAsset* FlowAsset, FGuid NodeGuid);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    static TArray<FDreamFlowVariableDefinition> GetFlowVariables(const UDreamFlowAsset* FlowAsset);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    static bool GetExecutorVariable(const UDreamFlowExecutor* Executor, FName VariableName, FDreamFlowValue& OutValue);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Validation")
     static void ValidateFlow(const UDreamFlowAsset* FlowAsset, TArray<FDreamFlowValidationMessage>& OutMessages);

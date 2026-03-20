@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "DreamFlowTypes.h"
+#include "DreamFlowVariableTypes.h"
 #include "UObject/Object.h"
 #include "DreamFlowExecutor.generated.h"
 
@@ -84,6 +85,21 @@ public:
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Debug")
     EDreamFlowExecutorDebugState GetDebugState() const;
 
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool HasVariable(FName VariableName) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool GetVariableValue(FName VariableName, FDreamFlowValue& OutValue) const;
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
+    bool SetVariableValue(FName VariableName, const FDreamFlowValue& InValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool ResolveBindingValue(const FDreamFlowValueBinding& Binding, FDreamFlowValue& OutValue) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool ResolveBindingAsBool(const FDreamFlowValueBinding& Binding, bool& OutValue) const;
+
     UPROPERTY(BlueprintAssignable, Category = "DreamFlow|Execution")
     FDreamFlowExecutorEventSignature OnFlowStarted;
 
@@ -124,6 +140,9 @@ protected:
 
     UPROPERTY(Transient)
     TArray<TObjectPtr<UDreamFlowNode>> VisitedNodes;
+
+    UPROPERTY(Transient)
+    TMap<FName, FDreamFlowValue> RuntimeVariables;
 
     UPROPERTY(Transient)
     bool bIsRunning = false;

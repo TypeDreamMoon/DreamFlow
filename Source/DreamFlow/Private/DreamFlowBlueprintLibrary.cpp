@@ -2,6 +2,7 @@
 
 #include "DreamFlowAsset.h"
 #include "DreamFlowNode.h"
+#include "Execution/DreamFlowExecutor.h"
 
 UDreamFlowNode* UDreamFlowBlueprintLibrary::GetEntryNode(const UDreamFlowAsset* FlowAsset)
 {
@@ -31,6 +32,16 @@ FText UDreamFlowBlueprintLibrary::GetNodeCategory(const UDreamFlowNode* FlowNode
 UDreamFlowNode* UDreamFlowBlueprintLibrary::FindNodeByGuid(const UDreamFlowAsset* FlowAsset, FGuid NodeGuid)
 {
     return FlowAsset ? FlowAsset->FindNodeByGuid(NodeGuid) : nullptr;
+}
+
+TArray<FDreamFlowVariableDefinition> UDreamFlowBlueprintLibrary::GetFlowVariables(const UDreamFlowAsset* FlowAsset)
+{
+    return FlowAsset ? FlowAsset->GetVariablesCopy() : TArray<FDreamFlowVariableDefinition>();
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorVariable(const UDreamFlowExecutor* Executor, FName VariableName, FDreamFlowValue& OutValue)
+{
+    return Executor ? Executor->GetVariableValue(VariableName, OutValue) : false;
 }
 
 void UDreamFlowBlueprintLibrary::ValidateFlow(const UDreamFlowAsset* FlowAsset, TArray<FDreamFlowValidationMessage>& OutMessages)

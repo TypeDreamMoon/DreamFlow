@@ -12,10 +12,23 @@ void UDreamFlowExecutor::Initialize(UDreamFlowAsset* InFlowAsset, UObject* InExe
     ExecutionContext = InExecutionContext;
     CurrentNode = nullptr;
     VisitedNodes.Reset();
+    RuntimeVariables.Reset();
     bIsRunning = false;
     bIsPaused = false;
     bBreakOnNextNode = false;
     bHasFinished = false;
+
+    if (FlowAsset != nullptr)
+    {
+        for (const FDreamFlowVariableDefinition& Variable : FlowAsset->Variables)
+        {
+            if (!Variable.Name.IsNone() && !RuntimeVariables.Contains(Variable.Name))
+            {
+                RuntimeVariables.Add(Variable.Name, Variable.DefaultValue);
+            }
+        }
+    }
+
     BroadcastDebugStateChanged();
 }
 
@@ -263,6 +276,70 @@ EDreamFlowExecutorDebugState UDreamFlowExecutor::GetDebugState() const
     return bHasFinished ? EDreamFlowExecutorDebugState::Finished : EDreamFlowExecutorDebugState::Idle;
 }
 
+bool UDreamFlowExecutor::HasVariable(FName VariableName) const
+{
+    return !VariableName.IsNone() && RuntimeVariables.Contains(VariableName);
+}
+
+bool UDreamFlowExecutor::GetVariableValue(FName VariableName, FDreamFlowValue& OutValue) const
+{
+    if (const FDreamFlowValue* StoredValue = RuntimeVariables.Find(VariableName))
+    {
+        OutValue = *StoredValue;
+        return true;
+    }
+
+    return false;
+}
+
+bool UDreamFlowExecutor::SetVariableValue(FName VariableName, const FDreamFlowValue& InValue)
+{
+    const FDreamFlowVariableDefinition* VariableDefinition = FlowAsset != nullptr ? FlowAsset->FindVariableDefinition(VariableName) : nullptr;
+    if (VariableDefinition == nullptr)
+    {
+        return false;
+    }
+
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowVariable::TryConvertValue(InValue, VariableDefinition->DefaultValue.Type, ConvertedValue))
+    {
+        return false;
+    }
+
+    RuntimeVariables.FindOrAdd(VariableName) = ConvertedValue;
+    NotifyDebuggerStateChanged();
+    return true;
+}
+
+bool UDreamFlowExecutor::ResolveBindingValue(const FDreamFlowValueBinding& Binding, FDreamFlowValue& OutValue) const
+{
+    if (Binding.SourceType == EDreamFlowValueSourceType::FlowVariable)
+    {
+        return GetVariableValue(Binding.VariableName, OutValue);
+    }
+
+    OutValue = Binding.LiteralValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::ResolveBindingAsBool(const FDreamFlowValueBinding& Binding, bool& OutValue) const
+{
+    FDreamFlowValue ResolvedValue;
+    if (!ResolveBindingValue(Binding, ResolvedValue))
+    {
+        return false;
+    }
+
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowVariable::TryConvertValue(ResolvedValue, EDreamFlowValueType::Bool, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.BoolValue;
+    return true;
+}
+
 bool UDreamFlowExecutor::ExecuteCurrentNode()
 {
     if (!bIsRunning || bIsPaused || CurrentNode == nullptr)
@@ -270,8 +347,23 @@ bool UDreamFlowExecutor::ExecuteCurrentNode()
         return false;
     }
 
-    CurrentNode->ExecuteNode(ExecutionContext);
+    UDreamFlowNode* ExecutedNode = CurrentNode;
+    ExecutedNode->ExecuteNodeWithExecutor(ExecutionContext, this);
     NotifyDebuggerStateChanged();
+
+    if (!bIsRunning || bIsPaused || CurrentNode != ExecutedNode)
+    {
+        return true;
+    }
+
+    if (ExecutedNode->SupportsAutomaticTransition(ExecutionContext, this))
+    {
+        const int32 AutoChildIndex = ExecutedNode->ResolveAutomaticTransitionChildIndex(ExecutionContext, this);
+        if (AutoChildIndex != INDEX_NONE)
+        {
+            return MoveToChildByIndex(AutoChildIndex);
+        }
+    }
 
     if (CurrentNode->IsTerminalNode() && CurrentNode->GetChildrenCopy().Num() == 0)
     {

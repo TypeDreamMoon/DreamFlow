@@ -16,6 +16,8 @@ DreamFlow is a lightweight Unreal flow graph framework designed as a reusable ba
 - `UDreamFlowEntryNode`: built-in entry node
 - `UDreamFlowExecutor`: runtime flow runner with Blueprint events
 - `UDreamFlowExecutorComponent`: Actor component wrapper for gameplay use
+- Per-flow variable definitions with typed runtime values and bindings
+- Built-in generic core nodes such as `Branch`, `Compare`, and `Set Variable`
 - Node preview content area with text, color, and image display items
 - Breakpoint-aware DreamFlow debugger tab for active executors
 - Graph validation helpers and validation message structs
@@ -38,6 +40,38 @@ DreamFlow is a lightweight Unreal flow graph framework designed as a reusable ba
 9. Open the `Debugger` tab to inspect live executors while running in PIE or game.
 10. Right click a node and choose `Add Breakpoint` to pause before that node executes.
 11. The graph editor supports undo/redo, copy, cut, paste, and duplicate for normal nodes.
+
+## Flow variables
+
+Every `UDreamFlowAsset` now owns a `Variables` array, so each flow asset can define its own environment-style data without pushing everything into one global runtime object.
+
+- Variable definitions live directly on the flow asset details panel.
+- Each variable has a `Name`, `Description`, and typed `DefaultValue`.
+- Supported value types are `Bool`, `Int`, `Float`, `Name`, `String`, `Text`, and `GameplayTag`.
+- When a `UDreamFlowExecutor` initializes, it copies those defaults into its runtime variable map.
+
+This makes the variable model feel closer to Blueprint variables, but still scoped per DreamFlow asset.
+
+## Variable bindings
+
+DreamFlow now includes a lightweight binding struct, `FDreamFlowValueBinding`, for nodes that need data input.
+
+- A binding can read from either a literal value or a named flow variable.
+- This gives you a StateTree-style "literal or bound variable" workflow for common node inputs.
+- The executor resolves bindings at runtime and converts values to the target variable type when possible.
+- Validation reports missing variables and incompatible literal values.
+
+Out of the box, the built-in core logic nodes already use these bindings.
+
+## Built-in core nodes
+
+The base `DreamFlow` module now ships with a reusable `Core` category for generic flow logic.
+
+- `UDreamFlowBranchNode`: evaluates a bound boolean and routes to child `0` for true or child `1` for false
+- `UDreamFlowCompareNode`: compares two bound values and routes to child `0` or `1`
+- `UDreamFlowSetVariableNode`: writes a flow variable, then auto-continues to the first child
+
+These nodes target `UDreamFlowAsset`, so they are available in any DreamFlow-derived asset type unless a more specialized node chooses to narrow compatibility.
 
 ## Node preview area
 
@@ -78,6 +112,17 @@ Derive from `UDreamFlowNode` and override any of the following:
 - `CanEnterNode`
 - `CanConnectTo`
 - `ExecuteNode`
+- `ExecuteNodeWithExecutor`
+- `SupportsAutomaticTransition`
+- `ResolveAutomaticTransitionChildIndex`
+
+For variable-aware nodes, you can also use:
+
+- `UDreamFlowAsset::FindVariableDefinition`
+- `UDreamFlowExecutor::GetVariableValue`
+- `UDreamFlowExecutor::SetVariableValue`
+- `UDreamFlowExecutor::ResolveBindingValue`
+- `UDreamFlowExecutor::ResolveBindingAsBool`
 
 Example:
 
@@ -138,6 +183,11 @@ The executor currently supports:
 - `ContinueExecution`
 - `StepExecution`
 - `SetPauseOnBreakpoints`
+- `HasVariable`
+- `GetVariableValue`
+- `SetVariableValue`
+- `ResolveBindingValue`
+- `ResolveBindingAsBool`
 
 It also exposes Blueprint delegates for:
 
@@ -183,8 +233,11 @@ The editor debugger is designed for live inspection of `UDreamFlowExecutor` inst
 
 - missing entry nodes
 - duplicate node GUIDs
+- duplicate or unnamed flow variables
 - null or foreign child references
 - unreachable nodes
 - nodes with no incoming links
+- missing bound variables
+- incompatible literal bindings for typed variable writes
 
 These rules are intentionally generic so the framework stays reusable across quest, dialogue, and custom flow systems.

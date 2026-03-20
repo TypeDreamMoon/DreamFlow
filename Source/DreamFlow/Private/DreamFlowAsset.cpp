@@ -44,6 +44,11 @@ UDreamFlowNode* UDreamFlowAsset::FindNodeByGuid(const FGuid& InNodeGuid) const
     return nullptr;
 }
 
+TArray<FDreamFlowVariableDefinition> UDreamFlowAsset::GetVariablesCopy() const
+{
+    return Variables;
+}
+
 void UDreamFlowAsset::ValidateFlow(TArray<FDreamFlowValidationMessage>& OutMessages) const
 {
     OutMessages.Reset();
@@ -58,8 +63,32 @@ void UDreamFlowAsset::ValidateFlow(TArray<FDreamFlowValidationMessage>& OutMessa
 
     TSet<const UDreamFlowNode*> KnownNodes;
     TSet<FGuid> SeenGuids;
+    TSet<FName> SeenVariableNames;
     TMap<const UDreamFlowNode*, int32> IncomingConnectionCount;
     TArray<const UDreamFlowNode*> EntryCandidates;
+
+    for (const FDreamFlowVariableDefinition& Variable : Variables)
+    {
+        if (Variable.Name.IsNone())
+        {
+            FDreamFlowValidationMessage& Message = OutMessages.AddDefaulted_GetRef();
+            Message.Severity = EDreamFlowValidationSeverity::Error;
+            Message.Message = FText::FromString(TEXT("A flow variable is missing its name."));
+            continue;
+        }
+
+        if (SeenVariableNames.Contains(Variable.Name))
+        {
+            FDreamFlowValidationMessage& Message = OutMessages.AddDefaulted_GetRef();
+            Message.Severity = EDreamFlowValidationSeverity::Error;
+            Message.Message = FText::Format(
+                FText::FromString(TEXT("The flow variable '{0}' is defined more than once.")),
+                FText::FromName(Variable.Name));
+            continue;
+        }
+
+        SeenVariableNames.Add(Variable.Name);
+    }
 
     for (UDreamFlowNode* Node : Nodes)
     {
@@ -114,6 +143,8 @@ void UDreamFlowAsset::ValidateFlow(TArray<FDreamFlowValidationMessage>& OutMessa
             Message.NodeTitle = FText::FromString(TEXT("Unnamed Node"));
             Message.Message = FText::FromString(TEXT("This node does not have a display title."));
         }
+
+        Node->ValidateNode(this, OutMessages);
     }
 
     if (EntryNode == nullptr)
@@ -290,6 +321,29 @@ void UDreamFlowAsset::SetEntryNodeInternal(UDreamFlowNode* InEntryNode)
 const TArray<TObjectPtr<UDreamFlowNode>>& UDreamFlowAsset::GetNodes() const
 {
     return Nodes;
+}
+
+bool UDreamFlowAsset::HasVariableDefinition(FName VariableName) const
+{
+    return FindVariableDefinition(VariableName) != nullptr;
+}
+
+const FDreamFlowVariableDefinition* UDreamFlowAsset::FindVariableDefinition(FName VariableName) const
+{
+    if (VariableName.IsNone())
+    {
+        return nullptr;
+    }
+
+    for (const FDreamFlowVariableDefinition& Variable : Variables)
+    {
+        if (Variable.Name == VariableName)
+        {
+            return &Variable;
+        }
+    }
+
+    return nullptr;
 }
 
 #if WITH_EDITOR

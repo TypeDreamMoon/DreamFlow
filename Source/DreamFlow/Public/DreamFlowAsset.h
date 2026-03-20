@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "DreamFlowTypes.h"
+#include "DreamFlowVariableTypes.h"
 #include "UObject/Object.h"
 #include "DreamFlowAsset.generated.h"
 
@@ -22,6 +23,9 @@ public:
     UPROPERTY(VisibleAnywhere, Instanced, BlueprintReadOnly, Category = "Flow")
     TArray<TObjectPtr<UDreamFlowNode>> Nodes;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Variables")
+    TArray<FDreamFlowVariableDefinition> Variables;
+
 #if WITH_EDITORONLY_DATA
     UPROPERTY(Instanced)
     TObjectPtr<UEdGraph> EditorGraph;
@@ -39,9 +43,14 @@ public:
     UFUNCTION(BlueprintPure, Category = "Flow")
     UDreamFlowNode* FindNodeByGuid(const FGuid& InNodeGuid) const;
 
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    TArray<FDreamFlowVariableDefinition> GetVariablesCopy() const;
+
     UFUNCTION(BlueprintCallable, Category = "Flow|Validation")
     void ValidateFlow(TArray<FDreamFlowValidationMessage>& OutMessages) const;
 
+    bool HasVariableDefinition(FName VariableName) const;
+    const FDreamFlowVariableDefinition* FindVariableDefinition(FName VariableName) const;
     bool HasBreakpointOnNode(const FGuid& InNodeGuid) const;
     void SetBreakpointOnNode(const FGuid& InNodeGuid, bool bEnabled);
     const TArray<FGuid>& GetBreakpointNodeGuids() const;

@@ -1,6 +1,7 @@
 #include "DreamFlowNode.h"
 
 #include "DreamFlowAsset.h"
+#include "Execution/DreamFlowExecutor.h"
 #include "UObject/Class.h"
 
 UDreamFlowNode::UDreamFlowNode()
@@ -91,6 +92,26 @@ void UDreamFlowNode::ExecuteNode_Implementation(UObject* Context)
     (void)Context;
 }
 
+void UDreamFlowNode::ExecuteNodeWithExecutor_Implementation(UObject* Context, UDreamFlowExecutor* Executor)
+{
+    (void)Executor;
+    ExecuteNode(Context);
+}
+
+bool UDreamFlowNode::SupportsAutomaticTransition_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
+{
+    (void)Context;
+    (void)Executor;
+    return false;
+}
+
+int32 UDreamFlowNode::ResolveAutomaticTransitionChildIndex_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
+{
+    (void)Context;
+    (void)Executor;
+    return INDEX_NONE;
+}
+
 void UDreamFlowNode::SetChildren(const TArray<UDreamFlowNode*>& InChildren)
 {
     Children.Reset();
@@ -152,6 +173,12 @@ bool UDreamFlowNode::CanAcceptChild(const UDreamFlowNode* OtherNode) const
     }
 
     return true;
+}
+
+void UDreamFlowNode::ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const
+{
+    (void)OwningAsset;
+    (void)OutMessages;
 }
 
 #if WITH_EDITOR
