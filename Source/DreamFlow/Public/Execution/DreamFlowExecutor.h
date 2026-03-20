@@ -38,6 +38,9 @@ public:
     bool MoveToChildByIndex(int32 ChildIndex);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
+    bool MoveToOutputPin(FName OutputPinName);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool ChooseChild(UDreamFlowNode* ChildNode);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
@@ -93,6 +96,9 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
     bool SetVariableValue(FName VariableName, const FDreamFlowValue& InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
+    void ResetVariablesToDefaults();
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
     bool ResolveBindingValue(const FDreamFlowValueBinding& Binding, FDreamFlowValue& OutValue) const;

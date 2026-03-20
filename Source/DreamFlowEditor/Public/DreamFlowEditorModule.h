@@ -19,6 +19,8 @@ private:
     void UnregisterAssetTools();
     void RegisterConnectionFactory();
     void UnregisterConnectionFactory();
+    void RegisterPropertyCustomizations();
+    void UnregisterPropertyCustomizations();
 
 private:
     TArray<TSharedPtr<IAssetTypeActions>> RegisteredAssetTypeActions;

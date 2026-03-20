@@ -13,7 +13,6 @@ class DREAMFLOWEDITOR_API UDreamFlowEdGraphNode : public UEdGraphNode
 
 public:
     static const FName InputPinName;
-    static const FName OutputPinName;
     static const FName PinCategory;
 
     UDreamFlowEdGraphNode();
@@ -42,6 +41,10 @@ public:
 
     void SetRuntimeNode(UDreamFlowNode* InRuntimeNode);
     UDreamFlowNode* GetRuntimeNode() const;
+    TArray<UEdGraphPin*> GetOutputPins() const;
+    UEdGraphPin* GetPrimaryOutputPin() const;
+    UEdGraphPin* FindOutputPinByName(FName PinName) const;
+    bool DoesOutputPinAllowMultipleConnections(const UEdGraphPin* OutputPin) const;
     bool IsEntryNode() const;
     bool HasBreakpoint() const;
     void SetBreakpointEnabled(bool bEnabled);

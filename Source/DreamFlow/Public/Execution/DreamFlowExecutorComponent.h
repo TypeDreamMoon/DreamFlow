@@ -36,6 +36,9 @@ public:
     bool MoveToChildByIndex(int32 ChildIndex);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
+    bool MoveToOutputPin(FName OutputPinName);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool ChooseChild(UDreamFlowNode* ChildNode);
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
@@ -43,6 +46,18 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
     UDreamFlowNode* GetCurrentNode() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool HasVariable(FName VariableName) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool GetVariableValue(FName VariableName, FDreamFlowValue& OutValue) const;
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
+    bool SetVariableValue(FName VariableName, const FDreamFlowValue& InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
+    void ResetVariablesToDefaults();
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DreamFlow")
     TObjectPtr<UDreamFlowAsset> FlowAsset;

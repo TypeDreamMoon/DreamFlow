@@ -121,8 +121,21 @@ TArray<FDreamFlowNodeDisplayItem> UDreamFlowBranchNode::GetNodeDisplayItems_Impl
 {
     TArray<FDreamFlowNodeDisplayItem> Items = Super::GetNodeDisplayItems_Implementation();
     Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Condition")), ConditionBinding.Describe()));
-    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Children")), TEXT("0=True  1=False")));
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Outputs")), TEXT("True / False")));
     return Items;
+}
+
+TArray<FDreamFlowNodeOutputPin> UDreamFlowBranchNode::GetOutputPins_Implementation() const
+{
+    FDreamFlowNodeOutputPin TruePin;
+    TruePin.PinName = TEXT("True");
+    TruePin.DisplayName = FText::FromString(TEXT("True"));
+
+    FDreamFlowNodeOutputPin FalsePin;
+    FalsePin.PinName = TEXT("False");
+    FalsePin.DisplayName = FText::FromString(TEXT("False"));
+
+    return { TruePin, FalsePin };
 }
 
 bool UDreamFlowBranchNode::SupportsAutomaticTransition_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
@@ -131,17 +144,17 @@ bool UDreamFlowBranchNode::SupportsAutomaticTransition_Implementation(UObject* C
     return Executor != nullptr;
 }
 
-int32 UDreamFlowBranchNode::ResolveAutomaticTransitionChildIndex_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
+FName UDreamFlowBranchNode::ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
 {
     (void)Context;
 
     bool bCondition = false;
     if (Executor == nullptr || !Executor->ResolveBindingAsBool(ConditionBinding, bCondition))
     {
-        return INDEX_NONE;
+        return NAME_None;
     }
 
-    return bCondition ? 0 : (GetChildrenCopy().Num() > 1 ? 1 : INDEX_NONE);
+    return bCondition ? FName(TEXT("True")) : FName(TEXT("False"));
 }
 
 void UDreamFlowBranchNode::ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const
@@ -200,7 +213,21 @@ TArray<FDreamFlowNodeDisplayItem> UDreamFlowCompareNode::GetNodeDisplayItems_Imp
     Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Left")), LeftValue.Describe()));
     Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Op")), MakeComparisonLabel(Operation).ToString()));
     Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Right")), RightValue.Describe()));
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Outputs")), TEXT("True / False")));
     return Items;
+}
+
+TArray<FDreamFlowNodeOutputPin> UDreamFlowCompareNode::GetOutputPins_Implementation() const
+{
+    FDreamFlowNodeOutputPin TruePin;
+    TruePin.PinName = TEXT("True");
+    TruePin.DisplayName = FText::FromString(TEXT("True"));
+
+    FDreamFlowNodeOutputPin FalsePin;
+    FalsePin.PinName = TEXT("False");
+    FalsePin.DisplayName = FText::FromString(TEXT("False"));
+
+    return { TruePin, FalsePin };
 }
 
 bool UDreamFlowCompareNode::SupportsAutomaticTransition_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
@@ -209,7 +236,7 @@ bool UDreamFlowCompareNode::SupportsAutomaticTransition_Implementation(UObject* 
     return Executor != nullptr;
 }
 
-int32 UDreamFlowCompareNode::ResolveAutomaticTransitionChildIndex_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
+FName UDreamFlowCompareNode::ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
 {
     (void)Context;
 
@@ -222,10 +249,10 @@ int32 UDreamFlowCompareNode::ResolveAutomaticTransitionChildIndex_Implementation
         || !Executor->ResolveBindingValue(RightValue, RightResolvedValue)
         || !DreamFlowVariable::TryCompareValues(LeftResolvedValue, RightResolvedValue, Operation, bComparisonResult))
     {
-        return INDEX_NONE;
+        return NAME_None;
     }
 
-    return bComparisonResult ? 0 : (GetChildrenCopy().Num() > 1 ? 1 : INDEX_NONE);
+    return bComparisonResult ? FName(TEXT("True")) : FName(TEXT("False"));
 }
 
 void UDreamFlowCompareNode::ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const
@@ -325,11 +352,11 @@ bool UDreamFlowSetVariableNode::SupportsAutomaticTransition_Implementation(UObje
     return true;
 }
 
-int32 UDreamFlowSetVariableNode::ResolveAutomaticTransitionChildIndex_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
+FName UDreamFlowSetVariableNode::ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
 {
     (void)Context;
     (void)Executor;
-    return GetChildrenCopy().Num() > 0 ? 0 : INDEX_NONE;
+    return FName(TEXT("Out"));
 }
 
 void UDreamFlowSetVariableNode::ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const

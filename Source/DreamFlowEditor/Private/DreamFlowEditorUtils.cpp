@@ -113,7 +113,7 @@ void FDreamFlowEditorUtils::SynchronizeAssetFromGraph(UDreamFlowAsset* FlowAsset
 
     TArray<UDreamFlowNode*> RuntimeNodes;
     TMap<UDreamFlowNode*, FVector2D> PositionsByNode;
-    TMap<UDreamFlowNode*, TArray<UDreamFlowNode*>> ChildrenByNode;
+    TMap<UDreamFlowNode*, TArray<FDreamFlowNodeOutputLink>> OutputLinksByNode;
     UDreamFlowNode* EntryNode = nullptr;
 
     for (UDreamFlowEdGraphNode* GraphNode : GraphNodes)
@@ -152,26 +152,30 @@ void FDreamFlowEditorUtils::SynchronizeAssetFromGraph(UDreamFlowAsset* FlowAsset
             continue;
         }
 
-        TArray<UDreamFlowNode*>& SourceChildren = ChildrenByNode.FindOrAdd(SourceNode);
-        UEdGraphPin* OutputPin = GraphNode->FindPin(UDreamFlowEdGraphNode::OutputPinName, EGPD_Output);
+        TArray<FDreamFlowNodeOutputLink>& SourceOutputLinks = OutputLinksByNode.FindOrAdd(SourceNode);
 
-        if (OutputPin == nullptr)
+        for (UEdGraphPin* OutputPin : GraphNode->GetOutputPins())
         {
-            continue;
-        }
-
-        for (UEdGraphPin* LinkedPin : OutputPin->LinkedTo)
-        {
-            if (LinkedPin == nullptr)
+            if (OutputPin == nullptr)
             {
                 continue;
             }
 
-            UDreamFlowEdGraphNode* TargetGraphNode = Cast<UDreamFlowEdGraphNode>(LinkedPin->GetOwningNode());
-            UDreamFlowNode* TargetNode = TargetGraphNode ? TargetGraphNode->GetRuntimeNode() : nullptr;
-            if (TargetNode != nullptr && TargetNode != SourceNode)
+            for (UEdGraphPin* LinkedPin : OutputPin->LinkedTo)
             {
-                SourceChildren.AddUnique(TargetNode);
+                if (LinkedPin == nullptr)
+                {
+                    continue;
+                }
+
+                UDreamFlowEdGraphNode* TargetGraphNode = Cast<UDreamFlowEdGraphNode>(LinkedPin->GetOwningNode());
+                UDreamFlowNode* TargetNode = TargetGraphNode ? TargetGraphNode->GetRuntimeNode() : nullptr;
+                if (TargetNode != nullptr && TargetNode != SourceNode)
+                {
+                    FDreamFlowNodeOutputLink& OutputLink = SourceOutputLinks.AddDefaulted_GetRef();
+                    OutputLink.PinName = OutputPin->PinName;
+                    OutputLink.Child = TargetNode;
+                }
             }
         }
     }
@@ -201,7 +205,7 @@ void FDreamFlowEditorUtils::SynchronizeAssetFromGraph(UDreamFlowAsset* FlowAsset
 
     for (UDreamFlowNode* RuntimeNode : RuntimeNodes)
     {
-        RuntimeNode->SetChildren(ChildrenByNode.FindRef(RuntimeNode));
+        RuntimeNode->SetOutputLinks(OutputLinksByNode.FindRef(RuntimeNode));
     }
 
     FlowAsset->ReplaceNodes(RuntimeNodes);
@@ -320,20 +324,43 @@ void FDreamFlowEditorUtils::RebuildGraphFromAsset(UDreamFlowAsset* FlowAsset, UD
             continue;
         }
 
-        UEdGraphPin* OutputPin = SourceGraphNode->FindPin(UDreamFlowEdGraphNode::OutputPinName, EGPD_Output);
-        if (OutputPin == nullptr)
+        const TArray<FDreamFlowNodeOutputLink> OutputLinks = RuntimeNode->GetOutputLinksCopy();
+        if (OutputLinks.Num() > 0)
         {
-            continue;
-        }
-
-        for (UDreamFlowNode* ChildNode : RuntimeNode->Children)
-        {
-            UDreamFlowEdGraphNode* TargetGraphNode = GraphNodeByRuntimeNode.FindRef(ChildNode);
-            UEdGraphPin* InputPin = TargetGraphNode ? TargetGraphNode->FindPin(UDreamFlowEdGraphNode::InputPinName, EGPD_Input) : nullptr;
-
-            if (InputPin != nullptr)
+            for (const FDreamFlowNodeOutputLink& OutputLink : OutputLinks)
             {
-                OutputPin->MakeLinkTo(InputPin);
+                UDreamFlowEdGraphNode* TargetGraphNode = GraphNodeByRuntimeNode.FindRef(OutputLink.Child);
+                UEdGraphPin* InputPin = TargetGraphNode ? TargetGraphNode->FindPin(UDreamFlowEdGraphNode::InputPinName, EGPD_Input) : nullptr;
+                UEdGraphPin* OutputPin = SourceGraphNode->FindOutputPinByName(OutputLink.PinName);
+
+                if (OutputPin == nullptr)
+                {
+                    OutputPin = SourceGraphNode->GetPrimaryOutputPin();
+                }
+
+                if (OutputPin != nullptr && InputPin != nullptr)
+                {
+                    OutputPin->MakeLinkTo(InputPin);
+                }
+            }
+        }
+        else
+        {
+            UEdGraphPin* OutputPin = SourceGraphNode->GetPrimaryOutputPin();
+            if (OutputPin == nullptr)
+            {
+                continue;
+            }
+
+            for (UDreamFlowNode* ChildNode : RuntimeNode->Children)
+            {
+                UDreamFlowEdGraphNode* TargetGraphNode = GraphNodeByRuntimeNode.FindRef(ChildNode);
+                UEdGraphPin* InputPin = TargetGraphNode ? TargetGraphNode->FindPin(UDreamFlowEdGraphNode::InputPinName, EGPD_Input) : nullptr;
+
+                if (InputPin != nullptr)
+                {
+                    OutputPin->MakeLinkTo(InputPin);
+                }
             }
         }
     }

@@ -1,14 +1,20 @@
 #include "DreamFlowEditorModule.h"
 
 #include "Connections/DreamFlowConnectionDrawingPolicy.h"
+#include "Customizations/DreamFlowValueBindingCustomization.h"
+#include "Customizations/DreamFlowValueCustomization.h"
+#include "Customizations/DreamFlowVariableDefinitionCustomization.h"
+#include "Customizations/DreamFlowVariablesEditorDataDetails.h"
 #include "DreamDialogueFlowAsset.h"
 #include "DreamFlowAsset.h"
 #include "DreamFlowAssetTypeActions.h"
+#include "DreamFlowVariablesEditorData.h"
 #include "DreamQuestFlowAsset.h"
 #include "AssetToolsModule.h"
 #include "EdGraphUtilities.h"
 #include "IAssetTools.h"
 #include "Modules/ModuleManager.h"
+#include "PropertyEditorModule.h"
 
 #define LOCTEXT_NAMESPACE "DreamFlowEditorModule"
 
@@ -26,10 +32,12 @@ void FDreamFlowEditorModule::StartupModule()
 {
     RegisterAssetTools();
     RegisterConnectionFactory();
+    RegisterPropertyCustomizations();
 }
 
 void FDreamFlowEditorModule::ShutdownModule()
 {
+    UnregisterPropertyCustomizations();
     UnregisterConnectionFactory();
     UnregisterAssetTools();
 }
@@ -92,6 +100,31 @@ void FDreamFlowEditorModule::UnregisterConnectionFactory()
         FEdGraphUtilities::UnregisterVisualPinConnectionFactory(ConnectionFactory);
         ConnectionFactory.Reset();
     }
+}
+
+void FDreamFlowEditorModule::RegisterPropertyCustomizations()
+{
+    FPropertyEditorModule& PropertyEditorModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
+    PropertyEditorModule.RegisterCustomPropertyTypeLayout(TEXT("DreamFlowValue"), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FDreamFlowValueCustomization::MakeInstance));
+    PropertyEditorModule.RegisterCustomPropertyTypeLayout(TEXT("DreamFlowValueBinding"), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FDreamFlowValueBindingCustomization::MakeInstance));
+    PropertyEditorModule.RegisterCustomPropertyTypeLayout(TEXT("DreamFlowVariableDefinition"), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FDreamFlowVariableDefinitionCustomization::MakeInstance));
+    PropertyEditorModule.RegisterCustomClassLayout(UDreamFlowVariablesEditorData::StaticClass()->GetFName(), FOnGetDetailCustomizationInstance::CreateStatic(&FDreamFlowVariablesEditorDataDetails::MakeInstance));
+    PropertyEditorModule.NotifyCustomizationModuleChanged();
+}
+
+void FDreamFlowEditorModule::UnregisterPropertyCustomizations()
+{
+    if (!FModuleManager::Get().IsModuleLoaded("PropertyEditor"))
+    {
+        return;
+    }
+
+    FPropertyEditorModule& PropertyEditorModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
+    PropertyEditorModule.UnregisterCustomPropertyTypeLayout(TEXT("DreamFlowValue"));
+    PropertyEditorModule.UnregisterCustomPropertyTypeLayout(TEXT("DreamFlowValueBinding"));
+    PropertyEditorModule.UnregisterCustomPropertyTypeLayout(TEXT("DreamFlowVariableDefinition"));
+    PropertyEditorModule.UnregisterCustomClassLayout(UDreamFlowVariablesEditorData::StaticClass()->GetFName());
+    PropertyEditorModule.NotifyCustomizationModuleChanged();
 }
 
 IMPLEMENT_MODULE(FDreamFlowEditorModule, DreamFlowEditor)

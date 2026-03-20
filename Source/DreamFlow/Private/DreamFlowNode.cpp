@@ -61,6 +61,15 @@ bool UDreamFlowNode::SupportsMultipleParents_Implementation() const
     return true;
 }
 
+TArray<FDreamFlowNodeOutputPin> UDreamFlowNode::GetOutputPins_Implementation() const
+{
+    FDreamFlowNodeOutputPin OutputPin;
+    OutputPin.PinName = TEXT("Out");
+    OutputPin.DisplayName = FText::FromString(TEXT("Next"));
+    OutputPin.bAllowMultipleConnections = SupportsMultipleChildren();
+    return { OutputPin };
+}
+
 bool UDreamFlowNode::IsEntryNode_Implementation() const
 {
     return false;
@@ -112,15 +121,49 @@ int32 UDreamFlowNode::ResolveAutomaticTransitionChildIndex_Implementation(UObjec
     return INDEX_NONE;
 }
 
+FName UDreamFlowNode::ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
+{
+    const int32 ChildIndex = ResolveAutomaticTransitionChildIndex(Context, Executor);
+    const TArray<FDreamFlowNodeOutputPin> OutputPins = GetOutputPins();
+
+    return OutputPins.IsValidIndex(ChildIndex)
+        ? OutputPins[ChildIndex].PinName
+        : NAME_None;
+}
+
 void UDreamFlowNode::SetChildren(const TArray<UDreamFlowNode*>& InChildren)
 {
     Children.Reset();
+    OutputLinks.Reset();
+
+    const TArray<FDreamFlowNodeOutputPin> OutputPins = GetOutputPins();
+    const FName DefaultPinName = OutputPins.Num() > 0 ? OutputPins[0].PinName : FName(TEXT("Out"));
 
     for (UDreamFlowNode* Child : InChildren)
     {
         if (Child != nullptr)
         {
             Children.Add(Child);
+
+            FDreamFlowNodeOutputLink& OutputLink = OutputLinks.AddDefaulted_GetRef();
+            OutputLink.PinName = DefaultPinName;
+            OutputLink.Child = Child;
+        }
+    }
+}
+
+void UDreamFlowNode::SetOutputLinks(const TArray<FDreamFlowNodeOutputLink>& InOutputLinks)
+{
+    OutputLinks.Reset();
+    Children.Reset();
+
+    for (const FDreamFlowNodeOutputLink& OutputLink : InOutputLinks)
+    {
+        OutputLinks.Add(OutputLink);
+
+        if (OutputLink.Child != nullptr)
+        {
+            Children.AddUnique(OutputLink.Child);
         }
     }
 }
@@ -136,6 +179,39 @@ TArray<UDreamFlowNode*> UDreamFlowNode::GetChildrenCopy() const
     }
 
     return Result;
+}
+
+TArray<FDreamFlowNodeOutputLink> UDreamFlowNode::GetOutputLinksCopy() const
+{
+    return OutputLinks;
+}
+
+TArray<UDreamFlowNode*> UDreamFlowNode::GetChildrenForOutputPin(FName OutputPinName) const
+{
+    TArray<UDreamFlowNode*> Result;
+
+    for (const FDreamFlowNodeOutputLink& OutputLink : OutputLinks)
+    {
+        if (OutputLink.PinName == OutputPinName && OutputLink.Child != nullptr)
+        {
+            Result.Add(OutputLink.Child);
+        }
+    }
+
+    return Result;
+}
+
+UDreamFlowNode* UDreamFlowNode::GetFirstChildForOutputPin(FName OutputPinName) const
+{
+    for (const FDreamFlowNodeOutputLink& OutputLink : OutputLinks)
+    {
+        if (OutputLink.PinName == OutputPinName && OutputLink.Child != nullptr)
+        {
+            return OutputLink.Child;
+        }
+    }
+
+    return nullptr;
 }
 
 TSubclassOf<UDreamFlowAsset> UDreamFlowNode::GetSupportedFlowAssetType() const

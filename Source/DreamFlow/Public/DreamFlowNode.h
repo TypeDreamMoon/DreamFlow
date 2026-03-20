@@ -10,6 +10,33 @@ class UDreamFlowAsset;
 class UDreamFlowExecutor;
 class UDreamFlowNode;
 
+USTRUCT(BlueprintType)
+struct DREAMFLOW_API FDreamFlowNodeOutputPin
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flow")
+    FName PinName = TEXT("Out");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flow")
+    FText DisplayName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flow")
+    bool bAllowMultipleConnections = false;
+};
+
+USTRUCT(BlueprintType)
+struct DREAMFLOW_API FDreamFlowNodeOutputLink
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flow")
+    FName PinName = TEXT("Out");
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flow")
+    TObjectPtr<UDreamFlowNode> Child = nullptr;
+};
+
 UCLASS(BlueprintType, Blueprintable, EditInlineNew, DefaultToInstanced, CollapseCategories)
 class DREAMFLOW_API UDreamFlowNode : public UObject
 {
@@ -29,6 +56,9 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flow")
     TArray<TObjectPtr<UDreamFlowNode>> Children;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flow")
+    TArray<FDreamFlowNodeOutputLink> OutputLinks;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Preview")
     TArray<FDreamFlowNodeDisplayItem> PreviewItems;
@@ -73,6 +103,10 @@ public:
     virtual bool SupportsMultipleParents_Implementation() const;
 
     UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Flow")
+    TArray<FDreamFlowNodeOutputPin> GetOutputPins() const;
+    virtual TArray<FDreamFlowNodeOutputPin> GetOutputPins_Implementation() const;
+
+    UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Flow")
     bool IsEntryNode() const;
     virtual bool IsEntryNode_Implementation() const;
 
@@ -108,11 +142,27 @@ public:
     int32 ResolveAutomaticTransitionChildIndex(UObject* Context, UDreamFlowExecutor* Executor) const;
     virtual int32 ResolveAutomaticTransitionChildIndex_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const;
 
+    UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Flow|Execution")
+    FName ResolveAutomaticTransitionOutputPin(UObject* Context, UDreamFlowExecutor* Executor) const;
+    virtual FName ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const;
+
     UFUNCTION(BlueprintCallable, Category = "Flow")
     void SetChildren(const TArray<UDreamFlowNode*>& InChildren);
 
+    UFUNCTION(BlueprintCallable, Category = "Flow")
+    void SetOutputLinks(const TArray<FDreamFlowNodeOutputLink>& InOutputLinks);
+
     UFUNCTION(BlueprintPure, Category = "Flow")
     TArray<UDreamFlowNode*> GetChildrenCopy() const;
+
+    UFUNCTION(BlueprintPure, Category = "Flow")
+    TArray<FDreamFlowNodeOutputLink> GetOutputLinksCopy() const;
+
+    UFUNCTION(BlueprintPure, Category = "Flow")
+    TArray<UDreamFlowNode*> GetChildrenForOutputPin(FName OutputPinName) const;
+
+    UFUNCTION(BlueprintPure, Category = "Flow")
+    UDreamFlowNode* GetFirstChildForOutputPin(FName OutputPinName) const;
 
     TSubclassOf<UDreamFlowAsset> GetSupportedFlowAssetType() const;
     bool SupportsFlowAsset(const UDreamFlowAsset* FlowAsset) const;

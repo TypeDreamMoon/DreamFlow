@@ -4,6 +4,7 @@
 #include "DreamFlowEdGraph.h"
 #include "DreamFlowEdGraphNode.h"
 #include "DreamFlowEditorUtils.h"
+#include "DreamFlowVariablesEditorData.h"
 #include "Widgets/SDreamFlowDebuggerView.h"
 #include "DreamFlowNode.h"
 #include "Widgets/SDreamFlowNodePalette.h"
@@ -27,6 +28,7 @@ TMap<UDreamFlowAsset*, FDreamFlowEditorToolkit*> FDreamFlowEditorToolkit::Active
 const FName FDreamFlowEditorToolkit::PaletteTabId(TEXT("DreamFlowEditor_Palette"));
 const FName FDreamFlowEditorToolkit::GraphTabId(TEXT("DreamFlowEditor_Graph"));
 const FName FDreamFlowEditorToolkit::DetailsTabId(TEXT("DreamFlowEditor_Details"));
+const FName FDreamFlowEditorToolkit::VariablesTabId(TEXT("DreamFlowEditor_Variables"));
 const FName FDreamFlowEditorToolkit::DebuggerTabId(TEXT("DreamFlowEditor_Debugger"));
 const FName FDreamFlowEditorToolkit::ValidationTabId(TEXT("DreamFlowEditor_Validation"));
 
@@ -105,7 +107,7 @@ void FDreamFlowEditorToolkit::InitEditor(const EToolkitMode::Type Mode, const TS
                 ->Split
                 (
                     FTabManager::NewStack()
-                    ->SetSizeCoefficient(0.58f)
+                    ->SetSizeCoefficient(0.42f)
                     ->AddTab(DetailsTabId, ETabState::OpenedTab)
                     ->SetHideTabWell(true)
                 )
@@ -113,13 +115,20 @@ void FDreamFlowEditorToolkit::InitEditor(const EToolkitMode::Type Mode, const TS
                 (
                     FTabManager::NewStack()
                     ->SetSizeCoefficient(0.22f)
-                    ->AddTab(DebuggerTabId, ETabState::OpenedTab)
+                    ->AddTab(VariablesTabId, ETabState::OpenedTab)
                     ->SetHideTabWell(true)
                 )
                 ->Split
                 (
                     FTabManager::NewStack()
                     ->SetSizeCoefficient(0.20f)
+                    ->AddTab(DebuggerTabId, ETabState::OpenedTab)
+                    ->SetHideTabWell(true)
+                )
+                ->Split
+                (
+                    FTabManager::NewStack()
+                    ->SetSizeCoefficient(0.16f)
                     ->AddTab(ValidationTabId, ETabState::OpenedTab)
                     ->SetHideTabWell(true)
                 )
@@ -147,6 +156,7 @@ void FDreamFlowEditorToolkit::InitEditor(const EToolkitMode::Type Mode, const TS
         DetailsView->SetObject(FlowAsset);
     }
 
+    SyncVariableEditorDataFromAsset();
     RefreshValidation();
 }
 
@@ -200,6 +210,9 @@ void FDreamFlowEditorToolkit::RegisterTabSpawners(const TSharedRef<FTabManager>&
     InTabManager->RegisterTabSpawner(DetailsTabId, FOnSpawnTab::CreateSP(this, &FDreamFlowEditorToolkit::SpawnDetailsTab))
         .SetDisplayName(LOCTEXT("DetailsTabLabel", "Node Editor"));
 
+    InTabManager->RegisterTabSpawner(VariablesTabId, FOnSpawnTab::CreateSP(this, &FDreamFlowEditorToolkit::SpawnVariablesTab))
+        .SetDisplayName(LOCTEXT("VariablesTabLabel", "Variables"));
+
     InTabManager->RegisterTabSpawner(DebuggerTabId, FOnSpawnTab::CreateSP(this, &FDreamFlowEditorToolkit::SpawnDebuggerTab))
         .SetDisplayName(LOCTEXT("DebuggerTabLabel", "Debugger"));
 
@@ -213,6 +226,7 @@ void FDreamFlowEditorToolkit::UnregisterTabSpawners(const TSharedRef<FTabManager
     InTabManager->UnregisterTabSpawner(PaletteTabId);
     InTabManager->UnregisterTabSpawner(GraphTabId);
     InTabManager->UnregisterTabSpawner(DetailsTabId);
+    InTabManager->UnregisterTabSpawner(VariablesTabId);
     InTabManager->UnregisterTabSpawner(DebuggerTabId);
     InTabManager->UnregisterTabSpawner(ValidationTabId);
 }
@@ -220,6 +234,7 @@ void FDreamFlowEditorToolkit::UnregisterTabSpawners(const TSharedRef<FTabManager
 void FDreamFlowEditorToolkit::AddReferencedObjects(FReferenceCollector& Collector)
 {
     Collector.AddReferencedObject(FlowAsset);
+    Collector.AddReferencedObject(VariablesEditorData);
     Collector.AddReferencedObject(EditingGraph);
 }
 
@@ -237,6 +252,7 @@ void FDreamFlowEditorToolkit::PostUndo(bool bSuccess)
 
     GraphEditorWidget->ClearSelectionSet();
     GraphEditorWidget->NotifyGraphChanged();
+    SyncVariableEditorDataFromAsset();
     RefreshValidation();
     FSlateApplication::Get().DismissAllMenus();
 }
@@ -273,6 +289,15 @@ TSharedRef<SDockTab> FDreamFlowEditorToolkit::SpawnDetailsTab(const FSpawnTabArg
         ];
 }
 
+TSharedRef<SDockTab> FDreamFlowEditorToolkit::SpawnVariablesTab(const FSpawnTabArgs& Args)
+{
+    (void)Args;
+    return SNew(SDockTab)
+        [
+            VariablesDetailsView.ToSharedRef()
+        ];
+}
+
 TSharedRef<SDockTab> FDreamFlowEditorToolkit::SpawnValidationTab(const FSpawnTabArgs& Args)
 {
     (void)Args;
@@ -299,6 +324,10 @@ void FDreamFlowEditorToolkit::CreateWidgets()
     DetailsArgs.bHideSelectionTip = true;
     DetailsArgs.NameAreaSettings = FDetailsViewArgs::ObjectsUseNameArea;
     DetailsView = PropertyEditorModule.CreateDetailView(DetailsArgs);
+    VariablesDetailsView = PropertyEditorModule.CreateDetailView(DetailsArgs);
+
+    VariablesEditorData = NewObject<UDreamFlowVariablesEditorData>(GetTransientPackage(), NAME_None, RF_Transactional);
+    VariablesDetailsView->SetObject(VariablesEditorData);
 
     PaletteWidget = SNew(SDreamFlowNodePalette)
         .FlowAsset(FlowAsset)
@@ -392,8 +421,14 @@ void FDreamFlowEditorToolkit::HandleObjectPropertyChanged(UObject* ObjectBeingMo
 {
     (void)PropertyChangedEvent;
 
-    if (FlowAsset == nullptr || EditingGraph == nullptr || ObjectBeingModified == nullptr)
+    if (bIsSynchronizingVariableEditorData || FlowAsset == nullptr || EditingGraph == nullptr || ObjectBeingModified == nullptr)
     {
+        return;
+    }
+
+    if (VariablesEditorData != nullptr && (ObjectBeingModified == VariablesEditorData || ObjectBeingModified->IsIn(VariablesEditorData)))
+    {
+        SyncVariablesFromEditorData();
         return;
     }
 
@@ -403,7 +438,13 @@ void FDreamFlowEditorToolkit::HandleObjectPropertyChanged(UObject* ObjectBeingMo
         return;
     }
 
+    if (ObjectBeingModified == FlowAsset)
+    {
+        SyncVariableEditorDataFromAsset();
+    }
+
     EditingGraph->NotifyGraphChanged();
+    RefreshValidation();
 }
 
 void FDreamFlowEditorToolkit::HandleGraphChanged(const FEdGraphEditAction& Action)
@@ -770,6 +811,42 @@ void FDreamFlowEditorToolkit::OpenNodeEditor(UObject* ObjectToEdit)
     {
         ToolkitTabManager->TryInvokeTab(DetailsTabId);
     }
+}
+
+void FDreamFlowEditorToolkit::SyncVariableEditorDataFromAsset()
+{
+    if (FlowAsset == nullptr || VariablesEditorData == nullptr)
+    {
+        return;
+    }
+
+    TGuardValue<bool> SyncGuard(bIsSynchronizingVariableEditorData, true);
+    VariablesEditorData->Variables = FlowAsset->Variables;
+
+    if (VariablesDetailsView.IsValid())
+    {
+        VariablesDetailsView->ForceRefresh();
+    }
+}
+
+void FDreamFlowEditorToolkit::SyncVariablesFromEditorData()
+{
+    if (FlowAsset == nullptr || VariablesEditorData == nullptr)
+    {
+        return;
+    }
+
+    TGuardValue<bool> SyncGuard(bIsSynchronizingVariableEditorData, true);
+    FlowAsset->Modify();
+    FlowAsset->Variables = VariablesEditorData->Variables;
+
+    if (DetailsView.IsValid())
+    {
+        DetailsView->ForceRefresh();
+    }
+
+    EditingGraph->NotifyGraphChanged();
+    RefreshValidation();
 }
 
 void FDreamFlowEditorToolkit::RefreshValidation()

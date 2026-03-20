@@ -29,8 +29,9 @@ public:
     virtual FLinearColor GetNodeTint_Implementation() const override;
     virtual FText GetNodeAccentLabel_Implementation() const override;
     virtual TArray<FDreamFlowNodeDisplayItem> GetNodeDisplayItems_Implementation() const override;
+    virtual TArray<FDreamFlowNodeOutputPin> GetOutputPins_Implementation() const override;
     virtual bool SupportsAutomaticTransition_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const override;
-    virtual int32 ResolveAutomaticTransitionChildIndex_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const override;
+    virtual FName ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const override;
     virtual void ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const override;
 };
 
@@ -55,8 +56,9 @@ public:
     virtual FLinearColor GetNodeTint_Implementation() const override;
     virtual FText GetNodeAccentLabel_Implementation() const override;
     virtual TArray<FDreamFlowNodeDisplayItem> GetNodeDisplayItems_Implementation() const override;
+    virtual TArray<FDreamFlowNodeOutputPin> GetOutputPins_Implementation() const override;
     virtual bool SupportsAutomaticTransition_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const override;
-    virtual int32 ResolveAutomaticTransitionChildIndex_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const override;
+    virtual FName ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const override;
     virtual void ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const override;
 };
 
@@ -80,6 +82,6 @@ public:
     virtual TArray<FDreamFlowNodeDisplayItem> GetNodeDisplayItems_Implementation() const override;
     virtual void ExecuteNodeWithExecutor_Implementation(UObject* Context, UDreamFlowExecutor* Executor) override;
     virtual bool SupportsAutomaticTransition_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const override;
-    virtual int32 ResolveAutomaticTransitionChildIndex_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const override;
+    virtual FName ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const override;
     virtual void ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const override;
 };

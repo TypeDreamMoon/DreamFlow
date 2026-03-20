@@ -213,7 +213,9 @@ const FPinConnectionResponse UDreamFlowEdGraphSchema::CanCreateConnection(const 
         return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, LOCTEXT("ConnectionRejected", "The source node rejected this connection."));
     }
 
-    const bool bBreakSourceLinks = !SourceNode->SupportsMultipleChildren() && OutputPin->LinkedTo.Num() > 0;
+    const bool bBreakSourceLinks = SourceGraphNode != nullptr
+        && !SourceGraphNode->DoesOutputPinAllowMultipleConnections(OutputPin)
+        && OutputPin->LinkedTo.Num() > 0;
     const bool bBreakTargetLinks = !TargetNode->SupportsMultipleParents() && InputPin->LinkedTo.Num() > 0;
 
     if (bBreakSourceLinks && bBreakTargetLinks)

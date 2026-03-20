@@ -13,6 +13,7 @@ class SDreamFlowDebuggerView;
 class SDreamFlowNodePalette;
 class SDreamFlowValidationView;
 class UDreamFlowAsset;
+class UDreamFlowVariablesEditorData;
 class UEdGraph;
 class UDreamFlowNode;
 struct FPropertyChangedEvent;
@@ -44,6 +45,7 @@ private:
     TSharedRef<class SDockTab> SpawnGraphTab(const class FSpawnTabArgs& Args);
     TSharedRef<class SDockTab> SpawnPaletteTab(const class FSpawnTabArgs& Args);
     TSharedRef<class SDockTab> SpawnDetailsTab(const class FSpawnTabArgs& Args);
+    TSharedRef<class SDockTab> SpawnVariablesTab(const class FSpawnTabArgs& Args);
     TSharedRef<class SDockTab> SpawnDebuggerTab(const class FSpawnTabArgs& Args);
     TSharedRef<class SDockTab> SpawnValidationTab(const class FSpawnTabArgs& Args);
     void CreateWidgets();
@@ -70,25 +72,31 @@ private:
     void CreateNodeFromPalette(TSubclassOf<UDreamFlowNode> NodeClass);
     void JumpToNodeGuid(const FGuid& NodeGuid);
     void OpenNodeEditor(UObject* ObjectToEdit);
+    void SyncVariableEditorDataFromAsset();
+    void SyncVariablesFromEditorData();
     void RefreshValidation();
 
 private:
     static const FName PaletteTabId;
     static const FName GraphTabId;
     static const FName DetailsTabId;
+    static const FName VariablesTabId;
     static const FName DebuggerTabId;
     static const FName ValidationTabId;
     static TMap<UDreamFlowAsset*, FDreamFlowEditorToolkit*> ActiveEditors;
 
     TObjectPtr<UDreamFlowAsset> FlowAsset = nullptr;
+    TObjectPtr<UDreamFlowVariablesEditorData> VariablesEditorData = nullptr;
     TObjectPtr<UEdGraph> EditingGraph = nullptr;
     TArray<FDreamFlowValidationMessage> ValidationMessages;
     TSharedPtr<SDreamFlowNodePalette> PaletteWidget;
     TSharedPtr<SGraphEditor> GraphEditorWidget;
     TSharedPtr<IDetailsView> DetailsView;
+    TSharedPtr<IDetailsView> VariablesDetailsView;
     TSharedPtr<SDreamFlowDebuggerView> DebuggerWidget;
     TSharedPtr<SDreamFlowValidationView> ValidationWidget;
     TSharedPtr<FUICommandList> GraphEditorCommands;
     FDelegateHandle GraphChangedHandle;
     FDelegateHandle ObjectPropertyChangedHandle;
+    bool bIsSynchronizingVariableEditorData = false;
 };

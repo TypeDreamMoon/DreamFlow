@@ -18,6 +18,14 @@ void UDreamFlowExecutor::Initialize(UDreamFlowAsset* InFlowAsset, UObject* InExe
     bBreakOnNextNode = false;
     bHasFinished = false;
 
+    ResetVariablesToDefaults();
+    BroadcastDebugStateChanged();
+}
+
+void UDreamFlowExecutor::ResetVariablesToDefaults()
+{
+    RuntimeVariables.Reset();
+
     if (FlowAsset != nullptr)
     {
         for (const FDreamFlowVariableDefinition& Variable : FlowAsset->Variables)
@@ -28,8 +36,6 @@ void UDreamFlowExecutor::Initialize(UDreamFlowAsset* InFlowAsset, UObject* InExe
             }
         }
     }
-
-    BroadcastDebugStateChanged();
 }
 
 bool UDreamFlowExecutor::StartFlow()
@@ -121,6 +127,16 @@ bool UDreamFlowExecutor::MoveToChildByIndex(int32 ChildIndex)
     }
 
     return EnterNode(Children[ChildIndex]);
+}
+
+bool UDreamFlowExecutor::MoveToOutputPin(FName OutputPinName)
+{
+    if (!bIsRunning || bIsPaused || CurrentNode == nullptr || OutputPinName.IsNone())
+    {
+        return false;
+    }
+
+    return EnterNode(CurrentNode->GetFirstChildForOutputPin(OutputPinName));
 }
 
 bool UDreamFlowExecutor::ChooseChild(UDreamFlowNode* ChildNode)
@@ -358,10 +374,10 @@ bool UDreamFlowExecutor::ExecuteCurrentNode()
 
     if (ExecutedNode->SupportsAutomaticTransition(ExecutionContext, this))
     {
-        const int32 AutoChildIndex = ExecutedNode->ResolveAutomaticTransitionChildIndex(ExecutionContext, this);
-        if (AutoChildIndex != INDEX_NONE)
+        const FName AutoOutputPin = ExecutedNode->ResolveAutomaticTransitionOutputPin(ExecutionContext, this);
+        if (!AutoOutputPin.IsNone())
         {
-            return MoveToChildByIndex(AutoChildIndex);
+            return MoveToOutputPin(AutoOutputPin);
         }
     }
 

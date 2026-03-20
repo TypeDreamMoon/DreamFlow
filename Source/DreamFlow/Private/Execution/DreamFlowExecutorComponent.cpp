@@ -64,6 +64,11 @@ bool UDreamFlowExecutorComponent::MoveToChildByIndex(int32 ChildIndex)
     return Executor != nullptr && Executor->MoveToChildByIndex(ChildIndex);
 }
 
+bool UDreamFlowExecutorComponent::MoveToOutputPin(FName OutputPinName)
+{
+    return Executor != nullptr && Executor->MoveToOutputPin(OutputPinName);
+}
+
 bool UDreamFlowExecutorComponent::ChooseChild(UDreamFlowNode* ChildNode)
 {
     return Executor != nullptr && Executor->ChooseChild(ChildNode);
@@ -77,6 +82,29 @@ UDreamFlowExecutor* UDreamFlowExecutorComponent::GetExecutor() const
 UDreamFlowNode* UDreamFlowExecutorComponent::GetCurrentNode() const
 {
     return Executor != nullptr ? Executor->GetCurrentNode() : nullptr;
+}
+
+bool UDreamFlowExecutorComponent::HasVariable(FName VariableName) const
+{
+    return Executor != nullptr && Executor->HasVariable(VariableName);
+}
+
+bool UDreamFlowExecutorComponent::GetVariableValue(FName VariableName, FDreamFlowValue& OutValue) const
+{
+    return Executor != nullptr && Executor->GetVariableValue(VariableName, OutValue);
+}
+
+bool UDreamFlowExecutorComponent::SetVariableValue(FName VariableName, const FDreamFlowValue& InValue)
+{
+    return Executor != nullptr && Executor->SetVariableValue(VariableName, InValue);
+}
+
+void UDreamFlowExecutorComponent::ResetVariablesToDefaults()
+{
+    if (Executor != nullptr)
+    {
+        Executor->ResetVariablesToDefaults();
+    }
 }
 
 void UDreamFlowExecutorComponent::HandleFlowStarted()

@@ -8,7 +8,6 @@
 #include "SGraphNode_DreamFlow.h"
 
 const FName UDreamFlowEdGraphNode::InputPinName(TEXT("In"));
-const FName UDreamFlowEdGraphNode::OutputPinName(TEXT("Out"));
 const FName UDreamFlowEdGraphNode::PinCategory(TEXT("DreamFlow"));
 
 UDreamFlowEdGraphNode::UDreamFlowEdGraphNode()
@@ -22,7 +21,25 @@ void UDreamFlowEdGraphNode::AllocateDefaultPins()
         CreatePin(EGPD_Input, PinCategory, InputPinName);
     }
 
-    CreatePin(EGPD_Output, PinCategory, OutputPinName);
+    const TArray<FDreamFlowNodeOutputPin> OutputPins = RuntimeNode != nullptr
+        ? RuntimeNode->GetOutputPins()
+        : TArray<FDreamFlowNodeOutputPin>();
+
+    if (OutputPins.Num() == 0)
+    {
+        UEdGraphPin* OutputPin = CreatePin(EGPD_Output, PinCategory, TEXT("Out"));
+        OutputPin->PinFriendlyName = FText::FromString(TEXT("Next"));
+        return;
+    }
+
+    for (const FDreamFlowNodeOutputPin& OutputPinDesc : OutputPins)
+    {
+        const FName PinName = OutputPinDesc.PinName.IsNone() ? FName(TEXT("Out")) : OutputPinDesc.PinName;
+        UEdGraphPin* OutputPin = CreatePin(EGPD_Output, PinCategory, PinName);
+        OutputPin->PinFriendlyName = OutputPinDesc.DisplayName.IsEmpty()
+            ? FText::FromName(PinName)
+            : OutputPinDesc.DisplayName;
+    }
 }
 
 void UDreamFlowEdGraphNode::AutowireNewNode(UEdGraphPin* FromPin)
@@ -42,7 +59,7 @@ void UDreamFlowEdGraphNode::AutowireNewNode(UEdGraphPin* FromPin)
     }
     else if (FromPin->Direction == EGPD_Input)
     {
-        TargetPin = FindPin(OutputPinName, EGPD_Output);
+        TargetPin = GetPrimaryOutputPin();
     }
 
     if (TargetPin != nullptr)
@@ -154,6 +171,58 @@ void UDreamFlowEdGraphNode::SetRuntimeNode(UDreamFlowNode* InRuntimeNode)
 UDreamFlowNode* UDreamFlowEdGraphNode::GetRuntimeNode() const
 {
     return RuntimeNode;
+}
+
+TArray<UEdGraphPin*> UDreamFlowEdGraphNode::GetOutputPins() const
+{
+    TArray<UEdGraphPin*> Result;
+
+    for (UEdGraphPin* Pin : Pins)
+    {
+        if (Pin != nullptr && Pin->Direction == EGPD_Output)
+        {
+            Result.Add(Pin);
+        }
+    }
+
+    return Result;
+}
+
+UEdGraphPin* UDreamFlowEdGraphNode::GetPrimaryOutputPin() const
+{
+    const TArray<UEdGraphPin*> OutputPins = GetOutputPins();
+    return OutputPins.Num() > 0 ? OutputPins[0] : nullptr;
+}
+
+UEdGraphPin* UDreamFlowEdGraphNode::FindOutputPinByName(FName PinName) const
+{
+    for (UEdGraphPin* Pin : GetOutputPins())
+    {
+        if (Pin != nullptr && Pin->PinName == PinName)
+        {
+            return Pin;
+        }
+    }
+
+    return nullptr;
+}
+
+bool UDreamFlowEdGraphNode::DoesOutputPinAllowMultipleConnections(const UEdGraphPin* OutputPin) const
+{
+    if (OutputPin == nullptr || RuntimeNode == nullptr || OutputPin->Direction != EGPD_Output)
+    {
+        return false;
+    }
+
+    for (const FDreamFlowNodeOutputPin& OutputPinDesc : RuntimeNode->GetOutputPins())
+    {
+        if (OutputPinDesc.PinName == OutputPin->PinName)
+        {
+            return OutputPinDesc.bAllowMultipleConnections;
+        }
+    }
+
+    return RuntimeNode->SupportsMultipleChildren();
 }
 
 bool UDreamFlowEdGraphNode::IsEntryNode() const
