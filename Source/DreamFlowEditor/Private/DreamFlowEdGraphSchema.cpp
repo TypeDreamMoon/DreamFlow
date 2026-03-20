@@ -2,6 +2,7 @@
 
 #include "DreamFlowEdGraph.h"
 #include "DreamFlowEdGraphNode.h"
+#include "DreamFlowAsset.h"
 #include "DreamFlowEditorUtils.h"
 #include "DreamFlowEntryNode.h"
 #include "DreamFlowNode.h"
@@ -31,11 +32,16 @@ namespace DreamFlowSchema
     class FDreamFlowClassFilter : public IClassViewerFilter
     {
     public:
+        explicit FDreamFlowClassFilter(UDreamFlowAsset* InFlowAsset)
+            : FlowAsset(InFlowAsset)
+        {
+        }
+
         virtual bool IsClassAllowed(const FClassViewerInitializationOptions& InInitOptions, const UClass* InClass, TSharedRef<FClassViewerFilterFuncs> InFilterFuncs) override
         {
             (void)InInitOptions;
             (void)InFilterFuncs;
-            return FDreamFlowEditorUtils::IsNodeClassCreatable(InClass);
+            return FDreamFlowEditorUtils::IsNodeClassCreatable(InClass, FlowAsset.Get());
         }
 
         virtual bool IsUnloadedClassAllowed(const FClassViewerInitializationOptions& InInitOptions, const TSharedRef<const IUnloadedBlueprintData> InUnloadedClassData, TSharedRef<FClassViewerFilterFuncs> InFilterFuncs) override
@@ -50,6 +56,9 @@ namespace DreamFlowSchema
 
             return InUnloadedClassData->IsChildOf(UDreamFlowNode::StaticClass()) && !InUnloadedClassData->IsChildOf(UDreamFlowEntryNode::StaticClass());
         }
+
+    private:
+        TWeakObjectPtr<UDreamFlowAsset> FlowAsset;
     };
 
     class FDreamFlowSchemaAction_NewNode final : public FEdGraphSchemaAction
@@ -76,12 +85,13 @@ namespace DreamFlowSchema
     class FDreamFlowSchemaAction_PickNodeClass final : public FEdGraphSchemaAction
     {
     public:
-        FDreamFlowSchemaAction_PickNodeClass()
+        explicit FDreamFlowSchemaAction_PickNodeClass(UDreamFlowAsset* InFlowAsset)
             : FEdGraphSchemaAction(
                 FText::GetEmpty(),
                 LOCTEXT("PickNodeClassAction", "Choose Node Class..."),
                 LOCTEXT("PickNodeClassActionTooltip", "Pick any DreamFlow node class, including Blueprint subclasses."),
                 1)
+            , FlowAsset(InFlowAsset)
         {
         }
 
@@ -93,7 +103,7 @@ namespace DreamFlowSchema
             PickerOptions.bShowUnloadedBlueprints = true;
             PickerOptions.bShowObjectRootClass = false;
             PickerOptions.NameTypeToDisplay = EClassViewerNameTypeToDisplay::Dynamic;
-            PickerOptions.ClassFilters.Add(MakeShared<FDreamFlowClassFilter>());
+            PickerOptions.ClassFilters.Add(MakeShared<FDreamFlowClassFilter>(FlowAsset.Get()));
 
             UClass* ChosenClass = nullptr;
             const bool bPickedClass = SClassPickerDialog::PickClass(
@@ -106,12 +116,17 @@ namespace DreamFlowSchema
                 ? FDreamFlowEditorUtils::CreateNodeInGraph(ParentGraph, ChosenClass, Location, FromPin, bSelectNewNode)
                 : nullptr;
         }
+
+    private:
+        TWeakObjectPtr<UDreamFlowAsset> FlowAsset;
     };
 }
 
 void UDreamFlowEdGraphSchema::GetGraphContextActions(FGraphContextMenuBuilder& ContextMenuBuilder) const
 {
-    for (const TSubclassOf<UDreamFlowNode>& NodeClass : FDreamFlowEditorUtils::GetLoadedCreatableNodeClasses())
+    UDreamFlowAsset* FlowAsset = FDreamFlowEditorUtils::GetFlowAssetFromGraph(ContextMenuBuilder.CurrentGraph);
+
+    for (const TSubclassOf<UDreamFlowNode>& NodeClass : FDreamFlowEditorUtils::GetLoadedCreatableNodeClasses(FlowAsset))
     {
         const UClass* LoadedClass = *NodeClass;
         const UDreamFlowNode* DefaultNode = LoadedClass ? Cast<UDreamFlowNode>(LoadedClass->GetDefaultObject()) : nullptr;
@@ -128,7 +143,7 @@ void UDreamFlowEdGraphSchema::GetGraphContextActions(FGraphContextMenuBuilder& C
         ContextMenuBuilder.AddAction(MakeShared<DreamFlowSchema::FDreamFlowSchemaAction_NewNode>(NodeClass, Description, ToolTip));
     }
 
-    ContextMenuBuilder.AddAction(MakeShared<DreamFlowSchema::FDreamFlowSchemaAction_PickNodeClass>());
+    ContextMenuBuilder.AddAction(MakeShared<DreamFlowSchema::FDreamFlowSchemaAction_PickNodeClass>(FlowAsset));
 }
 
 void UDreamFlowEdGraphSchema::GetContextMenuActions(UToolMenu* Menu, UGraphNodeContextMenuContext* Context) const
@@ -136,20 +151,23 @@ void UDreamFlowEdGraphSchema::GetContextMenuActions(UToolMenu* Menu, UGraphNodeC
     if (Context != nullptr && Context->Node != nullptr)
     {
         FToolMenuSection& Section = Menu->AddSection("DreamFlowNodeActions", LOCTEXT("DreamFlowNodeActions", "DreamFlow"));
-        if (UDreamFlowEdGraphNode* FlowGraphNode = Cast<UDreamFlowEdGraphNode>(Context->Node))
+        if (const UDreamFlowEdGraphNode* FlowGraphNode = Cast<const UDreamFlowEdGraphNode>(Context->Node))
         {
+            const bool bHasBreakpoint = FlowGraphNode->HasBreakpoint();
+            TWeakObjectPtr<UDreamFlowEdGraphNode> WeakFlowGraphNode(const_cast<UDreamFlowEdGraphNode*>(FlowGraphNode));
+
             Section.AddMenuEntry(
                 "DreamFlowToggleBreakpoint",
-                FlowGraphNode->HasBreakpoint()
+                bHasBreakpoint
                     ? LOCTEXT("RemoveBreakpointLabel", "Remove Breakpoint")
                     : LOCTEXT("AddBreakpointLabel", "Add Breakpoint"),
-                FlowGraphNode->HasBreakpoint()
+                bHasBreakpoint
                     ? LOCTEXT("RemoveBreakpointTooltip", "Remove the breakpoint from this node.")
                     : LOCTEXT("AddBreakpointTooltip", "Pause the DreamFlow executor before this node executes."),
                 FSlateIcon(),
-                FUIAction(FExecuteAction::CreateLambda([FlowGraphNode]()
+                FUIAction(FExecuteAction::CreateLambda([WeakFlowGraphNode]()
                 {
-                    if (FlowGraphNode != nullptr)
+                    if (UDreamFlowEdGraphNode* FlowGraphNode = WeakFlowGraphNode.Get())
                     {
                         FlowGraphNode->ToggleBreakpoint();
                     }

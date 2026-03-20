@@ -5,24 +5,27 @@
 
 #define LOCTEXT_NAMESPACE "DreamFlowAssetTypeActions"
 
-FDreamFlowAssetTypeActions::FDreamFlowAssetTypeActions(uint32 InAssetCategory)
+FDreamFlowAssetTypeActions::FDreamFlowAssetTypeActions(uint32 InAssetCategory, UClass* InSupportedClass, FText InDisplayName, FColor InTypeColor)
     : AssetCategory(InAssetCategory)
+    , SupportedClass(InSupportedClass)
+    , DisplayName(MoveTemp(InDisplayName))
+    , TypeColor(InTypeColor)
 {
 }
 
 FText FDreamFlowAssetTypeActions::GetName() const
 {
-    return LOCTEXT("DreamFlowAssetName", "Dream Flow");
+    return DisplayName;
 }
 
 FColor FDreamFlowAssetTypeActions::GetTypeColor() const
 {
-    return FColor(222, 126, 40);
+    return TypeColor;
 }
 
 UClass* FDreamFlowAssetTypeActions::GetSupportedClass() const
 {
-    return UDreamFlowAsset::StaticClass();
+    return SupportedClass;
 }
 
 uint32 FDreamFlowAssetTypeActions::GetCategories()

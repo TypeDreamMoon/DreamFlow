@@ -14,6 +14,7 @@ class SDreamFlowValidationView;
 class UDreamFlowAsset;
 class UEdGraph;
 class UDreamFlowNode;
+struct FPropertyChangedEvent;
 struct FEdGraphEditAction;
 
 class DREAMFLOWEDITOR_API FDreamFlowEditorToolkit : public FAssetEditorToolkit, public FGCObject
@@ -45,6 +46,7 @@ private:
     void CreateWidgets();
     void BindCommands();
     void HandleSelectedNodesChanged(const TSet<UObject*>& NewSelection);
+    void HandleObjectPropertyChanged(UObject* ObjectBeingModified, FPropertyChangedEvent& PropertyChangedEvent);
     void HandleGraphChanged(const FEdGraphEditAction& Action);
     void DeleteSelectedNodes();
     bool CanDeleteSelectedNodes() const;
@@ -72,4 +74,5 @@ private:
     TSharedPtr<SDreamFlowValidationView> ValidationWidget;
     TSharedPtr<FUICommandList> GraphEditorCommands;
     FDelegateHandle GraphChangedHandle;
+    FDelegateHandle ObjectPropertyChangedHandle;
 };

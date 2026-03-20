@@ -21,8 +21,8 @@ public:
         UEdGraphPin* FromPin = nullptr,
         bool bSelectNewNode = true);
     static void SynchronizeAssetFromGraph(UDreamFlowAsset* FlowAsset);
-    static TArray<TSubclassOf<UDreamFlowNode>> GetLoadedCreatableNodeClasses();
-    static bool IsNodeClassCreatable(const UClass* NodeClass);
+    static TArray<TSubclassOf<UDreamFlowNode>> GetLoadedCreatableNodeClasses(const UDreamFlowAsset* FlowAsset = nullptr);
+    static bool IsNodeClassCreatable(const UClass* NodeClass, const UDreamFlowAsset* FlowAsset = nullptr);
 
 private:
     static void RebuildGraphFromAsset(UDreamFlowAsset* FlowAsset, UDreamFlowEdGraph* Graph);

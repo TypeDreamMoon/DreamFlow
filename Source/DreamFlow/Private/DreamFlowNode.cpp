@@ -1,5 +1,6 @@
 #include "DreamFlowNode.h"
 
+#include "DreamFlowAsset.h"
 #include "UObject/Class.h"
 
 UDreamFlowNode::UDreamFlowNode()
@@ -7,6 +8,7 @@ UDreamFlowNode::UDreamFlowNode()
     NodeGuid = FGuid::NewGuid();
     Title = FText::FromString(TEXT("Flow Node"));
     Description = FText::GetEmpty();
+    SupportedFlowAssetType = UDreamFlowAsset::StaticClass();
 
 #if WITH_EDITORONLY_DATA
     NodeTint = FLinearColor(0.13f, 0.42f, 0.55f, 1.0f);
@@ -113,6 +115,28 @@ TArray<UDreamFlowNode*> UDreamFlowNode::GetChildrenCopy() const
     }
 
     return Result;
+}
+
+TSubclassOf<UDreamFlowAsset> UDreamFlowNode::GetSupportedFlowAssetType() const
+{
+    if (SupportedFlowAssetType != nullptr)
+    {
+        return SupportedFlowAssetType;
+    }
+
+    return UDreamFlowAsset::StaticClass();
+}
+
+bool UDreamFlowNode::SupportsFlowAsset(const UDreamFlowAsset* FlowAsset) const
+{
+    return SupportsFlowAssetClass(FlowAsset != nullptr ? FlowAsset->GetClass() : UDreamFlowAsset::StaticClass());
+}
+
+bool UDreamFlowNode::SupportsFlowAssetClass(const UClass* FlowAssetClass) const
+{
+    const UClass* RequiredAssetClass = GetSupportedFlowAssetType().Get();
+    const UClass* ActualAssetClass = FlowAssetClass != nullptr ? FlowAssetClass : UDreamFlowAsset::StaticClass();
+    return RequiredAssetClass != nullptr && ActualAssetClass != nullptr && ActualAssetClass->IsChildOf(RequiredAssetClass);
 }
 
 bool UDreamFlowNode::CanAcceptChild(const UDreamFlowNode* OtherNode) const

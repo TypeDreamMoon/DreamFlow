@@ -1,11 +1,12 @@
 #pragma once
 
+#include "CoreMinimal.h"
 #include "AssetTypeActions_Base.h"
 
 class FDreamFlowAssetTypeActions : public FAssetTypeActions_Base
 {
 public:
-    explicit FDreamFlowAssetTypeActions(uint32 InAssetCategory);
+    FDreamFlowAssetTypeActions(uint32 InAssetCategory, UClass* InSupportedClass, FText InDisplayName, FColor InTypeColor);
 
     virtual FText GetName() const override;
     virtual FColor GetTypeColor() const override;
@@ -15,4 +16,7 @@ public:
 
 private:
     uint32 AssetCategory;
+    UClass* SupportedClass = nullptr;
+    FText DisplayName;
+    FColor TypeColor = FColor::White;
 };

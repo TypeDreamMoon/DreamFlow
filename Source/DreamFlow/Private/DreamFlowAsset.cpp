@@ -74,6 +74,20 @@ void UDreamFlowAsset::ValidateFlow(TArray<FDreamFlowValidationMessage>& OutMessa
         KnownNodes.Add(Node);
         IncomingConnectionCount.FindOrAdd(Node, 0);
 
+        if (!Node->SupportsFlowAsset(this))
+        {
+            FDreamFlowValidationMessage& Message = OutMessages.AddDefaulted_GetRef();
+            Message.Severity = EDreamFlowValidationSeverity::Error;
+            Message.NodeGuid = Node->NodeGuid;
+            Message.NodeTitle = Node->GetNodeDisplayName();
+            Message.Message = FText::Format(
+                FText::FromString(TEXT("This node type supports '{0}', but the current asset is '{1}'.")),
+                Node->GetSupportedFlowAssetType() != nullptr
+                    ? Node->GetSupportedFlowAssetType()->GetDisplayNameText()
+                    : UDreamFlowAsset::StaticClass()->GetDisplayNameText(),
+                GetClass()->GetDisplayNameText());
+        }
+
         if (SeenGuids.Contains(Node->NodeGuid))
         {
             FDreamFlowValidationMessage& Message = OutMessages.AddDefaulted_GetRef();

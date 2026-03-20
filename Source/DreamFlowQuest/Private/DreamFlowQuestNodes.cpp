@@ -1,5 +1,12 @@
 #include "DreamFlowQuestNodes.h"
 
+#include "DreamQuestFlowAsset.h"
+
+UDreamFlowQuestNode::UDreamFlowQuestNode()
+{
+    SupportedFlowAssetType = UDreamQuestFlowAsset::StaticClass();
+}
+
 FText UDreamFlowQuestNode::GetNodeCategory_Implementation() const
 {
     return FText::FromString(TEXT("Quest"));

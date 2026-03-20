@@ -368,9 +368,9 @@ TSharedRef<SWidget> SGraphNode_DreamFlow::BuildDisplayItemWidget(const FDreamFlo
     return SNew(SVerticalBox)
         + SVerticalBox::Slot()
         .AutoHeight()
-        .Visibility(LabelText.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
         [
             SNew(STextBlock)
+            .Visibility(LabelText.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
             .Text(LabelText)
             .TextStyle(FAppStyle::Get(), "SmallText")
             .ColorAndOpacity(this, &SGraphNode_DreamFlow::GetClassTextColor)

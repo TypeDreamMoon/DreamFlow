@@ -72,7 +72,7 @@ UDreamFlowEdGraphNode* FDreamFlowEditorUtils::CreateNodeInGraph(
     UDreamFlowEdGraph* FlowGraph = Cast<UDreamFlowEdGraph>(Graph);
     UDreamFlowAsset* FlowAsset = FlowGraph ? FlowGraph->GetFlowAsset() : nullptr;
 
-    if (FlowGraph == nullptr || FlowAsset == nullptr || !IsNodeClassCreatable(*NodeClass))
+    if (FlowGraph == nullptr || FlowAsset == nullptr || !IsNodeClassCreatable(*NodeClass, FlowAsset))
     {
         return nullptr;
     }
@@ -208,7 +208,7 @@ void FDreamFlowEditorUtils::SynchronizeAssetFromGraph(UDreamFlowAsset* FlowAsset
     FlowAsset->SetEntryNodeInternal(EntryNode != nullptr ? EntryNode : (RuntimeNodes.Num() > 0 ? RuntimeNodes[0] : nullptr));
 }
 
-TArray<TSubclassOf<UDreamFlowNode>> FDreamFlowEditorUtils::GetLoadedCreatableNodeClasses()
+TArray<TSubclassOf<UDreamFlowNode>> FDreamFlowEditorUtils::GetLoadedCreatableNodeClasses(const UDreamFlowAsset* FlowAsset)
 {
     TArray<TSubclassOf<UDreamFlowNode>> Result;
     TArray<UClass*> DerivedClasses;
@@ -216,7 +216,7 @@ TArray<TSubclassOf<UDreamFlowNode>> FDreamFlowEditorUtils::GetLoadedCreatableNod
 
     for (UClass* DerivedClass : DerivedClasses)
     {
-        if (IsNodeClassCreatable(DerivedClass))
+        if (IsNodeClassCreatable(DerivedClass, FlowAsset))
         {
             Result.Add(DerivedClass);
         }
@@ -244,7 +244,7 @@ TArray<TSubclassOf<UDreamFlowNode>> FDreamFlowEditorUtils::GetLoadedCreatableNod
     return Result;
 }
 
-bool FDreamFlowEditorUtils::IsNodeClassCreatable(const UClass* NodeClass)
+bool FDreamFlowEditorUtils::IsNodeClassCreatable(const UClass* NodeClass, const UDreamFlowAsset* FlowAsset)
 {
     if (NodeClass == nullptr)
     {
@@ -267,7 +267,7 @@ bool FDreamFlowEditorUtils::IsNodeClassCreatable(const UClass* NodeClass)
     }
 
     const UDreamFlowNode* DefaultNode = Cast<UDreamFlowNode>(NodeClass->GetDefaultObject());
-    return DefaultNode != nullptr && DefaultNode->IsUserCreatable();
+    return DefaultNode != nullptr && DefaultNode->IsUserCreatable() && DefaultNode->SupportsFlowAsset(FlowAsset);
 }
 
 void FDreamFlowEditorUtils::RebuildGraphFromAsset(UDreamFlowAsset* FlowAsset, UDreamFlowEdGraph* Graph)

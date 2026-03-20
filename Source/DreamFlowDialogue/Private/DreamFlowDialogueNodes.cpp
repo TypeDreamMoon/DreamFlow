@@ -1,5 +1,12 @@
 #include "DreamFlowDialogueNodes.h"
 
+#include "DreamDialogueFlowAsset.h"
+
+UDreamFlowDialogueNode::UDreamFlowDialogueNode()
+{
+    SupportedFlowAssetType = UDreamDialogueFlowAsset::StaticClass();
+}
+
 FText UDreamFlowDialogueNode::GetNodeCategory_Implementation() const
 {
     return FText::FromString(TEXT("Dialogue"));

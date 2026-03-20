@@ -10,6 +10,8 @@ class DREAMFLOWQUEST_API UDreamFlowQuestNode : public UDreamFlowNode
     GENERATED_BODY()
 
 public:
+    UDreamFlowQuestNode();
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest")
     FName QuestId;
 

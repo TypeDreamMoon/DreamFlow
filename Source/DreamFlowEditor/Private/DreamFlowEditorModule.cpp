@@ -1,7 +1,10 @@
 #include "DreamFlowEditorModule.h"
 
 #include "Connections/DreamFlowConnectionDrawingPolicy.h"
+#include "DreamDialogueFlowAsset.h"
+#include "DreamFlowAsset.h"
 #include "DreamFlowAssetTypeActions.h"
+#include "DreamQuestFlowAsset.h"
 #include "AssetToolsModule.h"
 #include "EdGraphUtilities.h"
 #include "IAssetTools.h"
@@ -36,9 +39,20 @@ void FDreamFlowEditorModule::RegisterAssetTools()
     IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
     AssetCategory = AssetTools.RegisterAdvancedAssetCategory(FName(TEXT("Dream")), LOCTEXT("DreamAssetCategory", "Dream"));
 
-    TSharedRef<FDreamFlowAssetTypeActions> FlowAssetActions = MakeShared<FDreamFlowAssetTypeActions>(AssetCategory);
-    AssetTools.RegisterAssetTypeActions(FlowAssetActions);
-    RegisteredAssetTypeActions.Add(FlowAssetActions);
+    const auto RegisterTypeAction = [this, &AssetTools](UClass* SupportedClass, const FText& DisplayName, const FColor& TypeColor)
+    {
+        TSharedRef<FDreamFlowAssetTypeActions> AssetTypeActions = MakeShared<FDreamFlowAssetTypeActions>(
+            AssetCategory,
+            SupportedClass,
+            DisplayName,
+            TypeColor);
+        AssetTools.RegisterAssetTypeActions(AssetTypeActions);
+        RegisteredAssetTypeActions.Add(AssetTypeActions);
+    };
+
+    RegisterTypeAction(UDreamFlowAsset::StaticClass(), LOCTEXT("DreamFlowAssetName", "Dream Flow"), FColor(222, 126, 40));
+    RegisterTypeAction(UDreamQuestFlowAsset::StaticClass(), LOCTEXT("DreamQuestFlowAssetName", "Dream Quest Flow"), FColor(61, 158, 111));
+    RegisterTypeAction(UDreamDialogueFlowAsset::StaticClass(), LOCTEXT("DreamDialogueFlowAssetName", "Dream Dialogue Flow"), FColor(67, 113, 217));
 }
 
 void FDreamFlowEditorModule::UnregisterAssetTools()

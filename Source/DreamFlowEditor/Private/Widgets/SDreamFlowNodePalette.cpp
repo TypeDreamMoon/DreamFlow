@@ -1,5 +1,6 @@
 #include "Widgets/SDreamFlowNodePalette.h"
 
+#include "DreamFlowAsset.h"
 #include "DreamFlowEditorUtils.h"
 #include "DreamFlowNode.h"
 #include "Algo/Sort.h"
@@ -26,6 +27,7 @@ namespace DreamFlowNodePalette
 
 void SDreamFlowNodePalette::Construct(const FArguments& InArgs)
 {
+    FlowAsset = InArgs._FlowAsset;
     OnNodeClassPicked = InArgs._OnNodeClassPicked;
 
     ChildSlot
@@ -79,7 +81,7 @@ void SDreamFlowNodePalette::RefreshNodeClasses()
 {
     AllEntries.Reset();
 
-    for (const TSubclassOf<UDreamFlowNode>& NodeClass : FDreamFlowEditorUtils::GetLoadedCreatableNodeClasses())
+    for (const TSubclassOf<UDreamFlowNode>& NodeClass : FDreamFlowEditorUtils::GetLoadedCreatableNodeClasses(FlowAsset.Get()))
     {
         const UClass* LoadedClass = *NodeClass;
         const UDreamFlowNode* DefaultNode = LoadedClass ? Cast<UDreamFlowNode>(LoadedClass->GetDefaultObject()) : nullptr;

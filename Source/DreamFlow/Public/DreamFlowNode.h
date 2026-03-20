@@ -5,6 +5,7 @@
 #include "UObject/Object.h"
 #include "DreamFlowNode.generated.h"
 
+class UDreamFlowAsset;
 class UDreamFlowNode;
 
 UCLASS(BlueprintType, Blueprintable, EditInlineNew, DefaultToInstanced, CollapseCategories)
@@ -29,6 +30,9 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Preview")
     TArray<FDreamFlowNodeDisplayItem> PreviewItems;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Flow|Compatibility")
+    TSubclassOf<UDreamFlowAsset> SupportedFlowAssetType;
 
 #if WITH_EDITORONLY_DATA
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Editor")
@@ -96,6 +100,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "Flow")
     TArray<UDreamFlowNode*> GetChildrenCopy() const;
 
+    TSubclassOf<UDreamFlowAsset> GetSupportedFlowAssetType() const;
+    bool SupportsFlowAsset(const UDreamFlowAsset* FlowAsset) const;
+    bool SupportsFlowAssetClass(const UClass* FlowAssetClass) const;
     bool CanAcceptChild(const UDreamFlowNode* OtherNode) const;
 
 #if WITH_EDITOR

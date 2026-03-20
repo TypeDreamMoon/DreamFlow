@@ -10,6 +10,8 @@ class DREAMFLOWDIALOGUE_API UDreamFlowDialogueNode : public UDreamFlowNode
     GENERATED_BODY()
 
 public:
+    UDreamFlowDialogueNode();
+
     virtual FText GetNodeCategory_Implementation() const override;
     virtual FText GetNodeAccentLabel_Implementation() const override;
 };

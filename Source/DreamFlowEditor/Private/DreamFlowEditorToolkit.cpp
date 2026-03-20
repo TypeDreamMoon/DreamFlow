@@ -4,6 +4,7 @@
 #include "DreamFlowEdGraph.h"
 #include "DreamFlowEdGraphNode.h"
 #include "DreamFlowEditorUtils.h"
+#include "Widgets/SDreamFlowDebuggerView.h"
 #include "DreamFlowNode.h"
 #include "Widgets/SDreamFlowNodePalette.h"
 #include "Widgets/SDreamFlowValidationView.h"
@@ -13,6 +14,7 @@
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
 #include "ScopedTransaction.h"
+#include "UObject/UObjectGlobals.h"
 #include "Widgets/Docking/SDockTab.h"
 
 #define LOCTEXT_NAMESPACE "DreamFlowEditorToolkit"
@@ -21,6 +23,7 @@ TMap<UDreamFlowAsset*, FDreamFlowEditorToolkit*> FDreamFlowEditorToolkit::Active
 const FName FDreamFlowEditorToolkit::PaletteTabId(TEXT("DreamFlowEditor_Palette"));
 const FName FDreamFlowEditorToolkit::GraphTabId(TEXT("DreamFlowEditor_Graph"));
 const FName FDreamFlowEditorToolkit::DetailsTabId(TEXT("DreamFlowEditor_Details"));
+const FName FDreamFlowEditorToolkit::DebuggerTabId(TEXT("DreamFlowEditor_Debugger"));
 const FName FDreamFlowEditorToolkit::ValidationTabId(TEXT("DreamFlowEditor_Validation"));
 
 FDreamFlowEditorToolkit::~FDreamFlowEditorToolkit()
@@ -34,6 +37,12 @@ FDreamFlowEditorToolkit::~FDreamFlowEditorToolkit()
     {
         EditingGraph->RemoveOnGraphChangedHandler(GraphChangedHandle);
         GraphChangedHandle.Reset();
+    }
+
+    if (ObjectPropertyChangedHandle.IsValid())
+    {
+        FCoreUObjectDelegates::OnObjectPropertyChanged.Remove(ObjectPropertyChangedHandle);
+        ObjectPropertyChangedHandle.Reset();
     }
 }
 
@@ -49,6 +58,11 @@ void FDreamFlowEditorToolkit::InitEditor(const EToolkitMode::Type Mode, const TS
     if (EditingGraph != nullptr)
     {
         GraphChangedHandle = EditingGraph->AddOnGraphChangedHandler(FOnGraphChanged::FDelegate::CreateSP(this, &FDreamFlowEditorToolkit::HandleGraphChanged));
+    }
+
+    if (!ObjectPropertyChangedHandle.IsValid())
+    {
+        ObjectPropertyChangedHandle = FCoreUObjectDelegates::OnObjectPropertyChanged.AddRaw(this, &FDreamFlowEditorToolkit::HandleObjectPropertyChanged);
     }
 
     const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout("DreamFlowEditorLayout_v1")
@@ -84,7 +98,14 @@ void FDreamFlowEditorToolkit::InitEditor(const EToolkitMode::Type Mode, const TS
                 ->Split
                 (
                     FTabManager::NewStack()
-                    ->SetSizeCoefficient(0.42f)
+                    ->SetSizeCoefficient(0.22f)
+                    ->AddTab(DebuggerTabId, ETabState::OpenedTab)
+                    ->SetHideTabWell(true)
+                )
+                ->Split
+                (
+                    FTabManager::NewStack()
+                    ->SetSizeCoefficient(0.20f)
                     ->AddTab(ValidationTabId, ETabState::OpenedTab)
                     ->SetHideTabWell(true)
                 )
@@ -165,6 +186,9 @@ void FDreamFlowEditorToolkit::RegisterTabSpawners(const TSharedRef<FTabManager>&
     InTabManager->RegisterTabSpawner(DetailsTabId, FOnSpawnTab::CreateSP(this, &FDreamFlowEditorToolkit::SpawnDetailsTab))
         .SetDisplayName(LOCTEXT("DetailsTabLabel", "Node Editor"));
 
+    InTabManager->RegisterTabSpawner(DebuggerTabId, FOnSpawnTab::CreateSP(this, &FDreamFlowEditorToolkit::SpawnDebuggerTab))
+        .SetDisplayName(LOCTEXT("DebuggerTabLabel", "Debugger"));
+
     InTabManager->RegisterTabSpawner(ValidationTabId, FOnSpawnTab::CreateSP(this, &FDreamFlowEditorToolkit::SpawnValidationTab))
         .SetDisplayName(LOCTEXT("ValidationTabLabel", "Validation"));
 }
@@ -175,6 +199,7 @@ void FDreamFlowEditorToolkit::UnregisterTabSpawners(const TSharedRef<FTabManager
     InTabManager->UnregisterTabSpawner(PaletteTabId);
     InTabManager->UnregisterTabSpawner(GraphTabId);
     InTabManager->UnregisterTabSpawner(DetailsTabId);
+    InTabManager->UnregisterTabSpawner(DebuggerTabId);
     InTabManager->UnregisterTabSpawner(ValidationTabId);
 }
 
@@ -225,6 +250,15 @@ TSharedRef<SDockTab> FDreamFlowEditorToolkit::SpawnValidationTab(const FSpawnTab
         ];
 }
 
+TSharedRef<SDockTab> FDreamFlowEditorToolkit::SpawnDebuggerTab(const FSpawnTabArgs& Args)
+{
+    (void)Args;
+    return SNew(SDockTab)
+        [
+            DebuggerWidget.ToSharedRef()
+        ];
+}
+
 void FDreamFlowEditorToolkit::CreateWidgets()
 {
     FPropertyEditorModule& PropertyEditorModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
@@ -235,7 +269,12 @@ void FDreamFlowEditorToolkit::CreateWidgets()
     DetailsView = PropertyEditorModule.CreateDetailView(DetailsArgs);
 
     PaletteWidget = SNew(SDreamFlowNodePalette)
+        .FlowAsset(FlowAsset)
         .OnNodeClassPicked(SDreamFlowNodePalette::FOnNodeClassPicked::CreateSP(this, &FDreamFlowEditorToolkit::CreateNodeFromPalette));
+
+    DebuggerWidget = SNew(SDreamFlowDebuggerView)
+        .FlowAsset(FlowAsset)
+        .OnNodeGuidActivated(SDreamFlowDebuggerView::FOnNodeGuidActivated::CreateSP(this, &FDreamFlowEditorToolkit::JumpToNodeGuid));
 
     ValidationWidget = SNew(SDreamFlowValidationView)
         .OnMessageActivated(SDreamFlowValidationView::FOnMessageActivated::CreateSP(this, &FDreamFlowEditorToolkit::JumpToNodeGuid));
@@ -286,6 +325,24 @@ void FDreamFlowEditorToolkit::HandleSelectedNodesChanged(const TSet<UObject*>& N
     }
 
     DetailsView->SetObject(FlowAsset);
+}
+
+void FDreamFlowEditorToolkit::HandleObjectPropertyChanged(UObject* ObjectBeingModified, FPropertyChangedEvent& PropertyChangedEvent)
+{
+    (void)PropertyChangedEvent;
+
+    if (FlowAsset == nullptr || EditingGraph == nullptr || ObjectBeingModified == nullptr)
+    {
+        return;
+    }
+
+    // Runtime nodes are instanced under the flow asset, so this catches both asset and node edits.
+    if (ObjectBeingModified != FlowAsset && !ObjectBeingModified->IsIn(FlowAsset))
+    {
+        return;
+    }
+
+    EditingGraph->NotifyGraphChanged();
 }
 
 void FDreamFlowEditorToolkit::HandleGraphChanged(const FEdGraphEditAction& Action)
