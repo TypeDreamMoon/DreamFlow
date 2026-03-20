@@ -1,0 +1,370 @@
+#include "DreamFlowEditorUtils.h"
+
+#include "DreamFlowAsset.h"
+#include "DreamFlowEdGraph.h"
+#include "DreamFlowEdGraphNode.h"
+#include "DreamFlowEdGraphSchema.h"
+#include "DreamFlowEntryNode.h"
+#include "DreamFlowNode.h"
+#include "Algo/Sort.h"
+#include "EdGraph/EdGraph.h"
+#include "EdGraph/EdGraphPin.h"
+#include "ScopedTransaction.h"
+
+#define LOCTEXT_NAMESPACE "DreamFlowEditorUtils"
+
+UDreamFlowEdGraph* FDreamFlowEditorUtils::GetOrCreateGraph(UDreamFlowAsset* FlowAsset)
+{
+    if (FlowAsset == nullptr)
+    {
+        return nullptr;
+    }
+
+    UDreamFlowEdGraph* Graph = Cast<UDreamFlowEdGraph>(FlowAsset->GetEditorGraph());
+
+    if (Graph == nullptr)
+    {
+        FlowAsset->Modify();
+        Graph = NewObject<UDreamFlowEdGraph>(FlowAsset, NAME_None, RF_Transactional);
+        Graph->Schema = UDreamFlowEdGraphSchema::StaticClass();
+        Graph->SetFlowAsset(FlowAsset);
+        FlowAsset->SetEditorGraph(Graph);
+        RebuildGraphFromAsset(FlowAsset, Graph);
+        return Graph;
+    }
+
+    Graph->SetFlowAsset(FlowAsset);
+
+    if (Graph->Schema == nullptr)
+    {
+        Graph->Schema = UDreamFlowEdGraphSchema::StaticClass();
+    }
+
+    if (Graph->Nodes.Num() == 0)
+    {
+        RebuildGraphFromAsset(FlowAsset, Graph);
+    }
+    else
+    {
+        SynchronizeAssetFromGraph(FlowAsset);
+    }
+
+    return Graph;
+}
+
+UDreamFlowAsset* FDreamFlowEditorUtils::GetFlowAssetFromGraph(const UEdGraph* Graph)
+{
+    if (const UDreamFlowEdGraph* FlowGraph = Cast<UDreamFlowEdGraph>(Graph))
+    {
+        return FlowGraph->GetFlowAsset();
+    }
+
+    return nullptr;
+}
+
+UDreamFlowEdGraphNode* FDreamFlowEditorUtils::CreateNodeInGraph(
+    UEdGraph* Graph,
+    TSubclassOf<UDreamFlowNode> NodeClass,
+    const FVector2f& Location,
+    UEdGraphPin* FromPin,
+    bool bSelectNewNode)
+{
+    UDreamFlowEdGraph* FlowGraph = Cast<UDreamFlowEdGraph>(Graph);
+    UDreamFlowAsset* FlowAsset = FlowGraph ? FlowGraph->GetFlowAsset() : nullptr;
+
+    if (FlowGraph == nullptr || FlowAsset == nullptr || !IsNodeClassCreatable(*NodeClass))
+    {
+        return nullptr;
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("CreateFlowNode", "Create Dream Flow Node"));
+
+    FlowAsset->Modify();
+    FlowGraph->Modify();
+
+    UDreamFlowNode* RuntimeNode = NewObject<UDreamFlowNode>(FlowAsset, NodeClass, NAME_None, RF_Transactional);
+    RuntimeNode->SetEditorPosition(FVector2D(Location.X, Location.Y));
+
+    FGraphNodeCreator<UDreamFlowEdGraphNode> NodeCreator(*FlowGraph);
+    UDreamFlowEdGraphNode* GraphNode = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+    GraphNode->SetRuntimeNode(RuntimeNode);
+    GraphNode->NodePosX = FMath::RoundToInt(Location.X);
+    GraphNode->NodePosY = FMath::RoundToInt(Location.Y);
+    NodeCreator.Finalize();
+    GraphNode->AutowireNewNode(FromPin);
+
+    SynchronizeAssetFromGraph(FlowAsset);
+    FlowGraph->NotifyGraphChanged();
+    return GraphNode;
+}
+
+void FDreamFlowEditorUtils::SynchronizeAssetFromGraph(UDreamFlowAsset* FlowAsset)
+{
+    UDreamFlowEdGraph* FlowGraph = FlowAsset ? Cast<UDreamFlowEdGraph>(FlowAsset->GetEditorGraph()) : nullptr;
+    if (FlowGraph == nullptr)
+    {
+        return;
+    }
+
+    FlowGraph->SetFlowAsset(FlowAsset);
+
+    TArray<UDreamFlowEdGraphNode*> GraphNodes;
+    FlowGraph->GetNodesOfClass(GraphNodes);
+
+    TArray<UDreamFlowNode*> RuntimeNodes;
+    TMap<UDreamFlowNode*, FVector2D> PositionsByNode;
+    TMap<UDreamFlowNode*, TArray<UDreamFlowNode*>> ChildrenByNode;
+    UDreamFlowNode* EntryNode = nullptr;
+
+    for (UDreamFlowEdGraphNode* GraphNode : GraphNodes)
+    {
+        if (GraphNode == nullptr)
+        {
+            continue;
+        }
+
+        UDreamFlowNode* RuntimeNode = GraphNode->GetRuntimeNode();
+        if (RuntimeNode == nullptr)
+        {
+            continue;
+        }
+
+        RuntimeNode->SetEditorPosition(FVector2D(GraphNode->NodePosX, GraphNode->NodePosY));
+        RuntimeNodes.AddUnique(RuntimeNode);
+        PositionsByNode.Add(RuntimeNode, FVector2D(GraphNode->NodePosX, GraphNode->NodePosY));
+
+        if (RuntimeNode->IsEntryNode() && EntryNode == nullptr)
+        {
+            EntryNode = RuntimeNode;
+        }
+    }
+
+    for (UDreamFlowEdGraphNode* GraphNode : GraphNodes)
+    {
+        if (GraphNode == nullptr)
+        {
+            continue;
+        }
+
+        UDreamFlowNode* SourceNode = GraphNode->GetRuntimeNode();
+        if (SourceNode == nullptr)
+        {
+            continue;
+        }
+
+        TArray<UDreamFlowNode*>& SourceChildren = ChildrenByNode.FindOrAdd(SourceNode);
+        UEdGraphPin* OutputPin = GraphNode->FindPin(UDreamFlowEdGraphNode::OutputPinName, EGPD_Output);
+
+        if (OutputPin == nullptr)
+        {
+            continue;
+        }
+
+        for (UEdGraphPin* LinkedPin : OutputPin->LinkedTo)
+        {
+            if (LinkedPin == nullptr)
+            {
+                continue;
+            }
+
+            UDreamFlowEdGraphNode* TargetGraphNode = Cast<UDreamFlowEdGraphNode>(LinkedPin->GetOwningNode());
+            UDreamFlowNode* TargetNode = TargetGraphNode ? TargetGraphNode->GetRuntimeNode() : nullptr;
+            if (TargetNode != nullptr && TargetNode != SourceNode)
+            {
+                SourceChildren.AddUnique(TargetNode);
+            }
+        }
+    }
+
+    Algo::Sort(RuntimeNodes, [&PositionsByNode](const UDreamFlowNode* A, const UDreamFlowNode* B)
+    {
+        if (A == nullptr || B == nullptr)
+        {
+            return A != nullptr;
+        }
+
+        const bool bAEntry = A->IsEntryNode();
+        const bool bBEntry = B->IsEntryNode();
+        if (bAEntry != bBEntry)
+        {
+            return bAEntry;
+        }
+
+        const FVector2D* PosA = PositionsByNode.Find(const_cast<UDreamFlowNode*>(A));
+        const FVector2D* PosB = PositionsByNode.Find(const_cast<UDreamFlowNode*>(B));
+        const FVector2D SafeA = PosA ? *PosA : FVector2D::ZeroVector;
+        const FVector2D SafeB = PosB ? *PosB : FVector2D::ZeroVector;
+        return SafeA.X == SafeB.X ? SafeA.Y < SafeB.Y : SafeA.X < SafeB.X;
+    });
+
+    FlowAsset->Modify();
+
+    for (UDreamFlowNode* RuntimeNode : RuntimeNodes)
+    {
+        RuntimeNode->SetChildren(ChildrenByNode.FindRef(RuntimeNode));
+    }
+
+    FlowAsset->ReplaceNodes(RuntimeNodes);
+    FlowAsset->SetEntryNodeInternal(EntryNode != nullptr ? EntryNode : (RuntimeNodes.Num() > 0 ? RuntimeNodes[0] : nullptr));
+}
+
+TArray<TSubclassOf<UDreamFlowNode>> FDreamFlowEditorUtils::GetLoadedCreatableNodeClasses()
+{
+    TArray<TSubclassOf<UDreamFlowNode>> Result;
+    TArray<UClass*> DerivedClasses;
+    GetDerivedClasses(UDreamFlowNode::StaticClass(), DerivedClasses, true);
+
+    for (UClass* DerivedClass : DerivedClasses)
+    {
+        if (IsNodeClassCreatable(DerivedClass))
+        {
+            Result.Add(DerivedClass);
+        }
+    }
+
+    Algo::Sort(Result, [](const TSubclassOf<UDreamFlowNode>& A, const TSubclassOf<UDreamFlowNode>& B)
+    {
+        const UClass* ClassA = *A;
+        const UClass* ClassB = *B;
+        const UDreamFlowNode* DefaultA = ClassA ? Cast<UDreamFlowNode>(ClassA->GetDefaultObject()) : nullptr;
+        const UDreamFlowNode* DefaultB = ClassB ? Cast<UDreamFlowNode>(ClassB->GetDefaultObject()) : nullptr;
+        const FString CategoryA = DefaultA ? DefaultA->GetNodeCategory().ToString() : FString();
+        const FString CategoryB = DefaultB ? DefaultB->GetNodeCategory().ToString() : FString();
+        const FString NameA = ClassA ? ClassA->GetDisplayNameText().ToString() : FString();
+        const FString NameB = ClassB ? ClassB->GetDisplayNameText().ToString() : FString();
+
+        if (CategoryA != CategoryB)
+        {
+            return CategoryA < CategoryB;
+        }
+
+        return NameA < NameB;
+    });
+
+    return Result;
+}
+
+bool FDreamFlowEditorUtils::IsNodeClassCreatable(const UClass* NodeClass)
+{
+    if (NodeClass == nullptr)
+    {
+        return false;
+    }
+
+    if (!NodeClass->IsChildOf(UDreamFlowNode::StaticClass()))
+    {
+        return false;
+    }
+
+    if (NodeClass->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists | CLASS_HideDropDown))
+    {
+        return false;
+    }
+
+    if (NodeClass->IsChildOf(UDreamFlowEntryNode::StaticClass()))
+    {
+        return false;
+    }
+
+    const UDreamFlowNode* DefaultNode = Cast<UDreamFlowNode>(NodeClass->GetDefaultObject());
+    return DefaultNode != nullptr && DefaultNode->IsUserCreatable();
+}
+
+void FDreamFlowEditorUtils::RebuildGraphFromAsset(UDreamFlowAsset* FlowAsset, UDreamFlowEdGraph* Graph)
+{
+    if (FlowAsset == nullptr || Graph == nullptr)
+    {
+        return;
+    }
+
+    Graph->Modify();
+    Graph->Schema = UDreamFlowEdGraphSchema::StaticClass();
+    Graph->SetFlowAsset(FlowAsset);
+
+    if (FlowAsset->GetNodes().Num() == 0)
+    {
+        CreateDefaultEntryNode(FlowAsset, Graph);
+        return;
+    }
+
+    Graph->Nodes.Reset();
+
+    TMap<UDreamFlowNode*, UDreamFlowEdGraphNode*> GraphNodeByRuntimeNode;
+
+    for (UDreamFlowNode* RuntimeNode : FlowAsset->GetNodes())
+    {
+        if (RuntimeNode == nullptr)
+        {
+            continue;
+        }
+
+        FGraphNodeCreator<UDreamFlowEdGraphNode> NodeCreator(*Graph);
+        UDreamFlowEdGraphNode* GraphNode = NodeCreator.CreateNode(false);
+        GraphNode->SetRuntimeNode(RuntimeNode);
+#if WITH_EDITORONLY_DATA
+        GraphNode->NodePosX = FMath::RoundToInt(RuntimeNode->EditorPosition.X);
+        GraphNode->NodePosY = FMath::RoundToInt(RuntimeNode->EditorPosition.Y);
+#else
+        GraphNode->NodePosX = 0;
+        GraphNode->NodePosY = 0;
+#endif
+        NodeCreator.Finalize();
+        GraphNodeByRuntimeNode.Add(RuntimeNode, GraphNode);
+    }
+
+    for (UDreamFlowNode* RuntimeNode : FlowAsset->GetNodes())
+    {
+        UDreamFlowEdGraphNode* SourceGraphNode = GraphNodeByRuntimeNode.FindRef(RuntimeNode);
+        if (SourceGraphNode == nullptr)
+        {
+            continue;
+        }
+
+        UEdGraphPin* OutputPin = SourceGraphNode->FindPin(UDreamFlowEdGraphNode::OutputPinName, EGPD_Output);
+        if (OutputPin == nullptr)
+        {
+            continue;
+        }
+
+        for (UDreamFlowNode* ChildNode : RuntimeNode->Children)
+        {
+            UDreamFlowEdGraphNode* TargetGraphNode = GraphNodeByRuntimeNode.FindRef(ChildNode);
+            UEdGraphPin* InputPin = TargetGraphNode ? TargetGraphNode->FindPin(UDreamFlowEdGraphNode::InputPinName, EGPD_Input) : nullptr;
+
+            if (InputPin != nullptr)
+            {
+                OutputPin->MakeLinkTo(InputPin);
+            }
+        }
+    }
+
+    Graph->NotifyGraphChanged();
+    SynchronizeAssetFromGraph(FlowAsset);
+}
+
+void FDreamFlowEditorUtils::CreateDefaultEntryNode(UDreamFlowAsset* FlowAsset, UDreamFlowEdGraph* Graph)
+{
+    if (FlowAsset == nullptr || Graph == nullptr)
+    {
+        return;
+    }
+
+    FlowAsset->Modify();
+    Graph->Modify();
+
+    UDreamFlowEntryNode* EntryNode = NewObject<UDreamFlowEntryNode>(FlowAsset, NAME_None, RF_Transactional);
+    EntryNode->SetEditorPosition(FVector2D(0.0f, 0.0f));
+
+    FGraphNodeCreator<UDreamFlowEdGraphNode> NodeCreator(*Graph);
+    UDreamFlowEdGraphNode* EntryGraphNode = NodeCreator.CreateNode(false);
+    EntryGraphNode->SetRuntimeNode(EntryNode);
+    EntryGraphNode->NodePosX = 0;
+    EntryGraphNode->NodePosY = 0;
+    NodeCreator.Finalize();
+
+    FlowAsset->ReplaceNodes({ EntryNode });
+    FlowAsset->SetEntryNodeInternal(EntryNode);
+    Graph->NotifyGraphChanged();
+}
+
+#undef LOCTEXT_NAMESPACE
