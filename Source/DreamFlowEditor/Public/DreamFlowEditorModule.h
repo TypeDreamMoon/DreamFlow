@@ -5,6 +5,7 @@
 #include "Modules/ModuleManager.h"
 
 class IAssetTypeActions;
+struct FToolMenuSection;
 struct FGraphPanelPinConnectionFactory;
 
 class DREAMFLOWEDITOR_API FDreamFlowEditorModule : public IModuleInterface
@@ -24,6 +25,8 @@ public:
 private:
     void RegisterAssetTools();
     void UnregisterAssetTools();
+    void RegisterMenus();
+    void AddDreamFlowAddNewMenu(FToolMenuSection& Section);
     void RegisterEditorCommands();
     void UnregisterEditorCommands();
     void RegisterConnectionFactory();

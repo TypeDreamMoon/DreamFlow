@@ -8,14 +8,56 @@
 #include "DreamFlowEntryNode.h"
 #include "DreamFlowNode.h"
 #include "Algo/Sort.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "AssetToolsModule.h"
+#include "ClassViewerFilter.h"
+#include "ClassViewerModule.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
+#include "Engine/Blueprint.h"
+#include "IContentBrowserSingleton.h"
+#include "Kismet2/KismetEditorUtilities.h"
+#include "Kismet2/SClassPickerDialog.h"
+#include "Misc/PackageName.h"
 #include "ScopedTransaction.h"
+#include "Subsystems/AssetEditorSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "DreamFlowEditorUtils"
 
 namespace DreamFlowEditorUtils
 {
+    class FDreamFlowClassFilter : public IClassViewerFilter
+    {
+    public:
+        explicit FDreamFlowClassFilter(UDreamFlowAsset* InFlowAsset)
+            : FlowAsset(InFlowAsset)
+        {
+        }
+
+        virtual bool IsClassAllowed(const FClassViewerInitializationOptions& InInitOptions, const UClass* InClass, TSharedRef<FClassViewerFilterFuncs> InFilterFuncs) override
+        {
+            (void)InInitOptions;
+            (void)InFilterFuncs;
+            return FDreamFlowEditorUtils::IsNodeClassCreatable(InClass, FlowAsset.Get());
+        }
+
+        virtual bool IsUnloadedClassAllowed(const FClassViewerInitializationOptions& InInitOptions, const TSharedRef<const IUnloadedBlueprintData> InUnloadedClassData, TSharedRef<FClassViewerFilterFuncs> InFilterFuncs) override
+        {
+            (void)InInitOptions;
+            (void)InFilterFuncs;
+
+            if (InUnloadedClassData->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists | CLASS_HideDropDown))
+            {
+                return false;
+            }
+
+            return InUnloadedClassData->IsChildOf(UDreamFlowNode::StaticClass()) && !InUnloadedClassData->IsChildOf(UDreamFlowEntryNode::StaticClass());
+        }
+
+    private:
+        TWeakObjectPtr<UDreamFlowAsset> FlowAsset;
+    };
+
     static void CollectRuntimeTargetsFromLinkedPin(
         const UEdGraphPin* LinkedPin,
         UDreamFlowNode* SourceNode,
@@ -53,6 +95,132 @@ namespace DreamFlowEditorUtils
             }
         }
     }
+}
+
+TSubclassOf<UDreamFlowNode> FDreamFlowEditorUtils::PickNodeClass(UDreamFlowAsset* FlowAsset)
+{
+    FClassViewerInitializationOptions PickerOptions;
+    PickerOptions.Mode = EClassViewerMode::ClassPicker;
+    PickerOptions.DisplayMode = EClassViewerDisplayMode::TreeView;
+    PickerOptions.bShowUnloadedBlueprints = true;
+    PickerOptions.bShowObjectRootClass = false;
+    PickerOptions.NameTypeToDisplay = EClassViewerNameTypeToDisplay::Dynamic;
+    PickerOptions.ClassFilters.Add(MakeShared<DreamFlowEditorUtils::FDreamFlowClassFilter>(FlowAsset));
+
+    UClass* ChosenClass = nullptr;
+    const bool bPickedClass = SClassPickerDialog::PickClass(
+        LOCTEXT("PickNodeClassDialog", "Select DreamFlow Node Class"),
+        PickerOptions,
+        ChosenClass,
+        UDreamFlowNode::StaticClass());
+
+    return bPickedClass ? TSubclassOf<UDreamFlowNode>(ChosenClass) : nullptr;
+}
+
+FString FDreamFlowEditorUtils::GetCurrentContentBrowserPath()
+{
+    const FString InternalPath = IContentBrowserSingleton::Get().GetCurrentPath().GetInternalPathString();
+    return InternalPath.IsEmpty() ? TEXT("/Game") : InternalPath;
+}
+
+UBlueprint* FDreamFlowEditorUtils::CreateNodeBlueprintAsset(
+    TSubclassOf<UDreamFlowNode> NodeClass,
+    const FString& TargetPath,
+    bool bOpenInEditor)
+{
+    UClass* NodeParentClass = NodeClass.Get();
+    if (NodeParentClass == nullptr || !FKismetEditorUtilities::CanCreateBlueprintOfClass(NodeParentClass))
+    {
+        return nullptr;
+    }
+
+    FString PackagePath = TargetPath.IsEmpty() ? GetCurrentContentBrowserPath() : TargetPath;
+    FText ValidationError;
+    if (!FPackageName::IsValidLongPackageName(PackagePath, false, &ValidationError))
+    {
+        PackagePath = TEXT("/Game");
+    }
+
+    const FString BaseAssetName = GetNodeBlueprintBaseName(NodeParentClass);
+    FString UniquePackageName;
+    FString UniqueAssetName;
+    FAssetToolsModule::GetModule().Get().CreateUniqueAssetName(PackagePath / BaseAssetName, TEXT(""), UniquePackageName, UniqueAssetName);
+
+    UPackage* Package = CreatePackage(*UniquePackageName);
+    if (Package == nullptr)
+    {
+        return nullptr;
+    }
+
+    UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
+        NodeParentClass,
+        Package,
+        *UniqueAssetName,
+        BPTYPE_Normal,
+        FName(TEXT("DreamFlowEditor")));
+
+    if (Blueprint == nullptr)
+    {
+        return nullptr;
+    }
+
+    FAssetRegistryModule::AssetCreated(Blueprint);
+    Package->MarkPackageDirty();
+
+    TArray<UObject*> AssetsToSync;
+    AssetsToSync.Add(Blueprint);
+    IContentBrowserSingleton::Get().SyncBrowserToAssets(AssetsToSync, false, true);
+
+    if (bOpenInEditor && GEditor != nullptr)
+    {
+        if (UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
+        {
+            AssetEditorSubsystem->OpenEditorForAsset(Blueprint);
+        }
+    }
+
+    return Blueprint;
+}
+
+FVector2f FDreamFlowEditorUtils::GetSuggestedNodeLocation(const UEdGraph* Graph)
+{
+    constexpr float NodeSpacingX = 420.0f;
+    constexpr float DefaultY = 0.0f;
+
+    const UDreamFlowEdGraph* FlowGraph = Cast<UDreamFlowEdGraph>(Graph);
+    if (FlowGraph == nullptr)
+    {
+        return FVector2f(NodeSpacingX, DefaultY);
+    }
+
+    TArray<UDreamFlowEdGraphNode*> GraphNodes;
+    FlowGraph->GetNodesOfClass(GraphNodes);
+
+    bool bFoundNode = false;
+    float RightmostX = 0.0f;
+    float RightmostY = DefaultY;
+
+    for (const UDreamFlowEdGraphNode* GraphNode : GraphNodes)
+    {
+        if (GraphNode == nullptr)
+        {
+            continue;
+        }
+
+        const float NodeX = static_cast<float>(GraphNode->NodePosX);
+        const float NodeY = static_cast<float>(GraphNode->NodePosY);
+
+        if (!bFoundNode || NodeX > RightmostX || (FMath::IsNearlyEqual(NodeX, RightmostX) && NodeY > RightmostY))
+        {
+            bFoundNode = true;
+            RightmostX = NodeX;
+            RightmostY = NodeY;
+        }
+    }
+
+    return bFoundNode
+        ? FVector2f(RightmostX + NodeSpacingX, RightmostY)
+        : FVector2f(NodeSpacingX, DefaultY);
 }
 
 UDreamFlowEdGraph* FDreamFlowEditorUtils::GetOrCreateGraph(UDreamFlowAsset* FlowAsset)
@@ -102,6 +270,30 @@ UDreamFlowAsset* FDreamFlowEditorUtils::GetFlowAssetFromGraph(const UEdGraph* Gr
     }
 
     return nullptr;
+}
+
+UDreamFlowEdGraphNode* FDreamFlowEditorUtils::QuickCreateNode(
+    UDreamFlowAsset* FlowAsset,
+    TSubclassOf<UDreamFlowNode> NodeClass,
+    bool bSelectNewNode)
+{
+    if (FlowAsset == nullptr || NodeClass == nullptr)
+    {
+        return nullptr;
+    }
+
+    UDreamFlowEdGraph* FlowGraph = GetOrCreateGraph(FlowAsset);
+    if (FlowGraph == nullptr)
+    {
+        return nullptr;
+    }
+
+    return CreateNodeInGraph(
+        FlowGraph,
+        NodeClass,
+        GetSuggestedNodeLocation(FlowGraph),
+        nullptr,
+        bSelectNewNode);
 }
 
 UDreamFlowEdGraphNode* FDreamFlowEditorUtils::CreateNodeInGraph(
@@ -169,6 +361,27 @@ UDreamFlowEdGraphRerouteNode* FDreamFlowEditorUtils::CreateRerouteNodeInGraph(
     SynchronizeAssetFromGraph(FlowAsset);
     FlowGraph->NotifyGraphChanged();
     return GraphNode;
+}
+
+FString FDreamFlowEditorUtils::GetNodeBlueprintBaseName(const UClass* NodeClass)
+{
+    FString ParentName = TEXT("DreamFlowNode");
+    if (NodeClass != nullptr)
+    {
+        if (const UBlueprint* ParentBlueprint = Cast<UBlueprint>(NodeClass->ClassGeneratedBy))
+        {
+            ParentName = ParentBlueprint->GetName();
+        }
+        else
+        {
+            ParentName = NodeClass->GetName();
+            ParentName.RemoveFromEnd(TEXT("_C"));
+        }
+    }
+
+    return FString::Printf(
+        TEXT("%s_Child"),
+        ParentName.StartsWith(TEXT("BP_")) ? *ParentName : *FString::Printf(TEXT("BP_%s"), *ParentName));
 }
 
 void FDreamFlowEditorUtils::SynchronizeAssetFromGraph(UDreamFlowAsset* FlowAsset)

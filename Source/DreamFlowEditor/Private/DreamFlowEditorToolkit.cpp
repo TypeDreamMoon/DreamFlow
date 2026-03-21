@@ -536,6 +536,11 @@ void FDreamFlowEditorToolkit::BindCommands()
     GraphEditorCommands = MakeShared<FUICommandList>();
 
     GraphEditorCommands->MapAction(
+        FDreamFlowEditorCommands::Get().QuickCreateNode,
+        FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::QuickCreateNode),
+        FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanQuickCreateNode));
+
+    GraphEditorCommands->MapAction(
         FDreamFlowEditorCommands::Get().ValidateFlow,
         FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::RunValidation),
         FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanRunValidation));
@@ -611,6 +616,13 @@ void FDreamFlowEditorToolkit::FillToolbar(FToolBarBuilder& ToolbarBuilder)
             LOCTEXT("ValidateToolbarLabel", "Validate"),
             LOCTEXT("ValidateToolbarTooltip", "Run DreamFlow validation for the current asset."),
             FSlateIcon(FAppStyle::GetAppStyleSetName(), "Kismet.Tabs.CompilerResults"));
+
+        ToolbarBuilder.AddToolBarButton(
+            FDreamFlowEditorCommands::Get().QuickCreateNode,
+            NAME_None,
+            LOCTEXT("QuickCreateNodeToolbarLabel", "Create Node Class"),
+            LOCTEXT("QuickCreateNodeToolbarTooltip", "Pick a DreamFlow node parent class and create a Blueprint implementation asset in the current content browser path."),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Plus"));
     }
     ToolbarBuilder.EndSection();
 }
@@ -1148,6 +1160,23 @@ FReply FDreamFlowEditorToolkit::HandleSpawnNodeByShortcutAtLocation(FInputChord 
     }
 
     return FReply::Unhandled();
+}
+
+void FDreamFlowEditorToolkit::QuickCreateNode()
+{
+    const TSubclassOf<UDreamFlowNode> NodeClass = FDreamFlowEditorUtils::PickNodeClass();
+    if (NodeClass != nullptr)
+    {
+        FDreamFlowEditorUtils::CreateNodeBlueprintAsset(
+            NodeClass,
+            FDreamFlowEditorUtils::GetCurrentContentBrowserPath(),
+            true);
+    }
+}
+
+bool FDreamFlowEditorToolkit::CanQuickCreateNode() const
+{
+    return true;
 }
 
 void FDreamFlowEditorToolkit::CreateNodeFromPalette(TSubclassOf<UDreamFlowNode> NodeClass)

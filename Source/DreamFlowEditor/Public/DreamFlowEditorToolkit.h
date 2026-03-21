@@ -88,6 +88,8 @@ private:
     void CreateCommentNode();
     bool CanCreateComment() const;
     FReply HandleSpawnNodeByShortcutAtLocation(FInputChord InChord, const FVector2f& GraphPosition);
+    void QuickCreateNode();
+    bool CanQuickCreateNode() const;
     void CreateNodeFromPalette(TSubclassOf<UDreamFlowNode> NodeClass);
     void CreateNodeFromPaletteAtPosition(TSubclassOf<UDreamFlowNode> NodeClass, const FVector2f& GraphPosition);
     void HandleNodeGuidActivated(const FGuid& NodeGuid);

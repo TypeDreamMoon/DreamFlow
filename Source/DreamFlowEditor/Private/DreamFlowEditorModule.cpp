@@ -6,21 +6,27 @@
 #include "Customizations/DreamFlowValueCustomization.h"
 #include "Customizations/DreamFlowVariableDefinitionCustomization.h"
 #include "Customizations/DreamFlowVariablesEditorDataDetails.h"
-#include "DreamDialogueFlowAsset.h"
 #include "DreamFlowAsset.h"
 #include "DreamFlowAssetTypeActions.h"
 #include "DreamFlowEditorCommands.h"
 #include "DreamFlowEditorToolkit.h"
+#include "DreamFlowEditorUtils.h"
 #include "DreamFlowNode.h"
 #include "DreamFlowVariablesEditorData.h"
-#include "DreamQuestFlowAsset.h"
 #include "AssetToolsModule.h"
+#include "ContentBrowserDataMenuContexts.h"
+#include "ContentBrowserDataSubsystem.h"
 #include "EdGraphUtilities.h"
 #include "Editor.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Framework/Commands/UIAction.h"
+#include "IContentBrowserDataModule.h"
 #include "IAssetTools.h"
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
+#include "ToolMenu.h"
+#include "ToolMenuSection.h"
+#include "ToolMenus.h"
 #include "UObject/UObjectGlobals.h"
 #include "Engine/World.h"
 
@@ -28,6 +34,34 @@
 
 namespace DreamFlowEditorModule
 {
+    static FString ResolveTargetPath(const UContentBrowserDataMenuContext_AddNewMenu* Context)
+    {
+        if (Context != nullptr)
+        {
+            UContentBrowserDataSubsystem* ContentBrowserData = IContentBrowserDataModule::Get().GetSubsystem();
+            if (ContentBrowserData != nullptr)
+            {
+                for (const FName SelectedPath : Context->SelectedPaths)
+                {
+                    FName InternalPath;
+                    if (ContentBrowserData->TryConvertVirtualPath(SelectedPath, InternalPath) == EContentBrowserPathType::Internal)
+                    {
+                        return InternalPath.ToString();
+                    }
+                }
+            }
+        }
+
+        return FDreamFlowEditorUtils::GetCurrentContentBrowserPath();
+    }
+
+    static bool ExecuteQuickCreateNode(const FString& TargetPath)
+    {
+        const TSubclassOf<UDreamFlowNode> NodeClass = FDreamFlowEditorUtils::PickNodeClass();
+        return NodeClass != nullptr
+            && FDreamFlowEditorUtils::CreateNodeBlueprintAsset(NodeClass, TargetPath, true) != nullptr;
+    }
+
     static UDreamFlowAsset* ResolveEditorFlowAsset(UDreamFlowAsset* FlowAsset)
     {
         if (FlowAsset == nullptr)
@@ -68,6 +102,7 @@ bool FDreamFlowEditorModule::IsAvailable()
 void FDreamFlowEditorModule::StartupModule()
 {
     RegisterAssetTools();
+    UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FDreamFlowEditorModule::RegisterMenus));
     RegisterEditorCommands();
     RegisterConnectionFactory();
     RegisterPropertyCustomizations();
@@ -87,6 +122,8 @@ void FDreamFlowEditorModule::ShutdownModule()
         DebuggerTickerHandle.Reset();
     }
 
+    UToolMenus::UnRegisterStartupCallback(this);
+    UToolMenus::UnregisterOwner(this);
     UnregisterPropertyCustomizations();
     UnregisterConnectionFactory();
     UnregisterEditorCommands();
@@ -152,7 +189,7 @@ bool FDreamFlowEditorModule::IsPlaySessionPaused() const
 void FDreamFlowEditorModule::RegisterAssetTools()
 {
     IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
-    AssetCategory = AssetTools.RegisterAdvancedAssetCategory(FName(TEXT("Dream")), LOCTEXT("DreamAssetCategory", "Dream"));
+    AssetCategory = AssetTools.RegisterAdvancedAssetCategory(FName(TEXT("DreamFlow")), LOCTEXT("DreamFlowAssetCategory", "DreamFlow"));
 
     const auto RegisterTypeAction = [this, &AssetTools](UClass* SupportedClass, const FText& DisplayName, const FColor& TypeColor)
     {
@@ -166,8 +203,6 @@ void FDreamFlowEditorModule::RegisterAssetTools()
     };
 
     RegisterTypeAction(UDreamFlowAsset::StaticClass(), LOCTEXT("DreamFlowAssetName", "Dream Flow"), FColor(222, 126, 40));
-    RegisterTypeAction(UDreamQuestFlowAsset::StaticClass(), LOCTEXT("DreamQuestFlowAssetName", "Dream Quest Flow"), FColor(61, 158, 111));
-    RegisterTypeAction(UDreamDialogueFlowAsset::StaticClass(), LOCTEXT("DreamDialogueFlowAssetName", "Dream Dialogue Flow"), FColor(67, 113, 217));
 }
 
 void FDreamFlowEditorModule::UnregisterAssetTools()
@@ -189,6 +224,53 @@ void FDreamFlowEditorModule::UnregisterAssetTools()
     }
 
     RegisteredAssetTypeActions.Reset();
+}
+
+void FDreamFlowEditorModule::RegisterMenus()
+{
+    FToolMenuOwnerScoped OwnerScoped(this);
+
+    if (UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("ContentBrowser.AddNewContextMenu"))
+    {
+        FToolMenuSection& Section = Menu->FindOrAddSection("ContentBrowserNewAsset");
+        Section.AddDynamicEntry(
+            "DreamFlowAddNewNodeClass",
+            FNewToolMenuSectionDelegate::CreateRaw(this, &FDreamFlowEditorModule::AddDreamFlowAddNewMenu));
+    }
+}
+
+void FDreamFlowEditorModule::AddDreamFlowAddNewMenu(FToolMenuSection& Section)
+{
+    const UContentBrowserDataMenuContext_AddNewMenu* Context = Section.FindContext<UContentBrowserDataMenuContext_AddNewMenu>();
+    if (Context == nullptr || !Context->bCanBeModified || !Context->bContainsValidPackagePath)
+    {
+        return;
+    }
+
+    const FString TargetPath = DreamFlowEditorModule::ResolveTargetPath(Context);
+
+    Section.AddSubMenu(
+        "DreamFlowAddNewActions",
+        LOCTEXT("DreamFlowAddNewMenu", "DreamFlow"),
+        LOCTEXT("DreamFlowAddNewMenuTooltip", "Create DreamFlow assets in the current content path."),
+        FNewToolMenuDelegate::CreateLambda([TargetPath](UToolMenu* Menu)
+        {
+            FToolMenuSection& DreamFlowSection = Menu->AddSection("DreamFlowAddNewSection", LOCTEXT("DreamFlowAddNewSection", "DreamFlow"));
+            DreamFlowSection.AddMenuEntry(
+                "DreamFlow_CreateNodeClass",
+                LOCTEXT("DreamFlowCreateNodeClass", "Create Node Class..."),
+                LOCTEXT("DreamFlowCreateNodeClassTooltip", "Pick a DreamFlow node parent class and create a Blueprint implementation in the current content browser path."),
+                FSlateIcon(),
+                FUIAction(
+                    FExecuteAction::CreateLambda([TargetPath]()
+                    {
+                        DreamFlowEditorModule::ExecuteQuickCreateNode(TargetPath);
+                    }),
+                    FCanExecuteAction::CreateLambda([TargetPath]()
+                    {
+                        return !TargetPath.IsEmpty();
+                    })));
+        }));
 }
 
 void FDreamFlowEditorModule::RegisterEditorCommands()

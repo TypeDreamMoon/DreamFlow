@@ -1,9 +1,7 @@
 #include "DreamFlowAssetFactory.h"
 
-#include "DreamDialogueFlowAsset.h"
 #include "DreamFlowAsset.h"
 #include "DreamFlowEditorUtils.h"
-#include "DreamQuestFlowAsset.h"
 #include "IAssetTools.h"
 
 #define LOCTEXT_NAMESPACE "DreamFlowAssetFactory"
@@ -45,32 +43,12 @@ bool UDreamFlowAssetFactory::ShouldShowInNewMenu() const
 
 uint32 UDreamFlowAssetFactory::GetMenuCategories() const
 {
-    return EAssetTypeCategories::Misc;
+    return Super::GetMenuCategories();
 }
 
 FText UDreamFlowAssetFactory::GetDisplayName() const
 {
     return LOCTEXT("DreamFlowAssetDisplayName", "Dream Flow");
-}
-
-UDreamQuestFlowAssetFactory::UDreamQuestFlowAssetFactory()
-{
-    SupportedClass = UDreamQuestFlowAsset::StaticClass();
-}
-
-FText UDreamQuestFlowAssetFactory::GetDisplayName() const
-{
-    return LOCTEXT("DreamQuestFlowAssetDisplayName", "Dream Quest Flow");
-}
-
-UDreamDialogueFlowAssetFactory::UDreamDialogueFlowAssetFactory()
-{
-    SupportedClass = UDreamDialogueFlowAsset::StaticClass();
-}
-
-FText UDreamDialogueFlowAssetFactory::GetDisplayName() const
-{
-    return LOCTEXT("DreamDialogueFlowAssetDisplayName", "Dream Dialogue Flow");
 }
 
 #undef LOCTEXT_NAMESPACE

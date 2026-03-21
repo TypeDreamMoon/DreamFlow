@@ -11,16 +11,17 @@ public class DreamFlowEditor : ModuleRules
             {
                 "Core",
                 "DreamFlow",
-                "DreamFlowDialogue",
-                "DreamFlowQuest",
             });
 
         PrivateDependencyModuleNames.AddRange(
             new[]
             {
                 "ApplicationCore",
+                "AssetRegistry",
                 "AssetTools",
                 "ClassViewer",
+                "ContentBrowser",
+                "ContentBrowserData",
                 "CoreUObject",
                 "EditorFramework",
                 "Engine",

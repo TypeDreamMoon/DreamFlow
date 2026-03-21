@@ -17,6 +17,13 @@ FDreamFlowEditorCommands::FDreamFlowEditorCommands()
 void FDreamFlowEditorCommands::RegisterCommands()
 {
     UI_COMMAND(
+        QuickCreateNode,
+        "Create Node Class",
+        "Pick a DreamFlow node parent class and create a Blueprint implementation asset in the current content browser path.",
+        EUserInterfaceActionType::Button,
+        FInputChord());
+
+    UI_COMMAND(
         ValidateFlow,
         "Validate",
         "Run DreamFlow validation for the current asset.",

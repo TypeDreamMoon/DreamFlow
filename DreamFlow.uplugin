@@ -20,16 +20,6 @@
 			"LoadingPhase": "Default"
 		},
 		{
-			"Name": "DreamFlowQuest",
-			"Type": "Runtime",
-			"LoadingPhase": "Default"
-		},
-		{
-			"Name": "DreamFlowDialogue",
-			"Type": "Runtime",
-			"LoadingPhase": "Default"
-		},
-		{
 			"Name": "DreamFlowEditor",
 			"Type": "Editor",
 			"LoadingPhase": "Default"

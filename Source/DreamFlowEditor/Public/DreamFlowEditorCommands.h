@@ -11,6 +11,7 @@ public:
     virtual void RegisterCommands() override;
 
 public:
+    TSharedPtr<FUICommandInfo> QuickCreateNode;
     TSharedPtr<FUICommandInfo> ToggleBreakpoint;
     TSharedPtr<FUICommandInfo> ValidateFlow;
 };
