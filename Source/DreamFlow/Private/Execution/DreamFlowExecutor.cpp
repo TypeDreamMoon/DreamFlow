@@ -1,6 +1,7 @@
 #include "Execution/DreamFlowExecutor.h"
 
 #include "DreamFlowAsset.h"
+#include "DreamFlowLog.h"
 #include "DreamFlowNode.h"
 #include "Engine/Engine.h"
 #include "Execution/DreamFlowDebuggerSubsystem.h"
@@ -48,12 +49,15 @@ void UDreamFlowExecutor::ResetVariablesToDefaults()
             }
         }
     }
+
+    DREAMFLOW_LOG(Variables, Verbose, "Reset %d runtime variables to flow defaults for asset '%s'.", RuntimeVariables.Num(), *GetNameSafe(FlowAsset));
 }
 
 bool UDreamFlowExecutor::StartFlow()
 {
     if (FlowAsset == nullptr || FlowAsset->GetEntryNode() == nullptr)
     {
+        DREAMFLOW_LOG(Execution, Warning, "StartFlow failed because asset '%s' is missing a valid entry node.", *GetNameSafe(FlowAsset));
         return false;
     }
 
@@ -67,8 +71,11 @@ bool UDreamFlowExecutor::StartFlow()
     OnFlowStarted.Broadcast();
     BroadcastDebugStateChanged();
 
+    DREAMFLOW_LOG(Execution, Log, "Started flow '%s'.", *GetNameSafe(FlowAsset));
+
     if (!EnterNode(FlowAsset->GetEntryNode()))
     {
+        DREAMFLOW_LOG(Execution, Warning, "StartFlow failed while entering the entry node for asset '%s'.", *GetNameSafe(FlowAsset));
         FinishFlow();
         return false;
     }
@@ -106,6 +113,8 @@ void UDreamFlowExecutor::FinishFlow()
     BroadcastDebugStateChanged();
     OnFlowFinished.Broadcast();
     UnregisterFromDebugger();
+
+    DREAMFLOW_LOG(Execution, Log, "Finished flow '%s'.", *GetNameSafe(FlowAsset));
 }
 
 bool UDreamFlowExecutor::Advance()
@@ -166,11 +175,13 @@ bool UDreamFlowExecutor::EnterNode(UDreamFlowNode* Node)
 {
     if (!bIsRunning || bIsPaused || FlowAsset == nullptr || Node == nullptr)
     {
+        DREAMFLOW_LOG(Execution, Warning, "EnterNode rejected for asset '%s'. Running=%d Paused=%d Node=%s", *GetNameSafe(FlowAsset), bIsRunning, bIsPaused, *GetNameSafe(Node));
         return false;
     }
 
     if (!FlowAsset->GetNodes().Contains(Node) || !Node->CanEnterNode(ExecutionContext))
     {
+        DREAMFLOW_LOG(Execution, Warning, "EnterNode rejected node '%s' because it is not owned by flow '%s' or CanEnterNode returned false.", *GetNameSafe(Node), *GetNameSafe(FlowAsset));
         return false;
     }
 
@@ -182,6 +193,7 @@ bool UDreamFlowExecutor::EnterNode(UDreamFlowNode* Node)
     CurrentNode = Node;
     VisitedNodes.AddUnique(Node);
     OnNodeEntered.Broadcast(Node);
+    DREAMFLOW_LOG(Execution, Log, "Entered node '%s' (%s).", *Node->GetNodeDisplayName().ToString(), *Node->NodeGuid.ToString(EGuidFormats::Short));
     bool bHitBreakpoint = false;
     if (ShouldPauseAtNode(Node, bHitBreakpoint))
     {
@@ -195,6 +207,7 @@ bool UDreamFlowExecutor::EnterNode(UDreamFlowNode* Node)
         }
         BroadcastDebugStateChanged();
         OnExecutionPaused.Broadcast(Node);
+        DREAMFLOW_LOG(Execution, Display, "Paused flow '%s' at node '%s'%s.", *GetNameSafe(FlowAsset), *Node->GetNodeDisplayName().ToString(), bHitBreakpoint ? TEXT(" because of a breakpoint") : TEXT(""));
         return true;
     }
 
@@ -223,6 +236,7 @@ bool UDreamFlowExecutor::PauseExecution()
     }
     BroadcastDebugStateChanged();
     OnExecutionPaused.Broadcast(CurrentNode);
+    DREAMFLOW_LOG(Execution, Display, "Paused execution manually at node '%s'.", CurrentNode != nullptr ? *CurrentNode->GetNodeDisplayName().ToString() : TEXT("<none>"));
     return true;
 }
 
@@ -236,6 +250,7 @@ bool UDreamFlowExecutor::ContinueExecution()
     bIsPaused = false;
     BroadcastDebugStateChanged();
     OnExecutionResumed.Broadcast(CurrentNode);
+    DREAMFLOW_LOG(Execution, Display, "Continuing execution at node '%s'.", CurrentNode != nullptr ? *CurrentNode->GetNodeDisplayName().ToString() : TEXT("<none>"));
     return ExecuteCurrentNode();
 }
 
@@ -247,6 +262,7 @@ bool UDreamFlowExecutor::StepExecution()
     }
 
     bBreakOnNextNode = true;
+    DREAMFLOW_LOG(Execution, Verbose, "Queued single-step execution for flow '%s'.", *GetNameSafe(FlowAsset));
     return bIsPaused ? ContinueExecution() : true;
 }
 
@@ -254,6 +270,7 @@ void UDreamFlowExecutor::SetPauseOnBreakpoints(bool bEnabled)
 {
     bPauseOnBreakpoints = bEnabled;
     BroadcastDebugStateChanged();
+    DREAMFLOW_LOG(Execution, Verbose, "Pause on breakpoints %s for flow '%s'.", bEnabled ? TEXT("enabled") : TEXT("disabled"), *GetNameSafe(FlowAsset));
 }
 
 UObject* UDreamFlowExecutor::GetExecutionContext() const
@@ -347,6 +364,8 @@ void UDreamFlowExecutor::BuildReplicatedState(FDreamFlowReplicatedExecutionState
             ReplicatedVariable.Value = *Value;
         }
     }
+
+    DREAMFLOW_LOG(Replication, Verbose, "Built replicated execution state for flow '%s' with %d visited nodes and %d variables.", *GetNameSafe(FlowAsset), OutState.VisitedNodeGuids.Num(), OutState.Variables.Num());
 }
 
 void UDreamFlowExecutor::ApplyReplicatedState(const FDreamFlowReplicatedExecutionState& InState)
@@ -380,6 +399,8 @@ void UDreamFlowExecutor::ApplyReplicatedState(const FDreamFlowReplicatedExecutio
             RuntimeVariables.FindOrAdd(ReplicatedVariable.Name) = ReplicatedVariable.Value;
         }
     }
+
+    DREAMFLOW_LOG(Replication, Verbose, "Applied replicated execution state for flow '%s'. Current node='%s', variables=%d.", *GetNameSafe(FlowAsset), CurrentNode != nullptr ? *CurrentNode->GetNodeDisplayName().ToString() : TEXT("<none>"), RuntimeVariables.Num());
 }
 
 FDreamFlowExecutorRuntimeStateChangedNativeSignature& UDreamFlowExecutor::OnRuntimeStateChangedNative()
@@ -574,10 +595,13 @@ bool UDreamFlowExecutor::SetVariableValue(FName VariableName, const FDreamFlowVa
     FDreamFlowValue ConvertedValue;
     if (!DreamFlowVariable::TryConvertValue(InValue, VariableDefinition->DefaultValue.Type, ConvertedValue))
     {
+        DREAMFLOW_LOG(Variables, Warning, "Failed to convert value for variable '%s' on flow '%s'.", *VariableName.ToString(), *GetNameSafe(FlowAsset));
         return false;
     }
 
+    const FString PreviousValue = RuntimeVariables.Contains(VariableName) ? RuntimeVariables.FindChecked(VariableName).Describe() : TEXT("<unset>");
     RuntimeVariables.FindOrAdd(VariableName) = ConvertedValue;
+    DREAMFLOW_LOG(Variables, Log, "Variable '%s' changed from '%s' to '%s' on flow '%s'.", *VariableName.ToString(), *PreviousValue, *ConvertedValue.Describe(), *GetNameSafe(FlowAsset));
     NotifyDebuggerStateChanged();
     return true;
 }

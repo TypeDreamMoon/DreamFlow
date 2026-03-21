@@ -11,6 +11,7 @@ public class DreamFlow : ModuleRules
             {
                 "Core",
                 "CoreUObject",
+                "DeveloperSettings",
                 "Engine",
                 "GameplayTags",
             });

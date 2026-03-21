@@ -26,6 +26,9 @@ DreamFlow is a lightweight Unreal flow graph framework designed as a reusable ba
 - `DreamFlowDialogue`: dialogue focused node module
 - `DreamFlowEditor`: asset factory, asset editor toolkit, graph schema, and custom node Slate UI
 - Blueprint helpers in `UDreamFlowBlueprintLibrary`
+- `UDreamFlowSettings`: Developer Settings entry for logging and diagnostics
+- `LogDreamFlow`: settings-driven runtime log category
+- Automation tests for execution, validation, replication snapshot, and log filtering
 
 ## How to use
 
@@ -227,6 +230,17 @@ It also exposes Blueprint delegates for:
 - `OnExecutionResumed`
 - `OnDebugStateChanged`
 
+## Logging and diagnostics
+
+DreamFlow now includes a built-in log category and a `Developer Settings` page.
+
+- Open `Project Settings -> DreamPlugin -> Dream Flow`
+- Use `Logging` to enable or disable DreamFlow logs globally
+- Use `Log Verbosity` to clamp output from `Error` up through `VeryVerbose`
+- Use channel toggles to control `General`, `Execution`, `Variables`, `Replication`, `Validation`, and `Automation Tests` logging independently
+
+Runtime logs are emitted through `LogDreamFlow`, so they can also be filtered through normal Unreal log tooling.
+
 ## Networking
 
 `UDreamFlowExecutorComponent` now supports a server-authoritative replication flow.
@@ -242,6 +256,21 @@ Notes:
 - The owning Actor still needs normal Unreal replication enabled.
 - This first pass syncs execution state and variables, but it does not replay arbitrary node-side gameplay effects on clients; those should still be driven by your own replicated gameplay systems.
 - `Object` variables are only safe to use over the network when they point to references Unreal can already replicate or resolve on remote machines.
+
+## Automation tests
+
+DreamFlow now ships with automation coverage for core runtime behavior.
+
+- `DreamFlow.Core.Execution.AutomaticBranching`
+- `DreamFlow.Core.Validation.MissingVariable`
+- `DreamFlow.Core.Network.ReplicatedStateMirror`
+- `DreamFlow.Core.Logging.SettingsFiltering`
+
+You can run them from the Automation window or from command line with:
+
+```powershell
+UnrealEditor-Cmd.exe PluginsDevelop.uproject -ExecCmds="Automation RunTests DreamFlow.Core; Quit" -TestExit="Automation Test Queue Empty" -unattended -NullRHI
+```
 
 ## Debugger
 

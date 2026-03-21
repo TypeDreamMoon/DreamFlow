@@ -1,6 +1,7 @@
 #include "Execution/DreamFlowExecutorComponent.h"
 
 #include "DreamFlowAsset.h"
+#include "DreamFlowLog.h"
 #include "DreamFlowNode.h"
 #include "Net/UnrealNetwork.h"
 
@@ -69,6 +70,7 @@ void UDreamFlowExecutorComponent::BeginPlay()
 
     if (bAutoStart && IsServerAuthority())
     {
+        DREAMFLOW_LOG(Execution, Verbose, "Auto-starting flow '%s' on authority for owner '%s'.", *GetNameSafe(FlowAsset), *GetNameSafe(GetOwner()));
         StartFlowLocal();
     }
 }
@@ -94,6 +96,7 @@ UDreamFlowExecutor* UDreamFlowExecutorComponent::CreateExecutor()
     {
         MirrorExecutor->InitializeReplicatedMirror(FlowAsset, GetOwner());
         MirrorExecutor->ApplyReplicatedState(ReplicatedExecutionState);
+        DREAMFLOW_LOG(Replication, Verbose, "Created or refreshed replicated mirror executor for flow '%s'.", *GetNameSafe(FlowAsset));
     }
 
     return Executor;
@@ -106,6 +109,7 @@ bool UDreamFlowExecutorComponent::StartFlow()
         return StartFlowLocal();
     }
 
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding StartFlow request for flow '%s' from client owner '%s' to the server.", *GetNameSafe(FlowAsset), *GetNameSafe(GetOwner()));
     ServerStartFlow();
     return true;
 }
@@ -117,6 +121,7 @@ bool UDreamFlowExecutorComponent::RestartFlow()
         return RestartFlowLocal();
     }
 
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding RestartFlow request for flow '%s' from client owner '%s' to the server.", *GetNameSafe(FlowAsset), *GetNameSafe(GetOwner()));
     ServerRestartFlow();
     return true;
 }
@@ -129,6 +134,7 @@ void UDreamFlowExecutorComponent::FinishFlow()
         return;
     }
 
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding FinishFlow request for flow '%s' from client owner '%s' to the server.", *GetNameSafe(FlowAsset), *GetNameSafe(GetOwner()));
     ServerFinishFlow();
 }
 
@@ -139,6 +145,7 @@ bool UDreamFlowExecutorComponent::Advance()
         return AdvanceLocal();
     }
 
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding Advance request for flow '%s' from client owner '%s' to the server.", *GetNameSafe(FlowAsset), *GetNameSafe(GetOwner()));
     ServerAdvance();
     return true;
 }
@@ -150,6 +157,7 @@ bool UDreamFlowExecutorComponent::MoveToChildByIndex(int32 ChildIndex)
         return MoveToChildByIndexLocal(ChildIndex);
     }
 
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding MoveToChildByIndex(%d) request for flow '%s'.", ChildIndex, *GetNameSafe(FlowAsset));
     ServerMoveToChildByIndex(ChildIndex);
     return true;
 }
@@ -161,6 +169,7 @@ bool UDreamFlowExecutorComponent::MoveToOutputPin(FName OutputPinName)
         return MoveToOutputPinLocal(OutputPinName);
     }
 
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding MoveToOutputPin('%s') request for flow '%s'.", *OutputPinName.ToString(), *GetNameSafe(FlowAsset));
     ServerMoveToOutputPin(OutputPinName);
     return true;
 }
@@ -178,6 +187,7 @@ bool UDreamFlowExecutorComponent::ChooseChild(UDreamFlowNode* ChildNode)
         return ChooseChildByGuidLocal(ChildNodeGuid);
     }
 
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding ChooseChild request for node '%s' on flow '%s'.", *ChildNodeGuid.ToString(EGuidFormats::Short), *GetNameSafe(FlowAsset));
     ServerChooseChildByGuid(ChildNodeGuid);
     return true;
 }
@@ -355,6 +365,7 @@ bool UDreamFlowExecutorComponent::SetVariableValue(FName VariableName, const FDr
         return SetVariableValueLocal(VariableName, InValue);
     }
 
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding variable write for '%s' on flow '%s' to the server.", *VariableName.ToString(), *GetNameSafe(FlowAsset));
     ServerSetVariableValue(VariableName, InValue);
     return true;
 }
@@ -431,6 +442,7 @@ void UDreamFlowExecutorComponent::ResetVariablesToDefaults()
         return;
     }
 
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding ResetVariablesToDefaults request for flow '%s' to the server.", *GetNameSafe(FlowAsset));
     ServerResetVariablesToDefaults();
 }
 
@@ -456,6 +468,7 @@ void UDreamFlowExecutorComponent::HandleNodeExited(UDreamFlowNode* Node)
 
 void UDreamFlowExecutorComponent::OnRep_FlowAsset()
 {
+    DREAMFLOW_LOG(Replication, Log, "Received replicated flow asset '%s' for owner '%s'.", *GetNameSafe(FlowAsset), *GetNameSafe(GetOwner()));
     if (ApplyReplicatedStateToMirror())
     {
         BroadcastReplicatedStateEvents(LastAppliedReplicatedState, ReplicatedExecutionState);
@@ -465,6 +478,7 @@ void UDreamFlowExecutorComponent::OnRep_FlowAsset()
 
 void UDreamFlowExecutorComponent::OnRep_ReplicatedExecutionState()
 {
+    DREAMFLOW_LOG(Replication, Verbose, "Received replicated execution state for flow '%s'.", *GetNameSafe(FlowAsset));
     if (ApplyReplicatedStateToMirror())
     {
         BroadcastReplicatedStateEvents(LastAppliedReplicatedState, ReplicatedExecutionState);
@@ -609,6 +623,7 @@ void UDreamFlowExecutorComponent::SyncReplicatedStateFromExecutor()
 
     Executor->BuildReplicatedState(ReplicatedExecutionState);
     LastAppliedReplicatedState = ReplicatedExecutionState;
+    DREAMFLOW_LOG(Replication, Verbose, "Synchronized replicated state from authority executor for flow '%s'.", *GetNameSafe(FlowAsset));
 }
 
 bool UDreamFlowExecutorComponent::ApplyReplicatedStateToMirror()
@@ -624,6 +639,7 @@ bool UDreamFlowExecutorComponent::ApplyReplicatedStateToMirror()
         {
             Executor->InitializeReplicatedMirror(nullptr, GetOwner());
         }
+        DREAMFLOW_LOG(Replication, Verbose, "Skipped mirror application because no flow asset is assigned.");
         return false;
     }
 
@@ -635,6 +651,7 @@ bool UDreamFlowExecutorComponent::ApplyReplicatedStateToMirror()
 
     MirrorExecutor->InitializeReplicatedMirror(FlowAsset, GetOwner());
     MirrorExecutor->ApplyReplicatedState(ReplicatedExecutionState);
+    DREAMFLOW_LOG(Replication, Verbose, "Applied replicated mirror state for flow '%s'.", *GetNameSafe(FlowAsset));
     return true;
 }
 
@@ -741,6 +758,7 @@ void UDreamFlowExecutorComponent::BroadcastReplicatedStateEvents(
 
     if (!bWasRunning && bIsRunning)
     {
+        DREAMFLOW_LOG(Replication, Log, "Replicated flow '%s' started on client mirror.", *GetNameSafe(FlowAsset));
         OnFlowStarted.Broadcast();
     }
 
@@ -748,17 +766,20 @@ void UDreamFlowExecutorComponent::BroadcastReplicatedStateEvents(
     {
         if (UDreamFlowNode* PreviousNode = FlowAsset->FindNodeByGuid(PreviousState.CurrentNodeGuid))
         {
+            DREAMFLOW_LOG(Replication, Verbose, "Replicated node exit '%s'.", *PreviousNode->GetNodeDisplayName().ToString());
             OnNodeExited.Broadcast(PreviousNode);
         }
 
         if (UDreamFlowNode* CurrentNode = FlowAsset->FindNodeByGuid(NewState.CurrentNodeGuid))
         {
+            DREAMFLOW_LOG(Replication, Verbose, "Replicated node enter '%s'.", *CurrentNode->GetNodeDisplayName().ToString());
             OnNodeEntered.Broadcast(CurrentNode);
         }
     }
 
     if (bWasRunning && !bIsRunning)
     {
+        DREAMFLOW_LOG(Replication, Log, "Replicated flow '%s' finished on client mirror.", *GetNameSafe(FlowAsset));
         OnFlowFinished.Broadcast();
     }
 }

@@ -1,5 +1,6 @@
 #include "DreamFlowAsset.h"
 
+#include "DreamFlowLog.h"
 #include "DreamFlowNode.h"
 #include "Containers/Queue.h"
 #include "EdGraph/EdGraph.h"
@@ -255,6 +256,34 @@ void UDreamFlowAsset::ValidateFlow(TArray<FDreamFlowValidationMessage>& OutMessa
                 Message.Message = FText::FromString(TEXT("This node has no incoming links."));
             }
         }
+    }
+
+    if (FDreamFlowLog::ShouldLog(ELogVerbosity::Log, EDreamFlowLogChannel::Validation))
+    {
+        int32 ErrorCount = 0;
+        int32 WarningCount = 0;
+        int32 InfoCount = 0;
+
+        for (const FDreamFlowValidationMessage& Message : OutMessages)
+        {
+            switch (Message.Severity)
+            {
+            case EDreamFlowValidationSeverity::Error:
+                ++ErrorCount;
+                break;
+
+            case EDreamFlowValidationSeverity::Warning:
+                ++WarningCount;
+                break;
+
+            case EDreamFlowValidationSeverity::Info:
+            default:
+                ++InfoCount;
+                break;
+            }
+        }
+
+        DREAMFLOW_LOG(Validation, Log, "Validated flow '%s'. Errors=%d Warnings=%d Info=%d", *GetNameSafe(this), ErrorCount, WarningCount, InfoCount);
     }
 }
 
