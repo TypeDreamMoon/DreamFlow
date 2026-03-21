@@ -831,7 +831,9 @@ bool UDreamFlowExecutorComponent::CompleteAsyncNodeLocal(FName OutputPinName)
 
 bool UDreamFlowExecutorComponent::SetVariableValueLocal(FName VariableName, const FDreamFlowValue& InValue)
 {
-    UDreamFlowExecutor* RuntimeExecutor = GetOrCreateExecutor(true);
+    UClass* EffectiveClass = ExecutorClass != nullptr ? ExecutorClass.Get() : UDreamFlowExecutor::StaticClass();
+    const bool bShouldInitializeExecutor = Executor == nullptr || Executor->GetClass() != EffectiveClass;
+    UDreamFlowExecutor* RuntimeExecutor = GetOrCreateExecutor(bShouldInitializeExecutor);
     const bool bSet = RuntimeExecutor != nullptr && RuntimeExecutor->SetVariableValue(VariableName, InValue);
     SyncReplicatedStateFromExecutor();
     return bSet;
@@ -839,7 +841,9 @@ bool UDreamFlowExecutorComponent::SetVariableValueLocal(FName VariableName, cons
 
 void UDreamFlowExecutorComponent::ResetVariablesToDefaultsLocal()
 {
-    if (UDreamFlowExecutor* RuntimeExecutor = GetOrCreateExecutor(true))
+    UClass* EffectiveClass = ExecutorClass != nullptr ? ExecutorClass.Get() : UDreamFlowExecutor::StaticClass();
+    const bool bShouldInitializeExecutor = Executor == nullptr || Executor->GetClass() != EffectiveClass;
+    if (UDreamFlowExecutor* RuntimeExecutor = GetOrCreateExecutor(bShouldInitializeExecutor))
     {
         RuntimeExecutor->ResetVariablesToDefaults();
         SyncReplicatedStateFromExecutor();

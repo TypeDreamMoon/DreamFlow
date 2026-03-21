@@ -245,7 +245,7 @@ void SDreamFlowDebuggerView::Construct(const FArguments& InArgs)
                     [
                         SNew(STextBlock)
                         .Text(FText::FromString(TEXT("Debugger")))
-                        .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
+                        .TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
                         .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
                     ]
 

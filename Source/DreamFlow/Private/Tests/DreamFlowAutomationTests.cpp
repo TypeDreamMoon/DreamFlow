@@ -5,6 +5,7 @@
 #include "DreamFlowSettings.h"
 #include "DreamFlowVariableTypes.h"
 #include "Execution/DreamFlowExecutor.h"
+#include "Execution/DreamFlowExecutorComponent.h"
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -206,6 +207,37 @@ bool FDreamFlowManualMultiOutputStepTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("A second executor should also start successfully."), NodeDrivenExecutor->StartFlow());
     TestTrue(TEXT("Node helper flow continuation should step through the requested output pin."), Graph.BranchNode->ContinueFlowFromOutputPin(NodeDrivenExecutor, TEXT("False")));
     TestEqual(TEXT("Node helper output stepping should enter the false node."), NodeDrivenExecutor->GetCurrentNode(), Graph.FalseNode);
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowComponentVariableMutationKeepsRuntimeStateTest,
+    "DreamFlow.Core.Execution.ComponentVariableMutationKeepsRuntimeState",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowComponentVariableMutationKeepsRuntimeStateTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FDreamFlowBranchTestGraph Graph = BuildBranchingFlowAsset(false);
+    UDreamFlowExecutorComponent* ExecutorComponent = NewObject<UDreamFlowExecutorComponent>(GetTransientPackage(), NAME_None, RF_Transient);
+    ExecutorComponent->FlowAsset = Graph.Asset;
+
+    TestTrue(TEXT("Component-backed flow should start successfully."), ExecutorComponent->StartFlow());
+    TestEqual(TEXT("Manual entry start should leave the executor on the entry node."), ExecutorComponent->GetCurrentNode(), static_cast<UDreamFlowNode*>(Graph.EntryNode));
+
+    TestTrue(TEXT("Writing a variable at runtime should succeed without recreating the executor."), ExecutorComponent->SetVariableBoolValue(TEXT("CanContinue"), true));
+    TestNotNull(TEXT("A runtime executor should still exist after mutating variables."), ExecutorComponent->GetExecutor());
+    TestTrue(TEXT("Runtime variable mutation should keep the flow running."), ExecutorComponent->GetExecutor() != nullptr && ExecutorComponent->GetExecutor()->IsRunning());
+    TestEqual(TEXT("Mutating variables should not discard the current node."), ExecutorComponent->GetCurrentNode(), static_cast<UDreamFlowNode*>(Graph.EntryNode));
+
+    bool bConditionValue = false;
+    TestTrue(TEXT("Updated runtime variables should remain readable after the write."), ExecutorComponent->GetVariableBoolValue(TEXT("CanContinue"), bConditionValue));
+    TestTrue(TEXT("The runtime variable should keep the new value."), bConditionValue);
+
+    TestTrue(TEXT("The flow should still be able to advance after mutating variables."), ExecutorComponent->Advance());
+    TestEqual(TEXT("Advancing after the variable mutation should continue through the graph normally."), ExecutorComponent->GetCurrentNode(), Graph.TrueNode);
 
     return true;
 }

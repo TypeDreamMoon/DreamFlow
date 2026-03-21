@@ -84,7 +84,7 @@ void SDreamFlowNodePalette::Construct(const FArguments& InArgs)
                     [
                         SNew(STextBlock)
                         .Text(FText::FromString(TEXT("Node Palette")))
-                        .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
+                        .TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
                         .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
                     ]
 

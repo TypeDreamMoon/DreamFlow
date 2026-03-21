@@ -35,7 +35,7 @@ void SDreamFlowValidationView::Construct(const FArguments& InArgs)
                     [
                         SNew(STextBlock)
                         .Text(FText::FromString(TEXT("Validation")))
-                        .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
+                        .TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
                         .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
                     ]
 

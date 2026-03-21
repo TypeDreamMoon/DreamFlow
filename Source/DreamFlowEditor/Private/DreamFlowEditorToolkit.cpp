@@ -55,7 +55,7 @@ namespace DreamFlowEditorToolkit
                         [
                             SNew(STextBlock)
                             .Text(Title)
-                            .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
+                            .TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
                             .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
                         ]
 

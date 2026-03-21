@@ -150,7 +150,7 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildVariablesPanel()
                         [
                             SNew(STextBlock)
                             .Text(LOCTEXT("VariablesPanelTitle", "Flow Variables"))
-                            .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
+                            .TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
                         ]
                         + SVerticalBox::Slot()
                         .AutoHeight()
@@ -495,7 +495,7 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildSelectedVariableE
                         [
                             SNew(STextBlock)
                             .Text(LOCTEXT("SelectedVariableTitle", "Variable Details"))
-                            .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
+                            .TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
                         ]
                         + SVerticalBox::Slot()
                         .AutoHeight()
@@ -694,7 +694,7 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildEmptyState(const 
             [
                 SNew(STextBlock)
                 .Text(Title)
-                .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
+                .TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
                 .Justification(ETextJustify::Center)
             ]
             + SVerticalBox::Slot()
