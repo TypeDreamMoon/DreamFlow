@@ -126,13 +126,11 @@ TSharedPtr<SGraphNode> UDreamFlowEdGraphRerouteNode::CreateVisualWidget()
 void UDreamFlowEdGraphRerouteNode::NodeConnectionListChanged()
 {
     Super::NodeConnectionListChanged();
-    SyncOwningAsset();
 }
 
 void UDreamFlowEdGraphRerouteNode::PinConnectionListChanged(UEdGraphPin* Pin)
 {
     Super::PinConnectionListChanged(Pin);
-    SyncOwningAsset();
 }
 
 #if WITH_EDITOR

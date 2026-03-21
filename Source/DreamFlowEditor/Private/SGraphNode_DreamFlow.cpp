@@ -527,7 +527,32 @@ void SGraphNode_DreamFlow::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 
 void SGraphNode_DreamFlow::MoveTo(const FVector2f& NewPosition, FNodeSet& NodeFilter, bool bMarkDirty)
 {
+    const FVector2f PreviousPosition = GetPosition2f();
     SGraphNode::MoveTo(NewPosition, NodeFilter, bMarkDirty);
+
+    if (PreviousPosition.Equals(NewPosition, KINDA_SMALL_NUMBER))
+    {
+        return;
+    }
+
+    if (const UDreamFlowEdGraphNode* FlowNode = GetFlowNode())
+    {
+        if (UDreamFlowNode* RuntimeNode = FlowNode->GetRuntimeNode())
+        {
+            RuntimeNode->SetEditorPosition(FVector2D(FlowNode->NodePosX, FlowNode->NodePosY));
+            bPendingAssetSynchronization = true;
+        }
+    }
+}
+
+void SGraphNode_DreamFlow::EndUserInteraction() const
+{
+    if (!bPendingAssetSynchronization)
+    {
+        return;
+    }
+
+    bPendingAssetSynchronization = false;
 
     if (const UDreamFlowEdGraphNode* FlowNode = GetFlowNode())
     {

@@ -144,13 +144,11 @@ void UDreamFlowEdGraphNode::PostPasteNode()
 void UDreamFlowEdGraphNode::NodeConnectionListChanged()
 {
     Super::NodeConnectionListChanged();
-    SyncOwningAsset();
 }
 
 void UDreamFlowEdGraphNode::PinConnectionListChanged(UEdGraphPin* Pin)
 {
     Super::PinConnectionListChanged(Pin);
-    SyncOwningAsset();
 }
 
 #if WITH_EDITOR

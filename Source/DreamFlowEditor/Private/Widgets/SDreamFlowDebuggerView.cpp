@@ -25,6 +25,8 @@
 
 namespace DreamFlowDebuggerView
 {
+	static constexpr double RefreshIntervalSeconds = 0.25;
+
 	struct FDebuggerInfoItem
 	{
 		FText Label;
@@ -421,6 +423,13 @@ void SDreamFlowDebuggerView::Tick(const FGeometry& AllottedGeometry, const doubl
                                   const float InDeltaTime)
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+
+	if (InCurrentTime < NextRefreshTime)
+	{
+		return;
+	}
+
+	NextRefreshTime = InCurrentTime + DreamFlowDebuggerView::RefreshIntervalSeconds;
 	RefreshExecutors();
 }
 

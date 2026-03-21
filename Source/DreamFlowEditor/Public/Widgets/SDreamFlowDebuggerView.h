@@ -84,4 +84,5 @@ private:
     TSharedPtr<SListView<TSharedPtr<DreamFlowDebuggerView::FDebuggerInfoItem>>> SelectedInfoListView;
     TSharedPtr<SListView<TSharedPtr<DreamFlowDebuggerView::FDebuggerVariableItem>>> SelectedVariableListView;
     TSharedPtr<class STextBlock> SummaryTextBlock;
+    double NextRefreshTime = 0.0;
 };
