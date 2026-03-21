@@ -1,16 +1,15 @@
 #include "Widgets/SDreamFlowNodePalette.h"
 
-#include "DragDrop/DreamFlowNodeClassDragDropOp.h"
 #include "DreamFlowAsset.h"
 #include "DreamFlowEditorUtils.h"
 #include "DreamFlowNode.h"
 #include "Algo/Sort.h"
 #include "Engine/Texture2D.h"
 #include "Input/Reply.h"
-#include "InputCoreTypes.h"
 #include "Styling/AppStyle.h"
 #include "Styling/SlateIconFinder.h"
 #include "Styling/StyleColors.h"
+#include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SSearchBox.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBorder.h"
@@ -55,86 +54,12 @@ namespace DreamFlowNodePalette
 
         return LoadedClass != nullptr ? FSlateIconFinder::FindIconBrushForClass(LoadedClass) : nullptr;
     }
-
-    class SPaletteEntryWidget : public SCompoundWidget
-    {
-    public:
-        DECLARE_DELEGATE_RetVal_OneParam(FReply, FOnEntryClicked, TSubclassOf<UDreamFlowNode>);
-        DECLARE_DELEGATE_RetVal_ThreeParams(FReply, FOnEntryDragDetected, const FGeometry&, const FPointerEvent&, TSubclassOf<UDreamFlowNode>);
-
-        SLATE_BEGIN_ARGS(SPaletteEntryWidget) {}
-            SLATE_ARGUMENT(TSubclassOf<UDreamFlowNode>, NodeClass)
-            SLATE_EVENT(FOnEntryClicked, OnEntryClicked)
-            SLATE_EVENT(FOnEntryDragDetected, OnEntryDragDetected)
-            SLATE_DEFAULT_SLOT(FArguments, Content)
-        SLATE_END_ARGS()
-
-        void Construct(const FArguments& InArgs)
-        {
-            NodeClass = InArgs._NodeClass;
-            OnEntryClicked = InArgs._OnEntryClicked;
-            OnEntryDragDetected = InArgs._OnEntryDragDetected;
-            bDragTriggered = false;
-
-            ChildSlot
-            [
-                InArgs._Content.Widget
-            ];
-        }
-
-        virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
-        {
-            if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
-            {
-                bDragTriggered = false;
-                return FReply::Handled().DetectDrag(SharedThis(this), EKeys::LeftMouseButton);
-            }
-
-            return SCompoundWidget::OnMouseButtonDown(MyGeometry, MouseEvent);
-        }
-
-        virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
-        {
-            (void)MyGeometry;
-
-            if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
-            {
-                const bool bShouldInvokeClick = !bDragTriggered;
-                bDragTriggered = false;
-
-                if (bShouldInvokeClick && OnEntryClicked.IsBound())
-                {
-                    return OnEntryClicked.Execute(NodeClass);
-                }
-
-                return FReply::Handled();
-            }
-
-            return SCompoundWidget::OnMouseButtonUp(MyGeometry, MouseEvent);
-        }
-
-        virtual FReply OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
-        {
-            bDragTriggered = true;
-
-            return OnEntryDragDetected.IsBound()
-                ? OnEntryDragDetected.Execute(MyGeometry, MouseEvent, NodeClass)
-                : SCompoundWidget::OnDragDetected(MyGeometry, MouseEvent);
-        }
-
-    private:
-        TSubclassOf<UDreamFlowNode> NodeClass;
-        FOnEntryClicked OnEntryClicked;
-        FOnEntryDragDetected OnEntryDragDetected;
-        bool bDragTriggered = false;
-    };
 }
 
 void SDreamFlowNodePalette::Construct(const FArguments& InArgs)
 {
     FlowAsset = InArgs._FlowAsset;
     OnNodeClassPicked = InArgs._OnNodeClassPicked;
-    OnNodeClassDropped = InArgs._OnNodeClassDropped;
 
     ChildSlot
     [
@@ -355,35 +280,6 @@ FReply SDreamFlowNodePalette::HandleEntryClicked(TSubclassOf<UDreamFlowNode> Nod
     return FReply::Handled();
 }
 
-FReply SDreamFlowNodePalette::HandleEntryDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent, TSubclassOf<UDreamFlowNode> NodeClass) const
-{
-    (void)MyGeometry;
-
-    if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton || NodeClass == nullptr)
-    {
-        return FReply::Unhandled();
-    }
-
-    const UDreamFlowNode* DefaultNode = DreamFlowNodePalette::GetDefaultNode(NodeClass);
-    if (DefaultNode == nullptr)
-    {
-        return FReply::Unhandled();
-    }
-
-    return FReply::Handled().BeginDragDrop(FDreamFlowNodeClassDragDropOp::New(
-        NodeClass,
-        DefaultNode->GetNodeDisplayName(),
-        DefaultNode->GetNodeCategory(),
-        DefaultNode->GetNodeTint(),
-        FDreamFlowNodeClassDragDropOp::FOnNodeClassDropped::CreateLambda([OnNodeClassDropped = OnNodeClassDropped](TSubclassOf<UDreamFlowNode> DraggedNodeClass, const FVector2f& GraphPosition)
-        {
-            if (OnNodeClassDropped.IsBound())
-            {
-                OnNodeClassDropped.Execute(DraggedNodeClass, GraphPosition);
-            }
-        })));
-}
-
 TSharedRef<SWidget> SDreamFlowNodePalette::BuildEntryWidget(const FPaletteEntry& Entry) const
 {
     const UDreamFlowNode* DefaultNode = DreamFlowNodePalette::GetDefaultNode(Entry.NodeClass);
@@ -392,10 +288,10 @@ TSharedRef<SWidget> SDreamFlowNodePalette::BuildEntryWidget(const FPaletteEntry&
         ? Entry.NodeClass->GetDisplayNameText()
         : FText::FromString(TEXT("Node"));
 
-    return SNew(DreamFlowNodePalette::SPaletteEntryWidget)
-        .NodeClass(Entry.NodeClass)
-        .OnEntryClicked(DreamFlowNodePalette::SPaletteEntryWidget::FOnEntryClicked::CreateSP(this, &SDreamFlowNodePalette::HandleEntryClicked))
-        .OnEntryDragDetected(DreamFlowNodePalette::SPaletteEntryWidget::FOnEntryDragDetected::CreateSP(this, &SDreamFlowNodePalette::HandleEntryDragDetected))
+    return SNew(SButton)
+        .ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
+        .OnClicked(this, &SDreamFlowNodePalette::HandleEntryClicked, Entry.NodeClass)
+        .ContentPadding(0.0f)
         [
             SNew(SBorder)
             .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
@@ -471,7 +367,7 @@ TSharedRef<SWidget> SDreamFlowNodePalette::BuildEntryWidget(const FPaletteEntry&
                         .Padding(0.0f, 5.0f, 0.0f, 0.0f)
                         [
                             SNew(STextBlock)
-                            .Text(DescriptionText.IsEmpty() ? FText::FromString(TEXT("Reusable DreamFlow node. Click to add or drag into the graph.")) : DescriptionText)
+                            .Text(DescriptionText.IsEmpty() ? FText::FromString(TEXT("Reusable DreamFlow node. Click to add it to the graph.")) : DescriptionText)
                             .TextStyle(FAppStyle::Get(), "SmallText")
                             .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
                             .WrapTextAt(232.0f)

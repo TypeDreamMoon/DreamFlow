@@ -8,7 +8,6 @@
 #include "DreamFlowVariablesEditorData.h"
 #include "Widgets/SDreamFlowDebuggerView.h"
 #include "DreamFlowNode.h"
-#include "Widgets/SDreamFlowGraphDropTarget.h"
 #include "Widgets/SDreamFlowNodePalette.h"
 #include "Widgets/SDreamFlowValidationView.h"
 #include "EdGraphUtilities.h"
@@ -401,10 +400,10 @@ TSharedRef<SDockTab> FDreamFlowEditorToolkit::SpawnGraphTab(const FSpawnTabArgs&
                 LOCTEXT("GraphShellTitle", "Flow Graph"),
                 FlowAsset != nullptr
                     ? FText::Format(
-                        LOCTEXT("GraphShellSubtitle", "Author reusable logic inside {0}. Click or drag nodes in from the palette, edit key properties directly on the graph, and use the side panels for deeper inspection."),
+                        LOCTEXT("GraphShellSubtitle", "Author reusable logic inside {0}. Click nodes in from the palette, edit key properties directly on the graph, and use the side panels for deeper inspection."),
                         FText::FromString(FlowAsset->GetName()))
                     : LOCTEXT("GraphShellSubtitleFallback", "Author reusable logic, inspect node data, and debug execution from the surrounding panels."),
-                GraphDropTargetWidget.ToSharedRef())
+                GraphEditorWidget.ToSharedRef())
         ];
 }
 
@@ -485,8 +484,7 @@ void FDreamFlowEditorToolkit::CreateWidgets()
 
     PaletteWidget = SNew(SDreamFlowNodePalette)
         .FlowAsset(FlowAsset)
-        .OnNodeClassPicked(SDreamFlowNodePalette::FOnNodeClassPicked::CreateSP(this, &FDreamFlowEditorToolkit::CreateNodeFromPalette))
-        .OnNodeClassDropped(SDreamFlowNodePalette::FOnNodeClassDropped::CreateSP(this, &FDreamFlowEditorToolkit::CreateNodeFromPaletteAtPosition));
+        .OnNodeClassPicked(SDreamFlowNodePalette::FOnNodeClassPicked::CreateSP(this, &FDreamFlowEditorToolkit::CreateNodeFromPalette));
 
     DebuggerWidget = SNew(SDreamFlowDebuggerView)
         .FlowAsset(FlowAsset)
@@ -507,11 +505,6 @@ void FDreamFlowEditorToolkit::CreateWidgets()
         .Appearance(AppearanceInfo)
         .GraphToEdit(EditingGraph)
         .GraphEvents(GraphEditorEvents);
-
-    GraphDropTargetWidget = SNew(SDreamFlowGraphDropTarget)
-        .GraphEditor(GraphEditorWidget)
-        .Content(GraphEditorWidget)
-        .OnNodeClassDropped(SDreamFlowGraphDropTarget::FOnNodeClassDropped::CreateSP(this, &FDreamFlowEditorToolkit::CreateNodeFromPaletteAtPosition));
 }
 
 void FDreamFlowEditorToolkit::BindCommands()

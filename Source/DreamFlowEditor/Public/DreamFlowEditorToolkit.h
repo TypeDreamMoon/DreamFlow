@@ -9,7 +9,6 @@
 
 class IDetailsView;
 class SGraphEditor;
-class SDreamFlowGraphDropTarget;
 class SDreamFlowDebuggerView;
 class SDreamFlowNodePalette;
 class SDreamFlowValidationView;
@@ -98,7 +97,6 @@ private:
     TArray<FDreamFlowValidationMessage> ValidationMessages;
     TSharedPtr<SDreamFlowNodePalette> PaletteWidget;
     TSharedPtr<SGraphEditor> GraphEditorWidget;
-    TSharedPtr<SDreamFlowGraphDropTarget> GraphDropTargetWidget;
     TSharedPtr<IDetailsView> DetailsView;
     TSharedPtr<IDetailsView> VariablesDetailsView;
     TSharedPtr<SDreamFlowDebuggerView> DebuggerWidget;
