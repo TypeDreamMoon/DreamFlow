@@ -1,4 +1,5 @@
 #include "DreamFlowAsset.h"
+#include "DreamFlowAsyncNode.h"
 #include "DreamFlowCoreNodes.h"
 #include "DreamFlowEntryNode.h"
 #include "DreamFlowSettings.h"
@@ -18,6 +19,14 @@ namespace
         UDreamFlowBranchNode* BranchNode = nullptr;
         UDreamFlowNode* TrueNode = nullptr;
         UDreamFlowNode* FalseNode = nullptr;
+    };
+
+    struct FDreamFlowAsyncTestGraph
+    {
+        UDreamFlowAsset* Asset = nullptr;
+        UDreamFlowEntryNode* EntryNode = nullptr;
+        UDreamFlowAsyncNode* AsyncNode = nullptr;
+        UDreamFlowNode* CompletedNode = nullptr;
     };
 
     static FDreamFlowValue MakeBoolValue(const bool bValue)
@@ -77,6 +86,31 @@ namespace
             Graph.BranchNode,
             Graph.TrueNode,
             Graph.FalseNode
+        });
+        Graph.Asset->SetEntryNodeInternal(Graph.EntryNode);
+
+        return Graph;
+    }
+
+    static FDreamFlowAsyncTestGraph BuildAsyncFlowAsset()
+    {
+        FDreamFlowAsyncTestGraph Graph;
+        Graph.Asset = NewObject<UDreamFlowAsset>(GetTransientPackage(), NAME_None, RF_Transient);
+
+        Graph.EntryNode = NewObject<UDreamFlowEntryNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.AsyncNode = NewObject<UDreamFlowAsyncNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.CompletedNode = NewObject<UDreamFlowNode>(Graph.Asset, NAME_None, RF_Transient);
+
+        Graph.AsyncNode->Title = FText::FromString(TEXT("Manual Async"));
+        Graph.CompletedNode->Title = FText::FromString(TEXT("After Async"));
+
+        Graph.EntryNode->SetOutputLinks({ MakeOutputLink(TEXT("Out"), Graph.AsyncNode) });
+        Graph.AsyncNode->SetOutputLinks({ MakeOutputLink(TEXT("Completed"), Graph.CompletedNode) });
+
+        Graph.Asset->ReplaceNodes({
+            Graph.EntryNode,
+            Graph.AsyncNode,
+            Graph.CompletedNode
         });
         Graph.Asset->SetEntryNodeInternal(Graph.EntryNode);
 
@@ -183,6 +217,35 @@ bool FDreamFlowValidationMissingVariableTest::RunTest(const FString& Parameters)
     }
 
     TestTrue(TEXT("Validation should report an error when Set Variable targets an undefined flow variable."), bFoundMissingVariableError);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowAsyncManualCompletionTest,
+    "DreamFlow.Core.Execution.AsyncManualCompletion",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowAsyncManualCompletionTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FDreamFlowAsyncTestGraph Graph = BuildAsyncFlowAsset();
+    UDreamFlowExecutor* Executor = NewObject<UDreamFlowExecutor>(GetTransientPackage(), NAME_None, RF_Transient);
+    Executor->Initialize(Graph.Asset, nullptr);
+
+    TestTrue(TEXT("Async test flow should start successfully."), Executor->StartFlow());
+    TestTrue(TEXT("Executor should remain running while an async node is pending."), Executor->IsRunning());
+    TestTrue(TEXT("Executor should report that it is waiting for an async node."), Executor->IsWaitingForAsyncNode());
+    TestEqual(TEXT("Waiting state should be exposed through the debug state."), Executor->GetDebugState(), EDreamFlowExecutorDebugState::Waiting);
+    TestEqual(TEXT("Current node should be the pending async node."), Executor->GetCurrentNode(), static_cast<UDreamFlowNode*>(Graph.AsyncNode));
+    TestEqual(TEXT("Pending async node should match the current async node."), Executor->GetPendingAsyncNode(), static_cast<UDreamFlowNode*>(Graph.AsyncNode));
+    TestEqual(TEXT("Async nodes should hide manual child selection until they complete."), Executor->GetAvailableChildren().Num(), 0);
+    TestFalse(TEXT("Advance should be blocked while the executor is waiting for async completion."), Executor->Advance());
+
+    TestTrue(TEXT("Completing the async node should resume the flow."), Executor->CompleteAsyncNode());
+    TestFalse(TEXT("Executor should no longer wait for async completion after completion."), Executor->IsWaitingForAsyncNode());
+    TestEqual(TEXT("Flow should continue through the async node's completed output."), Executor->GetCurrentNode(), Graph.CompletedNode);
+
     return true;
 }
 

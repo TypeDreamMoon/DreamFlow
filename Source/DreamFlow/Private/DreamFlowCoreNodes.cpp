@@ -1,7 +1,12 @@
 #include "DreamFlowCoreNodes.h"
 
 #include "DreamFlowAsset.h"
+#include "DreamFlowLog.h"
+#include "Execution/DreamFlowAsyncContext.h"
 #include "Execution/DreamFlowExecutor.h"
+#include "Engine/Engine.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 namespace
 {
@@ -407,4 +412,76 @@ void UDreamFlowSetVariableNode::ValidateNode(const UDreamFlowAsset* OwningAsset,
             EDreamFlowValidationSeverity::Info,
             FText::FromString(TEXT("Set Variable only auto-continues to the first child. Additional links are ignored.")));
     }
+}
+
+UDreamFlowDelayNode::UDreamFlowDelayNode()
+{
+    Title = FText::FromString(TEXT("Delay"));
+    Description = FText::FromString(TEXT("Waits for a duration, then resumes through the Completed output."));
+
+#if WITH_EDITORONLY_DATA
+    NodeTint = FLinearColor(0.58f, 0.34f, 0.84f, 1.0f);
+#endif
+}
+
+FText UDreamFlowDelayNode::GetNodeDisplayName_Implementation() const
+{
+    return Title;
+}
+
+FLinearColor UDreamFlowDelayNode::GetNodeTint_Implementation() const
+{
+    return FLinearColor(0.58f, 0.34f, 0.84f, 1.0f);
+}
+
+FText UDreamFlowDelayNode::GetNodeAccentLabel_Implementation() const
+{
+    return FText::FromString(TEXT("Delay"));
+}
+
+TArray<FDreamFlowNodeDisplayItem> UDreamFlowDelayNode::GetNodeDisplayItems_Implementation() const
+{
+    TArray<FDreamFlowNodeDisplayItem> Items = Super::GetNodeDisplayItems_Implementation();
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Duration")), FString::Printf(TEXT("%.2fs"), DurationSeconds)));
+    return Items;
+}
+
+void UDreamFlowDelayNode::StartAsyncNode_Implementation(UObject* Context, UDreamFlowExecutor* Executor, UDreamFlowAsyncContext* AsyncContext)
+{
+    if (AsyncContext == nullptr)
+    {
+        return;
+    }
+
+    if (DurationSeconds <= KINDA_SMALL_NUMBER)
+    {
+        AsyncContext->Complete();
+        return;
+    }
+
+    UObject* WorldContextObject = Context != nullptr
+        ? Context
+        : (Executor != nullptr ? Executor->GetExecutionContext() : nullptr);
+    UWorld* World = GEngine != nullptr
+        ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull)
+        : nullptr;
+
+    if (World == nullptr)
+    {
+        DREAMFLOW_LOG(Execution, Warning, "Delay node '%s' could not resolve a world from the execution context. Completing immediately.", *GetNodeDisplayName().ToString());
+        AsyncContext->Complete();
+        return;
+    }
+
+    TWeakObjectPtr<UDreamFlowAsyncContext> WeakAsyncContext = AsyncContext;
+    FTimerDelegate CompletionDelegate = FTimerDelegate::CreateLambda([WeakAsyncContext]()
+    {
+        if (WeakAsyncContext.IsValid())
+        {
+            WeakAsyncContext->Complete();
+        }
+    });
+
+    FTimerHandle DelayTimerHandle;
+    World->GetTimerManager().SetTimer(DelayTimerHandle, CompletionDelegate, DurationSeconds, false);
 }

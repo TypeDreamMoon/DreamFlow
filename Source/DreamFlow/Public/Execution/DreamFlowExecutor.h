@@ -7,6 +7,7 @@
 #include "DreamFlowExecutor.generated.h"
 
 class UDreamFlowAsset;
+class UDreamFlowAsyncContext;
 class UDreamFlowNode;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FDreamFlowExecutorEventSignature);
@@ -90,6 +91,29 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Debug")
     EDreamFlowExecutorDebugState GetDebugState() const;
+
+    /** Returns true while the executor is waiting for an async node to complete. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Async")
+    bool IsWaitingForAsyncNode() const;
+
+    /** Returns the async node currently waiting for completion, if any. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Async")
+    UDreamFlowNode* GetPendingAsyncNode() const;
+
+    /**
+     * Marks the current node as asynchronous and returns a completion handle.
+     * Async nodes usually call this from ExecuteNodeWithExecutor before starting latent work.
+     */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution|Async")
+    UDreamFlowAsyncContext* BeginAsyncNode(UDreamFlowNode* Node);
+
+    /** Completes the pending async node using the default output or the supplied pin name. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution|Async")
+    bool CompleteAsyncNode(FName OutputPinName = NAME_None);
+
+    /** Completes the pending async node only if it matches the supplied node instance. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution|Async")
+    bool CompleteAsyncNodeForNode(UDreamFlowNode* Node, FName OutputPinName = NAME_None);
 
     void BuildReplicatedState(FDreamFlowReplicatedExecutionState& OutState) const;
     void ApplyReplicatedState(const FDreamFlowReplicatedExecutionState& InState);
@@ -204,12 +228,15 @@ public:
 protected:
     bool ActivateNode(UDreamFlowNode* Node, bool bExecuteNode);
     bool ExecuteCurrentNode();
+    bool TryConsumeCompletedAsyncNode(FName RequestedOutputPinName);
+    FName ResolveCompletedAsyncOutputPin(const UDreamFlowNode* AsyncNode, FName RequestedOutputPinName) const;
     bool ShouldPauseAtNode(const UDreamFlowNode* Node, bool& bOutHitBreakpoint);
     void BroadcastDebugStateChanged();
     void RegisterWithDebugger();
     void UnregisterFromDebugger();
     void NotifyDebuggerStateChanged();
     void ResetRuntimeState(UDreamFlowAsset* InFlowAsset, UObject* InExecutionContext, bool bNotifyDebugger);
+    void ClearAsyncExecutionState();
 
     UPROPERTY(Transient)
     TObjectPtr<UDreamFlowAsset> FlowAsset;
@@ -227,6 +254,12 @@ protected:
     TMap<FName, FDreamFlowValue> RuntimeVariables;
 
     UPROPERTY(Transient)
+    TObjectPtr<UDreamFlowNode> PendingAsyncNode;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UDreamFlowAsyncContext> ActiveAsyncContext;
+
+    UPROPERTY(Transient)
     bool bIsRunning = false;
 
     UPROPERTY(Transient)
@@ -240,6 +273,15 @@ protected:
 
     UPROPERTY(Transient)
     bool bHasFinished = false;
+
+    UPROPERTY(Transient)
+    bool bIsWaitingForAsyncNode = false;
+
+    UPROPERTY(Transient)
+    bool bHasQueuedAsyncCompletion = false;
+
+    UPROPERTY(Transient)
+    FName QueuedAsyncCompletionOutputPin;
 
 private:
     FDreamFlowExecutorRuntimeStateChangedNativeSignature RuntimeStateChangedNative;

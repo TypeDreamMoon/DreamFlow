@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DreamFlowAsyncNode.h"
 #include "DreamFlowNode.h"
 #include "DreamFlowVariableTypes.h"
 #include "DreamFlowCoreNodes.generated.h"
@@ -84,4 +85,22 @@ public:
     virtual bool SupportsAutomaticTransition_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const override;
     virtual FName ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const override;
     virtual void ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const override;
+};
+
+UCLASS(BlueprintType, Blueprintable, EditInlineNew, DefaultToInstanced)
+class DREAMFLOW_API UDreamFlowDelayNode : public UDreamFlowAsyncNode
+{
+    GENERATED_BODY()
+
+public:
+    UDreamFlowDelayNode();
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Async", meta = (ClampMin = "0.0", DreamFlowInlineEditable, DreamFlowInlinePriority = "20"))
+    float DurationSeconds = 1.0f;
+
+    virtual FText GetNodeDisplayName_Implementation() const override;
+    virtual FLinearColor GetNodeTint_Implementation() const override;
+    virtual FText GetNodeAccentLabel_Implementation() const override;
+    virtual TArray<FDreamFlowNodeDisplayItem> GetNodeDisplayItems_Implementation() const override;
+    virtual void StartAsyncNode_Implementation(UObject* Context, UDreamFlowExecutor* Executor, UDreamFlowAsyncContext* AsyncContext) override;
 };

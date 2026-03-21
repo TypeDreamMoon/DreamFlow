@@ -475,6 +475,7 @@ void FDreamFlowEditorToolkit::CreateWidgets()
     DetailsView = PropertyEditorModule.CreateDetailView(DetailsArgs);
 
     FDetailsViewArgs VariablesDetailsArgs = DetailsArgs;
+    VariablesDetailsArgs.bAllowSearch = false;
     VariablesDetailsArgs.ColumnWidth = 0.34f;
     VariablesDetailsArgs.DefaultsOnlyVisibility = EEditDefaultsOnlyNodeVisibility::Automatic;
     VariablesDetailsView = PropertyEditorModule.CreateDetailView(VariablesDetailsArgs);

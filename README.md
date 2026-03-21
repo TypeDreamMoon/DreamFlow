@@ -13,12 +13,15 @@ DreamFlow is a lightweight Unreal flow graph framework designed as a reusable ba
 - `UDreamQuestFlowAsset`: quest-specialized flow asset
 - `UDreamDialogueFlowAsset`: dialogue-specialized flow asset
 - `UDreamFlowNode`: extensible runtime node base class
+- `UDreamFlowAsyncNode`: async-ready node base for Blueprint and C++ latent workflows
 - `UDreamFlowEntryNode`: built-in entry node
 - `UDreamFlowExecutor`: runtime flow runner with Blueprint events
+- `UDreamFlowAsyncContext`: completion handle passed into async nodes
 - `UDreamFlowExecutorComponent`: Actor component wrapper for gameplay use
 - Per-flow variable definitions with typed runtime values and bindings
 - Per-flow startup option to choose whether `StartFlow` auto-executes past the entry node
 - Built-in generic core nodes such as `Branch`, `Compare`, and `Set Variable`
+- Built-in async `Delay` node for time-based flow waits
 - Multi-output node pins with named branches such as `True` and `False`
 - Node preview content area with text, color, and image display items
 - Breakpoint-aware DreamFlow debugger tab for active executors
@@ -80,6 +83,7 @@ The base `DreamFlow` module now ships with a reusable `Core` category for generi
 - `UDreamFlowBranchNode`: evaluates a bound boolean and routes to child `0` for true or child `1` for false
 - `UDreamFlowCompareNode`: compares two bound values and routes to child `0` or `1`
 - `UDreamFlowSetVariableNode`: writes a flow variable, then auto-continues to the first child
+- `UDreamFlowDelayNode`: waits asynchronously for a duration, then continues through `Completed`
 
 These nodes target `UDreamFlowAsset`, so they are available in any DreamFlow-derived asset type unless a more specialized node chooses to narrow compatibility.
 
@@ -132,6 +136,7 @@ Derive from `UDreamFlowNode` and override any of the following:
 - `CanConnectTo`
 - `ExecuteNode`
 - `ExecuteNodeWithExecutor`
+- `StartAsyncNode` when deriving from `UDreamFlowAsyncNode`
 - `SupportsAutomaticTransition`
 - `ResolveAutomaticTransitionChildIndex`
 - `ResolveAutomaticTransitionOutputPin`
@@ -187,6 +192,14 @@ public:
 
 `UDreamFlowNode` is `Blueprintable`, so you can create Blueprint classes derived from it and then instantiate them from the graph editor with `Choose Node Class...`.
 
+For async Blueprint nodes, derive from `UDreamFlowAsyncNode` instead.
+
+- Override `StartAsyncNode`
+- Use the provided `AsyncContext` object to call `Complete()` or `CompleteWithOutputPin()`
+- Keep your async state outside the node asset itself; the `AsyncContext` and `Executor` carry the runtime state safely per execution
+
+This makes it much easier to hook DreamFlow nodes into Blueprint timers, latent tasks, gameplay callbacks, online requests, or animation notifies without manually rebuilding executor state.
+
 ## Runtime execution
 
 You can execute graphs either by creating `UDreamFlowExecutor` directly or by attaching `UDreamFlowExecutorComponent` to an Actor.
@@ -201,7 +214,10 @@ The executor currently supports:
 - `ChooseChild`
 - `MoveToOutputPin`
 - `GetCurrentNode`
+- `GetPendingAsyncNode`
 - `GetAvailableChildren`
+- `IsWaitingForAsyncNode`
+- `CompleteAsyncNode`
 - `PauseExecution`
 - `ContinueExecution`
 - `StepExecution`
@@ -250,6 +266,7 @@ Runtime logs are emitted through `LogDreamFlow`, so they can also be filtered th
 
 - The server owns the real `UDreamFlowExecutor` and runs node logic there.
 - The component replicates flow asset assignment, current node GUID, visited node GUIDs, pause state, and runtime flow variables.
+- The replicated snapshot also carries the async waiting state, so client mirrors know when a flow is blocked on an async node.
 - Clients build a mirrored local executor from that replicated snapshot, so Blueprint reads such as `GetCurrentNode` and `GetVariable...Value` continue to work on remote machines.
 - Client calls made through `UDreamFlowExecutorComponent` such as `StartFlow`, `Advance`, `ChooseChild`, `MoveToOutputPin`, `SetVariable...Value`, and `ResetVariablesToDefaults` are forwarded to the server with RPCs.
 - For multiplayer gameplay, prefer calling the component APIs instead of invoking `UDreamFlowExecutor` directly.
@@ -265,6 +282,7 @@ Notes:
 DreamFlow now ships with automation coverage for core runtime behavior.
 
 - `DreamFlow.Core.Execution.AutomaticBranching`
+- `DreamFlow.Core.Execution.AsyncManualCompletion`
 - `DreamFlow.Core.Execution.ManualEntryStart`
 - `DreamFlow.Core.Validation.MissingVariable`
 - `DreamFlow.Core.Network.ReplicatedStateMirror`

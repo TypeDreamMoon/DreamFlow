@@ -43,6 +43,18 @@ public:
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool ChooseChild(UDreamFlowNode* ChildNode);
 
+    /** Returns true while the component's executor is waiting for an async node to complete. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Async")
+    bool IsWaitingForAsyncNode() const;
+
+    /** Returns the node currently waiting for async completion. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Async")
+    UDreamFlowNode* GetPendingAsyncNode() const;
+
+    /** Completes the current async node using the default output or the supplied pin name. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution|Async")
+    bool CompleteAsyncNode(FName OutputPinName = NAME_None);
+
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
     UDreamFlowExecutor* GetExecutor() const;
 
@@ -190,6 +202,9 @@ protected:
     void ServerChooseChildByGuid(FGuid ChildNodeGuid);
 
     UFUNCTION(Server, Reliable)
+    void ServerCompleteAsyncNode(FName OutputPinName);
+
+    UFUNCTION(Server, Reliable)
     void ServerSetVariableValue(FName VariableName, FDreamFlowValue InValue);
 
     UFUNCTION(Server, Reliable)
@@ -209,6 +224,7 @@ protected:
     bool MoveToChildByIndexLocal(int32 ChildIndex);
     bool MoveToOutputPinLocal(FName OutputPinName);
     bool ChooseChildByGuidLocal(const FGuid& ChildNodeGuid);
+    bool CompleteAsyncNodeLocal(FName OutputPinName);
     bool SetVariableValueLocal(FName VariableName, const FDreamFlowValue& InValue);
     void ResetVariablesToDefaultsLocal();
     void BroadcastReplicatedStateEvents(const FDreamFlowReplicatedExecutionState& PreviousState, const FDreamFlowReplicatedExecutionState& NewState);

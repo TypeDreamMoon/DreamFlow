@@ -28,6 +28,9 @@ namespace DreamFlowDebuggerView
         case EDreamFlowExecutorDebugState::Running:
             return FText::FromString(TEXT("Running"));
 
+        case EDreamFlowExecutorDebugState::Waiting:
+            return FText::FromString(TEXT("Waiting"));
+
         case EDreamFlowExecutorDebugState::Paused:
             return FText::FromString(TEXT("Paused"));
 
@@ -79,6 +82,9 @@ namespace DreamFlowDebuggerView
         {
         case EDreamFlowExecutorDebugState::Running:
             return FSlateColor(EStyleColor::AccentGreen);
+
+        case EDreamFlowExecutorDebugState::Waiting:
+            return FSlateColor(EStyleColor::AccentBlue);
 
         case EDreamFlowExecutorDebugState::Paused:
             return FSlateColor(EStyleColor::Primary);

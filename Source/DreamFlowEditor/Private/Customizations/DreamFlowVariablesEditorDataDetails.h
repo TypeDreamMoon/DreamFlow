@@ -7,6 +7,8 @@ class IPropertyHandle;
 class IPropertyHandleArray;
 class IPropertyUtilities;
 class IDetailsView;
+class SBox;
+class STextBlock;
 class SWidget;
 class UDreamFlowVariablesEditorData;
 
@@ -32,6 +34,10 @@ private:
     void DuplicateVariable(int32 VariableIndex) const;
     void RemoveVariable(int32 VariableIndex) const;
     void HandleSearchTextChanged(const FText& InSearchText);
+    FText GetSearchText() const;
+    FText GetVariablesListCountText() const;
+    void RefreshFilteredVariableWidgets() const;
+    FString GetStoredSearchText() const;
     int32 GetSelectedVariableIndex() const;
     TArray<int32> GetFilteredVariableIndices() const;
     TSharedPtr<IPropertyHandleArray> GetVariablesArrayHandle() const;
@@ -45,5 +51,6 @@ private:
     TSharedPtr<IPropertyUtilities> PropertyUtilities;
     TWeakPtr<const IDetailsView> DetailsView;
     TWeakObjectPtr<UDreamFlowVariablesEditorData> VariablesEditorData;
-    FString SearchText;
+    mutable TSharedPtr<SBox> VariablesListContainer;
+    mutable TSharedPtr<STextBlock> VariablesListCountTextBlock;
 };

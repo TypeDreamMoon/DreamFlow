@@ -4,6 +4,7 @@
 #include "DreamFlowLog.h"
 #include "DreamFlowNode.h"
 #include "Engine/Engine.h"
+#include "Execution/DreamFlowAsyncContext.h"
 #include "Execution/DreamFlowDebuggerSubsystem.h"
 
 namespace DreamFlowExecutorPrivate
@@ -63,6 +64,7 @@ bool UDreamFlowExecutor::StartFlow()
 
     CurrentNode = nullptr;
     VisitedNodes.Reset();
+    ClearAsyncExecutionState();
     bIsRunning = true;
     bIsPaused = false;
     bBreakOnNextNode = false;
@@ -99,6 +101,7 @@ void UDreamFlowExecutor::FinishFlow()
 {
     if (!bIsRunning)
     {
+        ClearAsyncExecutionState();
         CurrentNode = nullptr;
         VisitedNodes.Reset();
         bIsPaused = false;
@@ -115,6 +118,7 @@ void UDreamFlowExecutor::FinishFlow()
     bIsPaused = false;
     bBreakOnNextNode = false;
     bHasFinished = true;
+    ClearAsyncExecutionState();
     CurrentNode = nullptr;
     BroadcastDebugStateChanged();
     OnFlowFinished.Broadcast();
@@ -125,7 +129,7 @@ void UDreamFlowExecutor::FinishFlow()
 
 bool UDreamFlowExecutor::Advance()
 {
-    if (!bIsRunning || bIsPaused || CurrentNode == nullptr)
+    if (!bIsRunning || bIsPaused || bIsWaitingForAsyncNode || bHasQueuedAsyncCompletion || CurrentNode == nullptr)
     {
         return false;
     }
@@ -142,7 +146,7 @@ bool UDreamFlowExecutor::Advance()
 
 bool UDreamFlowExecutor::MoveToChildByIndex(int32 ChildIndex)
 {
-    if (!bIsRunning || bIsPaused || CurrentNode == nullptr)
+    if (!bIsRunning || bIsPaused || bIsWaitingForAsyncNode || bHasQueuedAsyncCompletion || CurrentNode == nullptr)
     {
         return false;
     }
@@ -158,7 +162,7 @@ bool UDreamFlowExecutor::MoveToChildByIndex(int32 ChildIndex)
 
 bool UDreamFlowExecutor::MoveToOutputPin(FName OutputPinName)
 {
-    if (!bIsRunning || bIsPaused || CurrentNode == nullptr || OutputPinName.IsNone())
+    if (!bIsRunning || bIsPaused || bIsWaitingForAsyncNode || bHasQueuedAsyncCompletion || CurrentNode == nullptr || OutputPinName.IsNone())
     {
         return false;
     }
@@ -168,7 +172,7 @@ bool UDreamFlowExecutor::MoveToOutputPin(FName OutputPinName)
 
 bool UDreamFlowExecutor::ChooseChild(UDreamFlowNode* ChildNode)
 {
-    if (!bIsRunning || bIsPaused || CurrentNode == nullptr || ChildNode == nullptr)
+    if (!bIsRunning || bIsPaused || bIsWaitingForAsyncNode || bHasQueuedAsyncCompletion || CurrentNode == nullptr || ChildNode == nullptr)
     {
         return false;
     }
@@ -184,7 +188,7 @@ bool UDreamFlowExecutor::EnterNode(UDreamFlowNode* Node)
 
 bool UDreamFlowExecutor::ActivateNode(UDreamFlowNode* Node, const bool bExecuteNode)
 {
-    if (!bIsRunning || bIsPaused || FlowAsset == nullptr || Node == nullptr)
+    if (!bIsRunning || bIsPaused || bIsWaitingForAsyncNode || bHasQueuedAsyncCompletion || FlowAsset == nullptr || Node == nullptr)
     {
         DREAMFLOW_LOG(Execution, Warning, "EnterNode rejected for asset '%s'. Running=%d Paused=%d Node=%s", *GetNameSafe(FlowAsset), bIsRunning, bIsPaused, *GetNameSafe(Node));
         return false;
@@ -268,6 +272,20 @@ bool UDreamFlowExecutor::ContinueExecution()
     BroadcastDebugStateChanged();
     OnExecutionResumed.Broadcast(CurrentNode);
     DREAMFLOW_LOG(Execution, Display, "Continuing execution at node '%s'.", CurrentNode != nullptr ? *CurrentNode->GetNodeDisplayName().ToString() : TEXT("<none>"));
+
+    if (bHasQueuedAsyncCompletion)
+    {
+        const FName QueuedOutputPinName = QueuedAsyncCompletionOutputPin;
+        bHasQueuedAsyncCompletion = false;
+        QueuedAsyncCompletionOutputPin = NAME_None;
+        return TryConsumeCompletedAsyncNode(QueuedOutputPinName);
+    }
+
+    if (bIsWaitingForAsyncNode)
+    {
+        return true;
+    }
+
     return ExecuteCurrentNode();
 }
 
@@ -307,7 +325,9 @@ UDreamFlowNode* UDreamFlowExecutor::GetCurrentNode() const
 
 TArray<UDreamFlowNode*> UDreamFlowExecutor::GetAvailableChildren() const
 {
-    return CurrentNode ? CurrentNode->GetChildrenCopy() : TArray<UDreamFlowNode*>();
+    return (CurrentNode != nullptr && !bIsWaitingForAsyncNode && !bHasQueuedAsyncCompletion)
+        ? CurrentNode->GetChildrenCopy()
+        : TArray<UDreamFlowNode*>();
 }
 
 TArray<UDreamFlowNode*> UDreamFlowExecutor::GetVisitedNodes() const
@@ -347,10 +367,88 @@ EDreamFlowExecutorDebugState UDreamFlowExecutor::GetDebugState() const
 
     if (bIsRunning)
     {
-        return EDreamFlowExecutorDebugState::Running;
+        return bIsWaitingForAsyncNode
+            ? EDreamFlowExecutorDebugState::Waiting
+            : EDreamFlowExecutorDebugState::Running;
     }
 
     return bHasFinished ? EDreamFlowExecutorDebugState::Finished : EDreamFlowExecutorDebugState::Idle;
+}
+
+bool UDreamFlowExecutor::IsWaitingForAsyncNode() const
+{
+    return bIsWaitingForAsyncNode;
+}
+
+UDreamFlowNode* UDreamFlowExecutor::GetPendingAsyncNode() const
+{
+    return PendingAsyncNode;
+}
+
+UDreamFlowAsyncContext* UDreamFlowExecutor::BeginAsyncNode(UDreamFlowNode* Node)
+{
+    if (!bIsRunning || bIsPaused || CurrentNode == nullptr || Node == nullptr || CurrentNode != Node)
+    {
+        DREAMFLOW_LOG(Execution, Warning, "BeginAsyncNode rejected for '%s'. Current='%s'.", *GetNameSafe(Node), *GetNameSafe(CurrentNode));
+        return nullptr;
+    }
+
+    if (bIsWaitingForAsyncNode && PendingAsyncNode == Node && ActiveAsyncContext != nullptr)
+    {
+        return ActiveAsyncContext;
+    }
+
+    PendingAsyncNode = Node;
+    bIsWaitingForAsyncNode = true;
+    bHasQueuedAsyncCompletion = false;
+    QueuedAsyncCompletionOutputPin = NAME_None;
+
+    if (ActiveAsyncContext == nullptr)
+    {
+        ActiveAsyncContext = NewObject<UDreamFlowAsyncContext>(this);
+    }
+
+    ActiveAsyncContext->Initialize(this, Node);
+    DREAMFLOW_LOG(Execution, Log, "Node '%s' entered async waiting mode on flow '%s'.", *Node->GetNodeDisplayName().ToString(), *GetNameSafe(FlowAsset));
+    BroadcastDebugStateChanged();
+    return ActiveAsyncContext;
+}
+
+bool UDreamFlowExecutor::CompleteAsyncNode(FName OutputPinName)
+{
+    return CompleteAsyncNodeForNode(PendingAsyncNode, OutputPinName);
+}
+
+bool UDreamFlowExecutor::CompleteAsyncNodeForNode(UDreamFlowNode* Node, FName OutputPinName)
+{
+    if (!bIsRunning || PendingAsyncNode == nullptr || Node == nullptr || PendingAsyncNode != Node)
+    {
+        return false;
+    }
+
+    const FName ResolvedOutputPinName = ResolveCompletedAsyncOutputPin(PendingAsyncNode, OutputPinName);
+    const bool bCanFinishWithoutTransition = PendingAsyncNode->GetChildrenCopy().Num() == 0;
+    if ((ResolvedOutputPinName.IsNone() && !bCanFinishWithoutTransition)
+        || (!ResolvedOutputPinName.IsNone()
+            && !bCanFinishWithoutTransition
+            && PendingAsyncNode->GetFirstChildForOutputPin(ResolvedOutputPinName) == nullptr))
+    {
+        DREAMFLOW_LOG(Execution, Warning, "CompleteAsyncNode rejected for node '%s' because no valid completion output could be resolved.", *PendingAsyncNode->GetNodeDisplayName().ToString());
+        return false;
+    }
+
+    if (bIsPaused)
+    {
+        bIsWaitingForAsyncNode = false;
+        bHasQueuedAsyncCompletion = true;
+        QueuedAsyncCompletionOutputPin = ResolvedOutputPinName;
+        ActiveAsyncContext = nullptr;
+        BroadcastDebugStateChanged();
+        DREAMFLOW_LOG(Execution, Verbose, "Queued async completion for node '%s' while execution is paused.", *PendingAsyncNode->GetNodeDisplayName().ToString());
+        return true;
+    }
+
+    return TryConsumeCompletedAsyncNode(ResolvedOutputPinName);
 }
 
 void UDreamFlowExecutor::BuildReplicatedState(FDreamFlowReplicatedExecutionState& OutState) const
@@ -390,10 +488,18 @@ void UDreamFlowExecutor::ApplyReplicatedState(const FDreamFlowReplicatedExecutio
     bPauseOnBreakpoints = InState.bPauseOnBreakpoints;
     bBreakOnNextNode = false;
     bIsPaused = InState.DebugState == EDreamFlowExecutorDebugState::Paused;
-    bIsRunning = InState.DebugState == EDreamFlowExecutorDebugState::Running || InState.DebugState == EDreamFlowExecutorDebugState::Paused;
+    bIsRunning =
+        InState.DebugState == EDreamFlowExecutorDebugState::Running
+        || InState.DebugState == EDreamFlowExecutorDebugState::Waiting
+        || InState.DebugState == EDreamFlowExecutorDebugState::Paused;
     bHasFinished = InState.DebugState == EDreamFlowExecutorDebugState::Finished;
+    bIsWaitingForAsyncNode = InState.DebugState == EDreamFlowExecutorDebugState::Waiting;
+    bHasQueuedAsyncCompletion = false;
+    QueuedAsyncCompletionOutputPin = NAME_None;
+    ActiveAsyncContext = nullptr;
 
     CurrentNode = FlowAsset != nullptr ? FlowAsset->FindNodeByGuid(InState.CurrentNodeGuid) : nullptr;
+    PendingAsyncNode = bIsWaitingForAsyncNode ? CurrentNode : nullptr;
 
     VisitedNodes.Reset();
     if (FlowAsset != nullptr)
@@ -668,6 +774,11 @@ bool UDreamFlowExecutor::ExecuteCurrentNode()
         return true;
     }
 
+    if (bIsWaitingForAsyncNode)
+    {
+        return true;
+    }
+
     if (ExecutedNode->SupportsAutomaticTransition(ExecutionContext, this))
     {
         const FName AutoOutputPin = ExecutedNode->ResolveAutomaticTransitionOutputPin(ExecutionContext, this);
@@ -683,6 +794,86 @@ bool UDreamFlowExecutor::ExecuteCurrentNode()
     }
 
     return true;
+}
+
+bool UDreamFlowExecutor::TryConsumeCompletedAsyncNode(FName RequestedOutputPinName)
+{
+    if (!bIsRunning || PendingAsyncNode == nullptr || CurrentNode != PendingAsyncNode)
+    {
+        return false;
+    }
+
+    UDreamFlowNode* AsyncNode = PendingAsyncNode;
+    const FName ResolvedOutputPinName = ResolveCompletedAsyncOutputPin(AsyncNode, RequestedOutputPinName);
+    const bool bCanFinishWithoutTransition = AsyncNode->GetChildrenCopy().Num() == 0;
+    UDreamFlowNode* NextNode = !ResolvedOutputPinName.IsNone() ? AsyncNode->GetFirstChildForOutputPin(ResolvedOutputPinName) : nullptr;
+    if (ResolvedOutputPinName.IsNone() && !bCanFinishWithoutTransition)
+    {
+        return false;
+    }
+
+    if (!ResolvedOutputPinName.IsNone())
+    {
+        if (NextNode != nullptr)
+        {
+            ClearAsyncExecutionState();
+            DREAMFLOW_LOG(Execution, Log, "Async node '%s' completed through output '%s'.", *AsyncNode->GetNodeDisplayName().ToString(), *ResolvedOutputPinName.ToString());
+            return EnterNode(NextNode);
+        }
+
+        if (!bCanFinishWithoutTransition)
+        {
+            return false;
+        }
+    }
+
+    if (bCanFinishWithoutTransition)
+    {
+        ClearAsyncExecutionState();
+        DREAMFLOW_LOG(Execution, Log, "Async node '%s' completed and finished flow '%s'.", *AsyncNode->GetNodeDisplayName().ToString(), *GetNameSafe(FlowAsset));
+        FinishFlow();
+        return true;
+    }
+
+    if (!ResolvedOutputPinName.IsNone())
+    {
+        DREAMFLOW_LOG(Execution, Warning, "Async node '%s' completed with output '%s', but no child is connected to that output.", *AsyncNode->GetNodeDisplayName().ToString(), *ResolvedOutputPinName.ToString());
+        return false;
+    }
+
+    return false;
+}
+
+FName UDreamFlowExecutor::ResolveCompletedAsyncOutputPin(const UDreamFlowNode* AsyncNode, FName RequestedOutputPinName) const
+{
+    if (AsyncNode == nullptr)
+    {
+        return NAME_None;
+    }
+
+    const TArray<FDreamFlowNodeOutputPin> OutputPins = AsyncNode->GetOutputPins();
+    if (!RequestedOutputPinName.IsNone())
+    {
+        for (const FDreamFlowNodeOutputPin& OutputPin : OutputPins)
+        {
+            if (OutputPin.PinName == RequestedOutputPinName)
+            {
+                return RequestedOutputPinName;
+            }
+        }
+
+        return NAME_None;
+    }
+
+    for (const FDreamFlowNodeOutputPin& OutputPin : OutputPins)
+    {
+        if (AsyncNode->GetFirstChildForOutputPin(OutputPin.PinName) != nullptr)
+        {
+            return OutputPin.PinName;
+        }
+    }
+
+    return OutputPins.Num() > 0 ? OutputPins[0].PinName : NAME_None;
 }
 
 bool UDreamFlowExecutor::ShouldPauseAtNode(const UDreamFlowNode* Node, bool& bOutHitBreakpoint)
@@ -751,6 +942,15 @@ void UDreamFlowExecutor::NotifyDebuggerStateChanged()
     }
 }
 
+void UDreamFlowExecutor::ClearAsyncExecutionState()
+{
+    PendingAsyncNode = nullptr;
+    ActiveAsyncContext = nullptr;
+    bIsWaitingForAsyncNode = false;
+    bHasQueuedAsyncCompletion = false;
+    QueuedAsyncCompletionOutputPin = NAME_None;
+}
+
 void UDreamFlowExecutor::ResetRuntimeState(UDreamFlowAsset* InFlowAsset, UObject* InExecutionContext, bool bNotifyDebugger)
 {
     UnregisterFromDebugger();
@@ -759,6 +959,7 @@ void UDreamFlowExecutor::ResetRuntimeState(UDreamFlowAsset* InFlowAsset, UObject
     CurrentNode = nullptr;
     VisitedNodes.Reset();
     RuntimeVariables.Reset();
+    ClearAsyncExecutionState();
     bIsRunning = false;
     bIsPaused = false;
     bPauseOnBreakpoints = true;

@@ -17,6 +17,7 @@ enum class EDreamFlowExecutorDebugState : uint8
 {
     Idle,
     Running,
+    Waiting,
     Paused,
     Finished,
 };

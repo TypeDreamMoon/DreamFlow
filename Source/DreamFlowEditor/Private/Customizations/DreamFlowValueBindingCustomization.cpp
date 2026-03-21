@@ -221,6 +221,28 @@ bool FDreamFlowValueBindingCustomization::IsVariableDefinitionCompatible(const F
     return DreamFlowVariable::TryConvertValue(VariableDefinition.DefaultValue, ExpectedValueType.GetValue(), ConvertedValue);
 }
 
+bool FDreamFlowValueBindingCustomization::TryGetBindingValue(FDreamFlowValueBinding& OutBinding) const
+{
+    if (!StructHandle.IsValid())
+    {
+        return false;
+    }
+
+    TArray<void*> RawData;
+    StructHandle->AccessRawData(RawData);
+
+    for (void* RawDatum : RawData)
+    {
+        if (RawDatum != nullptr)
+        {
+            OutBinding = *static_cast<FDreamFlowValueBinding*>(RawDatum);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 FText FDreamFlowValueBindingCustomization::GetExpectedTypeLabel() const
 {
     if (const TOptional<EDreamFlowValueType> ExpectedValueType = ResolveExpectedValueType())
@@ -236,6 +258,9 @@ FText FDreamFlowValueBindingCustomization::GetExpectedTypeLabel() const
 
 FText FDreamFlowValueBindingCustomization::GetBindingSummary() const
 {
+    FDreamFlowValueBinding BindingValue;
+    const bool bHasBindingValue = TryGetBindingValue(BindingValue);
+
     if (GetCurrentSourceType() == EDreamFlowValueSourceType::FlowVariable)
     {
         FName VariableName = NAME_None;
@@ -246,7 +271,7 @@ FText FDreamFlowValueBindingCustomization::GetBindingSummary() const
 
         if (VariableName.IsNone())
         {
-            return FText::FromString(TEXT("Flow Variable: <Select Variable>"));
+            return FText::FromString(TEXT("Type: Variable  Value: <Select Variable>"));
         }
 
         if (const UDreamFlowAsset* FlowAsset = ResolveOwningFlowAsset())
@@ -256,21 +281,20 @@ FText FDreamFlowValueBindingCustomization::GetBindingSummary() const
                 static const UEnum* ValueTypeEnum = StaticEnum<EDreamFlowValueType>();
                 const FString TypeLabel = ValueTypeEnum != nullptr
                     ? ValueTypeEnum->GetDisplayNameTextByValue(static_cast<int64>(VariableDefinition->DefaultValue.Type)).ToString()
-                    : TEXT("Value");
-                return FText::FromString(FString::Printf(TEXT("Flow Variable: %s (%s)"), *VariableName.ToString(), *TypeLabel));
+                    : TEXT("Variable");
+                return FText::FromString(FString::Printf(TEXT("Type: %s  Value: %s"), *TypeLabel, *VariableName.ToString()));
             }
         }
 
-        return FText::FromString(FString::Printf(TEXT("Flow Variable: %s"), *VariableName.ToString()));
+        return FText::FromString(FString::Printf(TEXT("Type: Variable  Value: %s"), *VariableName.ToString()));
     }
 
-    FText LiteralDisplayText;
-    if (LiteralValueHandle.IsValid() && LiteralValueHandle->GetValueAsDisplayText(LiteralDisplayText) == FPropertyAccess::Success)
+    if (bHasBindingValue)
     {
-        return FText::Format(FText::FromString(TEXT("Literal: {0}")), LiteralDisplayText);
+        return FText::FromString(BindingValue.LiteralValue.DescribeCompact());
     }
 
-    return FText::FromString(TEXT("Literal"));
+    return FText::FromString(TEXT("Type: Literal  Value: <unset>"));
 }
 
 FText FDreamFlowValueBindingCustomization::GetSourceTypeLabel() const

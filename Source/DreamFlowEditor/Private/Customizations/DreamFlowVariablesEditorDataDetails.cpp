@@ -14,6 +14,7 @@
 #include "Widgets/Input/SComboButton.h"
 #include "Widgets/Input/SSearchBox.h"
 #include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSplitter.h"
 #include "Widgets/SBoxPanel.h"
@@ -236,19 +237,15 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildVariablesSidebar(
                     [
                         SNew(SSearchBox)
                         .HintText(LOCTEXT("VariablesSearchHint", "Search variables"))
-                        .InitialText(FText::FromString(SearchText))
+                        .InitialText(FText::FromString(GetStoredSearchText()))
                         .OnTextChanged(const_cast<FDreamFlowVariablesEditorDataDetails*>(this), &FDreamFlowVariablesEditorDataDetails::HandleSearchTextChanged)
                     ]
                     + SVerticalBox::Slot()
                     .AutoHeight()
                     .Padding(0.0f, 6.0f, 0.0f, 0.0f)
                     [
-                        SNew(STextBlock)
-                        .Text(FText::Format(
-                            SearchText.IsEmpty()
-                                ? LOCTEXT("VariablesListCount", "{0} variables")
-                                : LOCTEXT("VariablesFilteredCount", "{0} shown"),
-                            FText::AsNumber(FilteredIndices.Num())))
+                        SAssignNew(VariablesListCountTextBlock, STextBlock)
+                        .Text(this, &FDreamFlowVariablesEditorDataDetails::GetVariablesListCountText)
                         .TextStyle(FAppStyle::Get(), "SmallText")
                         .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
                     ]
@@ -256,8 +253,12 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildVariablesSidebar(
             ]
             + SVerticalBox::Slot()
             .FillHeight(1.0f)
+            .VAlign(VAlign_Fill)
             [
-                BuildVariablesList()
+                SAssignNew(VariablesListContainer, SBox)
+                [
+                    BuildVariablesList()
+                ]
             ]
         ];
 }
@@ -545,9 +546,11 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildSelectedVariableE
             ]
             + SVerticalBox::Slot()
             .FillHeight(1.0f)
+            .VAlign(VAlign_Fill)
             [
-                SNew(SScrollBox)
-                + SScrollBox::Slot()
+                SNew(SVerticalBox)
+                + SVerticalBox::Slot()
+                .AutoHeight()
                 [
                     SNew(SVerticalBox)
                     + SVerticalBox::Slot()
@@ -576,6 +579,11 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildSelectedVariableE
                             VariableHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowVariableDefinition, DefaultValue)),
                             true)
                     ]
+                ]
+                + SVerticalBox::Slot()
+                .FillHeight(1.0f)
+                [
+                    SNullWidget::NullWidget
                 ]
             ]
         ];
@@ -894,12 +902,46 @@ void FDreamFlowVariablesEditorDataDetails::RemoveVariable(int32 VariableIndex) c
 
 void FDreamFlowVariablesEditorDataDetails::HandleSearchTextChanged(const FText& InSearchText)
 {
-    SearchText = InSearchText.ToString();
-
-    if (PropertyUtilities.IsValid())
+    if (UDreamFlowVariablesEditorData* EditorData = GetVariablesEditorData())
     {
-        PropertyUtilities->ForceRefresh();
+        EditorData->SearchText = InSearchText.ToString();
     }
+
+    RefreshFilteredVariableWidgets();
+}
+
+FText FDreamFlowVariablesEditorDataDetails::GetSearchText() const
+{
+    return FText::FromString(GetStoredSearchText());
+}
+
+FText FDreamFlowVariablesEditorDataDetails::GetVariablesListCountText() const
+{
+    const TArray<int32> FilteredIndices = GetFilteredVariableIndices();
+    return FText::Format(
+        GetStoredSearchText().IsEmpty()
+            ? LOCTEXT("VariablesListCount", "{0} variables")
+            : LOCTEXT("VariablesFilteredCount", "{0} shown"),
+        FText::AsNumber(FilteredIndices.Num()));
+}
+
+void FDreamFlowVariablesEditorDataDetails::RefreshFilteredVariableWidgets() const
+{
+    if (VariablesListContainer.IsValid())
+    {
+        VariablesListContainer->SetContent(BuildVariablesList());
+    }
+
+    if (VariablesListCountTextBlock.IsValid())
+    {
+        VariablesListCountTextBlock->SetText(GetVariablesListCountText());
+    }
+}
+
+FString FDreamFlowVariablesEditorDataDetails::GetStoredSearchText() const
+{
+    const UDreamFlowVariablesEditorData* EditorData = GetVariablesEditorData();
+    return EditorData != nullptr ? EditorData->SearchText : FString();
 }
 
 int32 FDreamFlowVariablesEditorDataDetails::GetSelectedVariableIndex() const
@@ -928,7 +970,7 @@ TArray<int32> FDreamFlowVariablesEditorDataDetails::GetFilteredVariableIndices()
         return Result;
     }
 
-    const FString TrimmedSearch = SearchText.TrimStartAndEnd();
+    const FString TrimmedSearch = EditorData->SearchText.TrimStartAndEnd();
     for (int32 Index = 0; Index < EditorData->Variables.Num(); ++Index)
     {
         const FDreamFlowVariableDefinition& VariableDefinition = EditorData->Variables[Index];

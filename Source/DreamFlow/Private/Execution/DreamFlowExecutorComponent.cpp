@@ -192,6 +192,38 @@ bool UDreamFlowExecutorComponent::ChooseChild(UDreamFlowNode* ChildNode)
     return true;
 }
 
+bool UDreamFlowExecutorComponent::IsWaitingForAsyncNode() const
+{
+    if (Executor != nullptr)
+    {
+        return Executor->IsWaitingForAsyncNode();
+    }
+
+    return ReplicatedExecutionState.DebugState == EDreamFlowExecutorDebugState::Waiting;
+}
+
+UDreamFlowNode* UDreamFlowExecutorComponent::GetPendingAsyncNode() const
+{
+    if (Executor != nullptr)
+    {
+        return Executor->GetPendingAsyncNode();
+    }
+
+    return IsWaitingForAsyncNode() ? GetCurrentNode() : nullptr;
+}
+
+bool UDreamFlowExecutorComponent::CompleteAsyncNode(FName OutputPinName)
+{
+    if (IsServerAuthority())
+    {
+        return CompleteAsyncNodeLocal(OutputPinName);
+    }
+
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding CompleteAsyncNode('%s') request for flow '%s'.", *OutputPinName.ToString(), *GetNameSafe(FlowAsset));
+    ServerCompleteAsyncNode(OutputPinName);
+    return true;
+}
+
 UDreamFlowExecutor* UDreamFlowExecutorComponent::GetExecutor() const
 {
     return Executor;
@@ -521,6 +553,11 @@ void UDreamFlowExecutorComponent::ServerChooseChildByGuid_Implementation(FGuid C
     ChooseChildByGuidLocal(ChildNodeGuid);
 }
 
+void UDreamFlowExecutorComponent::ServerCompleteAsyncNode_Implementation(FName OutputPinName)
+{
+    CompleteAsyncNodeLocal(OutputPinName);
+}
+
 void UDreamFlowExecutorComponent::ServerSetVariableValue_Implementation(FName VariableName, FDreamFlowValue InValue)
 {
     SetVariableValueLocal(VariableName, InValue);
@@ -723,6 +760,14 @@ bool UDreamFlowExecutorComponent::ChooseChildByGuidLocal(const FGuid& ChildNodeG
     return bChosen;
 }
 
+bool UDreamFlowExecutorComponent::CompleteAsyncNodeLocal(FName OutputPinName)
+{
+    UDreamFlowExecutor* RuntimeExecutor = GetOrCreateExecutor(false);
+    const bool bCompleted = RuntimeExecutor != nullptr && RuntimeExecutor->CompleteAsyncNode(OutputPinName);
+    SyncReplicatedStateFromExecutor();
+    return bCompleted;
+}
+
 bool UDreamFlowExecutorComponent::SetVariableValueLocal(FName VariableName, const FDreamFlowValue& InValue)
 {
     UDreamFlowExecutor* RuntimeExecutor = GetOrCreateExecutor(true);
@@ -751,9 +796,11 @@ void UDreamFlowExecutorComponent::BroadcastReplicatedStateEvents(
 
     const bool bWasRunning =
         PreviousState.DebugState == EDreamFlowExecutorDebugState::Running
+        || PreviousState.DebugState == EDreamFlowExecutorDebugState::Waiting
         || PreviousState.DebugState == EDreamFlowExecutorDebugState::Paused;
     const bool bIsRunning =
         NewState.DebugState == EDreamFlowExecutorDebugState::Running
+        || NewState.DebugState == EDreamFlowExecutorDebugState::Waiting
         || NewState.DebugState == EDreamFlowExecutorDebugState::Paused;
 
     if (!bWasRunning && bIsRunning)

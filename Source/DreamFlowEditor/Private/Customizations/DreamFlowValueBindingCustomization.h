@@ -22,6 +22,7 @@ private:
     UDreamFlowAsset* ResolveOwningFlowAsset() const;
     TOptional<EDreamFlowValueType> ResolveExpectedValueType() const;
     bool IsVariableDefinitionCompatible(const FDreamFlowVariableDefinition& VariableDefinition) const;
+    bool TryGetBindingValue(FDreamFlowValueBinding& OutBinding) const;
     FText GetExpectedTypeLabel() const;
     FText GetBindingSummary() const;
     FText GetSourceTypeLabel() const;

@@ -14,5 +14,8 @@ public:
     UPROPERTY(EditAnywhere, Category = "Variables")
     TArray<FDreamFlowVariableDefinition> Variables;
 
+    UPROPERTY(Transient)
+    FString SearchText;
+
     int32 SelectedVariableIndex = INDEX_NONE;
 };
