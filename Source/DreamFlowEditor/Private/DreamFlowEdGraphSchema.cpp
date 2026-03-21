@@ -157,6 +157,25 @@ void UDreamFlowEdGraphSchema::GetContextMenuActions(UToolMenu* Menu, UGraphNodeC
             TWeakObjectPtr<UDreamFlowEdGraphNode> WeakFlowGraphNode(const_cast<UDreamFlowEdGraphNode*>(FlowGraphNode));
 
             Section.AddMenuEntry(
+                "DreamFlowEditNodeSource",
+                LOCTEXT("EditNodeSourceLabel", "编辑此节点"),
+                LOCTEXT("EditNodeSourceTooltip", "打开此节点的源定义。如果节点来自蓝图则打开蓝图，否则跳转到 C++ 源码。"),
+                FSlateIcon(),
+                FUIAction(
+                    FExecuteAction::CreateLambda([WeakFlowGraphNode]()
+                    {
+                        if (UDreamFlowEdGraphNode* FlowGraphNode = WeakFlowGraphNode.Get())
+                        {
+                            FlowGraphNode->EditNodeSource();
+                        }
+                    }),
+                    FCanExecuteAction::CreateLambda([WeakFlowGraphNode]()
+                    {
+                        const UDreamFlowEdGraphNode* FlowGraphNode = WeakFlowGraphNode.Get();
+                        return FlowGraphNode != nullptr && FlowGraphNode->CanEditNodeSource();
+                    })));
+
+            Section.AddMenuEntry(
                 "DreamFlowToggleBreakpoint",
                 bHasBreakpoint
                     ? LOCTEXT("RemoveBreakpointLabel", "Remove Breakpoint")

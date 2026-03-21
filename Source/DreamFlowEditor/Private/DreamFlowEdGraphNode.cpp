@@ -6,6 +6,10 @@
 #include "DreamFlowEditorUtils.h"
 #include "DreamFlowNode.h"
 #include "SGraphNode_DreamFlow.h"
+#include "Engine/Blueprint.h"
+#include "Editor.h"
+#include "SourceCodeNavigation.h"
+#include "Subsystems/AssetEditorSubsystem.h"
 
 const FName UDreamFlowEdGraphNode::InputPinName(TEXT("In"));
 const FName UDreamFlowEdGraphNode::PinCategory(TEXT("DreamFlow"));
@@ -258,6 +262,49 @@ void UDreamFlowEdGraphNode::SetBreakpointEnabled(bool bEnabled)
 void UDreamFlowEdGraphNode::ToggleBreakpoint()
 {
     SetBreakpointEnabled(!HasBreakpoint());
+}
+
+bool UDreamFlowEdGraphNode::CanEditNodeSource() const
+{
+    const UClass* NodeClass = RuntimeNode != nullptr ? RuntimeNode->GetClass() : nullptr;
+    if (NodeClass == nullptr)
+    {
+        return false;
+    }
+
+    if (Cast<UBlueprint>(NodeClass->ClassGeneratedBy) != nullptr)
+    {
+        return true;
+    }
+
+    return FSourceCodeNavigation::CanNavigateToClass(NodeClass);
+}
+
+bool UDreamFlowEdGraphNode::EditNodeSource() const
+{
+    const UClass* NodeClass = RuntimeNode != nullptr ? RuntimeNode->GetClass() : nullptr;
+    if (NodeClass == nullptr)
+    {
+        return false;
+    }
+
+    if (UBlueprint* GeneratingBlueprint = Cast<UBlueprint>(NodeClass->ClassGeneratedBy))
+    {
+        if (GEditor == nullptr)
+        {
+            return false;
+        }
+
+        if (UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
+        {
+            AssetEditorSubsystem->OpenEditorForAsset(GeneratingBlueprint);
+            return true;
+        }
+
+        return false;
+    }
+
+    return FSourceCodeNavigation::NavigateToClass(NodeClass);
 }
 
 void UDreamFlowEdGraphNode::RestoreRuntimeNodeOwner()

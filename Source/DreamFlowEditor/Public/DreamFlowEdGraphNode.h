@@ -49,6 +49,8 @@ public:
     bool HasBreakpoint() const;
     void SetBreakpointEnabled(bool bEnabled);
     void ToggleBreakpoint();
+    bool CanEditNodeSource() const;
+    bool EditNodeSource() const;
     void RestoreRuntimeNodeOwner();
 
 private:
