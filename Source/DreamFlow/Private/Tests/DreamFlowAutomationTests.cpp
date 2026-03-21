@@ -36,10 +36,11 @@ namespace
         return Link;
     }
 
-    static FDreamFlowBranchTestGraph BuildBranchingFlowAsset()
+    static FDreamFlowBranchTestGraph BuildBranchingFlowAsset(const bool bAutoExecuteEntryNodeOnStart = true)
     {
         FDreamFlowBranchTestGraph Graph;
         Graph.Asset = NewObject<UDreamFlowAsset>(GetTransientPackage(), NAME_None, RF_Transient);
+        Graph.Asset->bAutoExecuteEntryNodeOnStart = bAutoExecuteEntryNodeOnStart;
 
         FDreamFlowVariableDefinition ConditionVariable;
         ConditionVariable.Name = TEXT("CanContinue");
@@ -108,6 +109,36 @@ bool FDreamFlowAutomaticExecutionTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Executor should have visited four nodes."), VisitedNodes.Num(), 4);
     TestTrue(TEXT("Visited nodes should include the branch node."), VisitedNodes.Contains(Graph.BranchNode));
     TestTrue(TEXT("Visited nodes should include the true branch output node."), VisitedNodes.Contains(Graph.TrueNode));
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowManualEntryStartTest,
+    "DreamFlow.Core.Execution.ManualEntryStart",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowManualEntryStartTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FDreamFlowBranchTestGraph Graph = BuildBranchingFlowAsset(false);
+    UDreamFlowExecutor* Executor = NewObject<UDreamFlowExecutor>(GetTransientPackage(), NAME_None, RF_Transient);
+
+    Executor->Initialize(Graph.Asset, nullptr);
+
+    TestTrue(TEXT("StartFlow should still succeed when auto execution from the entry node is disabled."), Executor->StartFlow());
+    TestEqual(TEXT("Executor should remain on the entry node until advanced manually."), Executor->GetCurrentNode(), static_cast<UDreamFlowNode*>(Graph.EntryNode));
+
+    bool bRuntimeCondition = true;
+    TestTrue(TEXT("Default variable values should still exist before manual advance."), Executor->GetVariableBoolValue(TEXT("CanContinue"), bRuntimeCondition));
+    TestFalse(TEXT("The first gameplay node should not have executed yet."), bRuntimeCondition);
+    TestEqual(TEXT("Only the entry node should have been visited after StartFlow."), Executor->GetVisitedNodes().Num(), 1);
+
+    TestTrue(TEXT("Advance should execute the first gameplay node chain after the manual start mode enters the flow."), Executor->Advance());
+    TestEqual(TEXT("Executor should eventually land on the true branch node after the manual advance."), Executor->GetCurrentNode(), Graph.TrueNode);
+    TestTrue(TEXT("Manual advance should still update runtime variables."), Executor->GetVariableBoolValue(TEXT("CanContinue"), bRuntimeCondition));
+    TestTrue(TEXT("The runtime condition should become true after the first gameplay node executes."), bRuntimeCondition);
 
     return true;
 }

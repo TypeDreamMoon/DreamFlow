@@ -26,6 +26,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Variables")
     TArray<FDreamFlowVariableDefinition> Variables;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flow|Execution")
+    bool bAutoExecuteEntryNodeOnStart = true;
+
 #if WITH_EDITORONLY_DATA
     UPROPERTY(Instanced)
     TObjectPtr<UEdGraph> EditorGraph;

@@ -73,11 +73,17 @@ bool UDreamFlowExecutor::StartFlow()
 
     DREAMFLOW_LOG(Execution, Log, "Started flow '%s'.", *GetNameSafe(FlowAsset));
 
-    if (!EnterNode(FlowAsset->GetEntryNode()))
+    const bool bAutoExecuteEntryNode = FlowAsset->bAutoExecuteEntryNodeOnStart;
+    if (!ActivateNode(FlowAsset->GetEntryNode(), bAutoExecuteEntryNode))
     {
         DREAMFLOW_LOG(Execution, Warning, "StartFlow failed while entering the entry node for asset '%s'.", *GetNameSafe(FlowAsset));
         FinishFlow();
         return false;
+    }
+
+    if (!bAutoExecuteEntryNode)
+    {
+        DREAMFLOW_LOG(Execution, Log, "StartFlow entered the entry node for flow '%s' without auto-executing it.", *GetNameSafe(FlowAsset));
     }
 
     return true;
@@ -173,6 +179,11 @@ bool UDreamFlowExecutor::ChooseChild(UDreamFlowNode* ChildNode)
 
 bool UDreamFlowExecutor::EnterNode(UDreamFlowNode* Node)
 {
+    return ActivateNode(Node, true);
+}
+
+bool UDreamFlowExecutor::ActivateNode(UDreamFlowNode* Node, const bool bExecuteNode)
+{
     if (!bIsRunning || bIsPaused || FlowAsset == nullptr || Node == nullptr)
     {
         DREAMFLOW_LOG(Execution, Warning, "EnterNode rejected for asset '%s'. Running=%d Paused=%d Node=%s", *GetNameSafe(FlowAsset), bIsRunning, bIsPaused, *GetNameSafe(Node));
@@ -211,7 +222,13 @@ bool UDreamFlowExecutor::EnterNode(UDreamFlowNode* Node)
         return true;
     }
 
-    return ExecuteCurrentNode();
+    if (bExecuteNode)
+    {
+        return ExecuteCurrentNode();
+    }
+
+    BroadcastDebugStateChanged();
+    return true;
 }
 
 void UDreamFlowExecutor::SetExecutionContext(UObject* InExecutionContext)

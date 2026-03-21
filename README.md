@@ -17,6 +17,7 @@ DreamFlow is a lightweight Unreal flow graph framework designed as a reusable ba
 - `UDreamFlowExecutor`: runtime flow runner with Blueprint events
 - `UDreamFlowExecutorComponent`: Actor component wrapper for gameplay use
 - Per-flow variable definitions with typed runtime values and bindings
+- Per-flow startup option to choose whether `StartFlow` auto-executes past the entry node
 - Built-in generic core nodes such as `Branch`, `Compare`, and `Set Variable`
 - Multi-output node pins with named branches such as `True` and `False`
 - Node preview content area with text, color, and image display items
@@ -45,6 +46,7 @@ DreamFlow is a lightweight Unreal flow graph framework designed as a reusable ba
 10. Use the `Variables` tab to edit flow-scoped environment variables in one dedicated panel.
 11. Right click a node and choose `Add Breakpoint` to pause before that node executes.
 12. The graph editor supports undo/redo, copy, cut, paste, and duplicate for normal nodes.
+13. If you want `StartFlow` to stop on the entry node instead of immediately running the first gameplay node, disable `Auto Execute Entry Node On Start` on the flow asset.
 
 ## Flow variables
 
@@ -55,6 +57,7 @@ Every `UDreamFlowAsset` now owns a `Variables` array, so each flow asset can def
 - Each variable has a `Name`, `Description`, and typed `DefaultValue`.
 - Supported value types are `Bool`, `Int`, `Float`, `Name`, `String`, `Text`, `GameplayTag`, and `Object`.
 - When a `UDreamFlowExecutor` initializes, it copies those defaults into its runtime variable map.
+- Each flow asset can choose whether `StartFlow` should immediately execute past the entry node through `bAutoExecuteEntryNodeOnStart`.
 
 This makes the variable model feel closer to Blueprint variables, but still scoped per DreamFlow asset.
 
@@ -262,6 +265,7 @@ Notes:
 DreamFlow now ships with automation coverage for core runtime behavior.
 
 - `DreamFlow.Core.Execution.AutomaticBranching`
+- `DreamFlow.Core.Execution.ManualEntryStart`
 - `DreamFlow.Core.Validation.MissingVariable`
 - `DreamFlow.Core.Network.ReplicatedStateMirror`
 - `DreamFlow.Core.Logging.SettingsFiltering`

@@ -202,6 +202,7 @@ public:
     FDreamFlowExecutorStateChangedSignature OnDebugStateChanged;
 
 protected:
+    bool ActivateNode(UDreamFlowNode* Node, bool bExecuteNode);
     bool ExecuteCurrentNode();
     bool ShouldPauseAtNode(const UDreamFlowNode* Node, bool& bOutHitBreakpoint);
     void BroadcastDebugStateChanged();
