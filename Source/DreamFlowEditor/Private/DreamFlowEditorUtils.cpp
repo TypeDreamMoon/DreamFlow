@@ -254,10 +254,6 @@ UDreamFlowEdGraph* FDreamFlowEditorUtils::GetOrCreateGraph(UDreamFlowAsset* Flow
     {
         RebuildGraphFromAsset(FlowAsset, Graph);
     }
-    else
-    {
-        SynchronizeAssetFromGraph(FlowAsset);
-    }
 
     return Graph;
 }
@@ -657,7 +653,6 @@ void FDreamFlowEditorUtils::RebuildGraphFromAsset(UDreamFlowAsset* FlowAsset, UD
     }
 
     Graph->NotifyGraphChanged();
-    SynchronizeAssetFromGraph(FlowAsset);
 }
 
 void FDreamFlowEditorUtils::CreateDefaultEntryNode(UDreamFlowAsset* FlowAsset, UDreamFlowEdGraph* Graph)

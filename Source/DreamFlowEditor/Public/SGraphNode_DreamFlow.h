@@ -66,6 +66,7 @@ private:
     EVisibility GetTransitionModeVisibility() const;
     EVisibility GetDescriptionVisibility() const;
     EVisibility GetValidationBadgeVisibility() const;
+    bool ShouldUseInlinePropertyEditors() const;
 
     UDreamFlowEdGraphNode* GetFlowNode() const;
 

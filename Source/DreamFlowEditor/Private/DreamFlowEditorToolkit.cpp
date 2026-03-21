@@ -131,6 +131,12 @@ FDreamFlowEditorToolkit::~FDreamFlowEditorToolkit()
         FTSTicker::GetCoreTicker().RemoveTicker(DeferredGraphRefreshHandle);
         DeferredGraphRefreshHandle.Reset();
     }
+
+    if (DeferredDetailsObjectHandle.IsValid())
+    {
+        FTSTicker::GetCoreTicker().RemoveTicker(DeferredDetailsObjectHandle);
+        DeferredDetailsObjectHandle.Reset();
+    }
 }
 
 void FDreamFlowEditorToolkit::InitEditor(const EToolkitMode::Type Mode, const TSharedPtr<IToolkitHost>& InitToolkitHost, UDreamFlowAsset* InFlowAsset)
@@ -642,7 +648,7 @@ void FDreamFlowEditorToolkit::HandleSelectedNodesChanged(const TSet<UObject*>& N
         UObject* SelectedObject = *NewSelection.CreateConstIterator();
         if (const UDreamFlowEdGraphNode* SelectedNode = Cast<UDreamFlowEdGraphNode>(SelectedObject))
         {
-            OpenNodeEditor(SelectedNode->GetRuntimeNode());
+            RequestDetailsObject(SelectedNode->GetRuntimeNode(), false);
             return;
         }
 
@@ -654,6 +660,7 @@ void FDreamFlowEditorToolkit::HandleSelectedNodesChanged(const TSet<UObject*>& N
 
     if (NewSelection.Num() > 1)
     {
+        CancelPendingDetailsObjectRequest();
         return;
     }
 
@@ -1347,12 +1354,63 @@ bool FDreamFlowEditorToolkit::JumpToNodeGuid(const FGuid& NodeGuid)
 
 void FDreamFlowEditorToolkit::OpenNodeEditor(UObject* ObjectToEdit)
 {
-    SetDetailsObject(ObjectToEdit);
+    RequestDetailsObject(ObjectToEdit, true);
+}
 
-    if (TSharedPtr<FTabManager> ToolkitTabManager = GetTabManager())
+void FDreamFlowEditorToolkit::RequestDetailsObject(UObject* ObjectToEdit, bool bInvokeDetailsTab)
+{
+    if (ObjectToEdit == nullptr)
     {
-        ToolkitTabManager->TryInvokeTab(DetailsTabId);
+        return;
     }
+
+    PendingDetailsObject = ObjectToEdit;
+    bPendingDetailsTabOpen = bPendingDetailsTabOpen || bInvokeDetailsTab;
+
+    if (!DeferredDetailsObjectHandle.IsValid())
+    {
+        DeferredDetailsObjectHandle = FTSTicker::GetCoreTicker().AddTicker(
+            FTickerDelegate::CreateSP(this, &FDreamFlowEditorToolkit::HandleDeferredDetailsObject));
+    }
+}
+
+void FDreamFlowEditorToolkit::CancelPendingDetailsObjectRequest()
+{
+    PendingDetailsObject.Reset();
+    bPendingDetailsTabOpen = false;
+
+    if (DeferredDetailsObjectHandle.IsValid())
+    {
+        FTSTicker::GetCoreTicker().RemoveTicker(DeferredDetailsObjectHandle);
+        DeferredDetailsObjectHandle.Reset();
+    }
+}
+
+bool FDreamFlowEditorToolkit::HandleDeferredDetailsObject(float DeltaTime)
+{
+    (void)DeltaTime;
+
+    const bool bShouldOpenDetailsTab = bPendingDetailsTabOpen;
+    UObject* ObjectToEdit = PendingDetailsObject.Get();
+
+    PendingDetailsObject.Reset();
+    bPendingDetailsTabOpen = false;
+
+    if (ObjectToEdit != nullptr)
+    {
+        SetDetailsObject(ObjectToEdit);
+
+        if (bShouldOpenDetailsTab)
+        {
+            if (TSharedPtr<FTabManager> ToolkitTabManager = GetTabManager())
+            {
+                ToolkitTabManager->TryInvokeTab(DetailsTabId);
+            }
+        }
+    }
+
+    DeferredDetailsObjectHandle.Reset();
+    return false;
 }
 
 void FDreamFlowEditorToolkit::SetDetailsObject(UObject* ObjectToEdit)

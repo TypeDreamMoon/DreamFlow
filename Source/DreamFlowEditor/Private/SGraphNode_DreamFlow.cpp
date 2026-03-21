@@ -35,6 +35,8 @@
 
 namespace DreamFlowNodeWidget
 {
+    static constexpr int32 InlineEditorNodeCountThreshold = 40;
+
     static int32 GetInlinePropertyPriority(const UDreamFlowNode* RuntimeNode, const FName PropertyName)
     {
         if (RuntimeNode == nullptr)
@@ -563,17 +565,7 @@ void SGraphNode_DreamFlow::EndUserInteraction() const
 
 FReply SGraphNode_DreamFlow::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-    const FReply Reply = SGraphNode::OnMouseButtonDown(MyGeometry, MouseEvent);
-
-    if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
-    {
-        if (const UDreamFlowEdGraphNode* FlowNode = GetFlowNode())
-        {
-            FDreamFlowEditorToolkit::OpenNodeEditorForGraph(FlowNode->GetGraph(), FlowNode->GetRuntimeNode());
-        }
-    }
-
-    return Reply;
+    return SGraphNode::OnMouseButtonDown(MyGeometry, MouseEvent);
 }
 
 void SGraphNode_DreamFlow::GetOverlayBrushes(bool bSelected, const FVector2f& WidgetSize, TArray<FOverlayBrushInfo>& Brushes) const
@@ -617,6 +609,11 @@ void SGraphNode_DreamFlow::RefreshInlinePropertyRows()
     InlinePropertyRowGenerator.Reset();
     CachedInlinePropertyNodes.Reset();
     bHasInlinePropertyNodes = false;
+
+    if (!ShouldUseInlinePropertyEditors())
+    {
+        return;
+    }
 
     const UDreamFlowEdGraphNode* FlowNode = GetFlowNode();
     UDreamFlowNode* RuntimeNode = FlowNode != nullptr ? FlowNode->GetRuntimeNode() : nullptr;
@@ -1330,9 +1327,16 @@ EVisibility SGraphNode_DreamFlow::GetIconVisibility() const
 
 EVisibility SGraphNode_DreamFlow::GetInlineEditorVisibility() const
 {
-    return bHasInlinePropertyNodes
+    return ShouldUseInlinePropertyEditors() && bHasInlinePropertyNodes
         ? EVisibility::Visible
         : EVisibility::Collapsed;
+}
+
+bool SGraphNode_DreamFlow::ShouldUseInlinePropertyEditors() const
+{
+    const UDreamFlowEdGraphNode* FlowNode = GetFlowNode();
+    const UEdGraph* Graph = FlowNode != nullptr ? FlowNode->GetGraph() : nullptr;
+    return Graph == nullptr || Graph->Nodes.Num() <= DreamFlowNodeWidget::InlineEditorNodeCountThreshold;
 }
 
 EVisibility SGraphNode_DreamFlow::GetPreviewVisibility() const

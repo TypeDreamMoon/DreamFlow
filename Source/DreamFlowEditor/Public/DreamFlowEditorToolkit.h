@@ -100,6 +100,9 @@ private:
     void HandleNodeGuidActivated(const FGuid& NodeGuid);
     bool JumpToNodeGuid(const FGuid& NodeGuid);
     void OpenNodeEditor(UObject* ObjectToEdit);
+    void RequestDetailsObject(UObject* ObjectToEdit, bool bInvokeDetailsTab);
+    void CancelPendingDetailsObjectRequest();
+    bool HandleDeferredDetailsObject(float DeltaTime);
     void SetDetailsObject(UObject* ObjectToEdit);
     void SyncVariableEditorDataFromAsset();
     void SyncVariablesFromEditorData();
@@ -134,7 +137,10 @@ private:
     FDelegateHandle GraphChangedHandle;
     FDelegateHandle ObjectPropertyChangedHandle;
     FTSTicker::FDelegateHandle DeferredGraphRefreshHandle;
+    FTSTicker::FDelegateHandle DeferredDetailsObjectHandle;
     TArray<TWeakObjectPtr<UDreamFlowNode>> PendingNodeReconstructions;
+    TWeakObjectPtr<UObject> PendingDetailsObject;
+    bool bPendingDetailsTabOpen = false;
     bool bIsSynchronizingVariableEditorData = false;
     bool bIsRefreshingValidationGraph = false;
     bool bHasValidationRun = false;
