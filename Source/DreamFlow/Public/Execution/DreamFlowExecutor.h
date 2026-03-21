@@ -38,11 +38,19 @@ public:
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool Advance();
 
+    /** Advances a manual node through its default continuation path. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
+    bool Step();
+
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool MoveToChildByIndex(int32 ChildIndex);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool MoveToOutputPin(FName OutputPinName);
+
+    /** Advances a manual node through the specified output pin. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
+    bool StepToOutputPin(FName OutputPinName);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool ChooseChild(UDreamFlowNode* ChildNode);
@@ -76,6 +84,15 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
     TArray<UDreamFlowNode*> GetAvailableChildren() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
+    TArray<FDreamFlowNodeOutputPin> GetAvailableOutputPins() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
+    bool IsCurrentNodeAutomatic() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
+    bool IsWaitingForManualStep() const;
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
     TArray<UDreamFlowNode*> GetVisitedNodes() const;

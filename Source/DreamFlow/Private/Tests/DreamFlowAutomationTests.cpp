@@ -178,6 +178,39 @@ bool FDreamFlowManualEntryStartTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowManualMultiOutputStepTest,
+    "DreamFlow.Core.Execution.ManualMultiOutputStep",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowManualMultiOutputStepTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FDreamFlowBranchTestGraph Graph = BuildBranchingFlowAsset();
+    Graph.BranchNode->TransitionMode = EDreamFlowNodeTransitionMode::Manual;
+
+    UDreamFlowExecutor* Executor = NewObject<UDreamFlowExecutor>(GetTransientPackage(), NAME_None, RF_Transient);
+    Executor->Initialize(Graph.Asset, nullptr);
+
+    TestTrue(TEXT("The flow should start successfully for a manual multi-output node."), Executor->StartFlow());
+    TestEqual(TEXT("Execution should stop on the manual branch node instead of auto-transitioning."), Executor->GetCurrentNode(), static_cast<UDreamFlowNode*>(Graph.BranchNode));
+    TestTrue(TEXT("The executor should report that it is waiting for a manual step."), Executor->IsWaitingForManualStep());
+    TestFalse(TEXT("The manual branch node should not be treated as automatic."), Executor->IsCurrentNodeAutomatic());
+    TestEqual(TEXT("Two output pins should be available on the manual branch node."), Executor->GetAvailableOutputPins().Num(), 2);
+    TestFalse(TEXT("Default Step should stay blocked when the manual node exposes multiple outputs."), Executor->Step());
+    TestTrue(TEXT("StepToOutputPin should allow choosing the true branch explicitly."), Executor->StepToOutputPin(TEXT("True")));
+    TestEqual(TEXT("Stepping through the true output pin should enter the true node."), Executor->GetCurrentNode(), Graph.TrueNode);
+
+    UDreamFlowExecutor* NodeDrivenExecutor = NewObject<UDreamFlowExecutor>(GetTransientPackage(), NAME_None, RF_Transient);
+    NodeDrivenExecutor->Initialize(Graph.Asset, nullptr);
+    TestTrue(TEXT("A second executor should also start successfully."), NodeDrivenExecutor->StartFlow());
+    TestTrue(TEXT("Node helper flow continuation should step through the requested output pin."), Graph.BranchNode->ContinueFlowFromOutputPin(NodeDrivenExecutor, TEXT("False")));
+    TestEqual(TEXT("Node helper output stepping should enter the false node."), NodeDrivenExecutor->GetCurrentNode(), Graph.FalseNode);
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FDreamFlowValidationMissingVariableTest,
     "DreamFlow.Core.Validation.MissingVariable",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

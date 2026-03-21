@@ -51,6 +51,7 @@ private:
     FText GetNodeClassLabel() const;
     FText GetNodeCategoryLabel() const;
     FText GetNodeAccentLabel() const;
+    FText GetTransitionModeLabel() const;
     FText GetNodeConnectionLabel() const;
     FText GetNodeDescription() const;
     EVisibility GetIconVisibility() const;
@@ -58,6 +59,7 @@ private:
     EVisibility GetPreviewVisibility() const;
     EVisibility GetBreakpointVisibility() const;
     EVisibility GetAccentVisibility() const;
+    EVisibility GetTransitionModeVisibility() const;
     EVisibility GetDescriptionVisibility() const;
     EVisibility GetValidationBadgeVisibility() const;
 

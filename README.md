@@ -197,6 +197,8 @@ For async Blueprint nodes, derive from `UDreamFlowAsyncNode` instead.
 - Override `StartAsyncNode`
 - Use the provided `AsyncContext` object to call `Complete()` or `CompleteWithOutputPin()`
 - Keep your async state outside the node asset itself; the `AsyncContext` and `Executor` carry the runtime state safely per execution
+- Nodes now expose a per-node `TransitionMode`. Set it to `Automatic` for nodes like branches/conditions that should resolve their next output immediately after execution, or keep it `Manual` when you want Blueprint/gameplay code to call `Step()` or `StepToOutputPin()`
+- Blueprint node classes can also call `ContinueFlow(Executor)` or `ContinueFlowFromOutputPin(Executor, OutputPinName)` directly on `self` from inside `ExecuteNodeWithExecutor`
 
 This makes it much easier to hook DreamFlow nodes into Blueprint timers, latent tasks, gameplay callbacks, online requests, or animation notifies without manually rebuilding executor state.
 
@@ -210,12 +212,17 @@ The executor currently supports:
 - `RestartFlow`
 - `FinishFlow`
 - `Advance`
+- `Step`
 - `MoveToChildByIndex`
 - `ChooseChild`
 - `MoveToOutputPin`
+- `StepToOutputPin`
 - `GetCurrentNode`
 - `GetPendingAsyncNode`
 - `GetAvailableChildren`
+- `GetAvailableOutputPins`
+- `IsCurrentNodeAutomatic`
+- `IsWaitingForManualStep`
 - `IsWaitingForAsyncNode`
 - `CompleteAsyncNode`
 - `PauseExecution`
@@ -269,6 +276,7 @@ Runtime logs are emitted through `LogDreamFlow`, so they can also be filtered th
 - The replicated snapshot also carries the async waiting state, so client mirrors know when a flow is blocked on an async node.
 - Clients build a mirrored local executor from that replicated snapshot, so Blueprint reads such as `GetCurrentNode` and `GetVariable...Value` continue to work on remote machines.
 - Client calls made through `UDreamFlowExecutorComponent` such as `StartFlow`, `Advance`, `ChooseChild`, `MoveToOutputPin`, `SetVariable...Value`, and `ResetVariablesToDefaults` are forwarded to the server with RPCs.
+- Manual multi-output nodes can be driven safely over the network with `StepToOutputPin`, while automatic nodes continue to resolve on the authoritative executor.
 - For multiplayer gameplay, prefer calling the component APIs instead of invoking `UDreamFlowExecutor` directly.
 
 Notes:
@@ -282,6 +290,7 @@ Notes:
 DreamFlow now ships with automation coverage for core runtime behavior.
 
 - `DreamFlow.Core.Execution.AutomaticBranching`
+- `DreamFlow.Core.Execution.ManualMultiOutputStep`
 - `DreamFlow.Core.Execution.AsyncManualCompletion`
 - `DreamFlow.Core.Execution.ManualEntryStart`
 - `DreamFlow.Core.Validation.MissingVariable`

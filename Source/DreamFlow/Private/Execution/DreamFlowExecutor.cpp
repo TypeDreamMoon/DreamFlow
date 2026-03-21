@@ -144,6 +144,11 @@ bool UDreamFlowExecutor::Advance()
     return Children.Num() == 1 ? EnterNode(Children[0]) : false;
 }
 
+bool UDreamFlowExecutor::Step()
+{
+    return Advance();
+}
+
 bool UDreamFlowExecutor::MoveToChildByIndex(int32 ChildIndex)
 {
     if (!bIsRunning || bIsPaused || bIsWaitingForAsyncNode || bHasQueuedAsyncCompletion || CurrentNode == nullptr)
@@ -168,6 +173,11 @@ bool UDreamFlowExecutor::MoveToOutputPin(FName OutputPinName)
     }
 
     return EnterNode(CurrentNode->GetFirstChildForOutputPin(OutputPinName));
+}
+
+bool UDreamFlowExecutor::StepToOutputPin(FName OutputPinName)
+{
+    return MoveToOutputPin(OutputPinName);
 }
 
 bool UDreamFlowExecutor::ChooseChild(UDreamFlowNode* ChildNode)
@@ -328,6 +338,41 @@ TArray<UDreamFlowNode*> UDreamFlowExecutor::GetAvailableChildren() const
     return (CurrentNode != nullptr && !bIsWaitingForAsyncNode && !bHasQueuedAsyncCompletion)
         ? CurrentNode->GetChildrenCopy()
         : TArray<UDreamFlowNode*>();
+}
+
+TArray<FDreamFlowNodeOutputPin> UDreamFlowExecutor::GetAvailableOutputPins() const
+{
+    if (CurrentNode == nullptr || bIsWaitingForAsyncNode || bHasQueuedAsyncCompletion)
+    {
+        return TArray<FDreamFlowNodeOutputPin>();
+    }
+
+    TArray<FDreamFlowNodeOutputPin> AvailablePins;
+    for (const FDreamFlowNodeOutputPin& OutputPin : CurrentNode->GetOutputPins())
+    {
+        if (CurrentNode->GetFirstChildForOutputPin(OutputPin.PinName) != nullptr)
+        {
+            AvailablePins.Add(OutputPin);
+        }
+    }
+
+    return AvailablePins;
+}
+
+bool UDreamFlowExecutor::IsCurrentNodeAutomatic() const
+{
+    return CurrentNode != nullptr
+        && CurrentNode->GetTransitionMode() == EDreamFlowNodeTransitionMode::Automatic;
+}
+
+bool UDreamFlowExecutor::IsWaitingForManualStep() const
+{
+    return bIsRunning
+        && !bIsPaused
+        && !bIsWaitingForAsyncNode
+        && !bHasQueuedAsyncCompletion
+        && CurrentNode != nullptr
+        && CurrentNode->GetTransitionMode() == EDreamFlowNodeTransitionMode::Manual;
 }
 
 TArray<UDreamFlowNode*> UDreamFlowExecutor::GetVisitedNodes() const

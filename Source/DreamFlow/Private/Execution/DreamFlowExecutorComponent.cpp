@@ -150,6 +150,11 @@ bool UDreamFlowExecutorComponent::Advance()
     return true;
 }
 
+bool UDreamFlowExecutorComponent::Step()
+{
+    return Advance();
+}
+
 bool UDreamFlowExecutorComponent::MoveToChildByIndex(int32 ChildIndex)
 {
     if (IsServerAuthority())
@@ -172,6 +177,11 @@ bool UDreamFlowExecutorComponent::MoveToOutputPin(FName OutputPinName)
     DREAMFLOW_LOG(Replication, Verbose, "Forwarding MoveToOutputPin('%s') request for flow '%s'.", *OutputPinName.ToString(), *GetNameSafe(FlowAsset));
     ServerMoveToOutputPin(OutputPinName);
     return true;
+}
+
+bool UDreamFlowExecutorComponent::StepToOutputPin(FName OutputPinName)
+{
+    return MoveToOutputPin(OutputPinName);
 }
 
 bool UDreamFlowExecutorComponent::ChooseChild(UDreamFlowNode* ChildNode)
@@ -237,6 +247,57 @@ UDreamFlowNode* UDreamFlowExecutorComponent::GetCurrentNode() const
     }
 
     return FlowAsset != nullptr ? FlowAsset->FindNodeByGuid(ReplicatedExecutionState.CurrentNodeGuid) : nullptr;
+}
+
+TArray<FDreamFlowNodeOutputPin> UDreamFlowExecutorComponent::GetAvailableOutputPins() const
+{
+    if (Executor != nullptr)
+    {
+        return Executor->GetAvailableOutputPins();
+    }
+
+    if (UDreamFlowNode* CurrentNode = GetCurrentNode())
+    {
+        TArray<FDreamFlowNodeOutputPin> AvailablePins;
+        for (const FDreamFlowNodeOutputPin& OutputPin : CurrentNode->GetOutputPins())
+        {
+            if (CurrentNode->GetFirstChildForOutputPin(OutputPin.PinName) != nullptr)
+            {
+                AvailablePins.Add(OutputPin);
+            }
+        }
+
+        return AvailablePins;
+    }
+
+    return TArray<FDreamFlowNodeOutputPin>();
+}
+
+bool UDreamFlowExecutorComponent::IsCurrentNodeAutomatic() const
+{
+    if (Executor != nullptr)
+    {
+        return Executor->IsCurrentNodeAutomatic();
+    }
+
+    if (UDreamFlowNode* CurrentNode = GetCurrentNode())
+    {
+        return CurrentNode->GetTransitionMode() == EDreamFlowNodeTransitionMode::Automatic;
+    }
+
+    return false;
+}
+
+bool UDreamFlowExecutorComponent::IsWaitingForManualStep() const
+{
+    if (Executor != nullptr)
+    {
+        return Executor->IsWaitingForManualStep();
+    }
+
+    return GetCurrentNode() != nullptr
+        && ReplicatedExecutionState.DebugState == EDreamFlowExecutorDebugState::Running
+        && !IsCurrentNodeAutomatic();
 }
 
 bool UDreamFlowExecutorComponent::HasVariable(FName VariableName) const

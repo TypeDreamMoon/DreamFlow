@@ -4,6 +4,7 @@ UDreamFlowEntryNode::UDreamFlowEntryNode()
 {
     Title = FText::FromString(TEXT("Entry"));
     Description = FText::FromString(TEXT("Graph entry point."));
+    TransitionMode = EDreamFlowNodeTransitionMode::Automatic;
 
 #if WITH_EDITORONLY_DATA
     NodeTint = FLinearColor(0.82f, 0.39f, 0.08f, 1.0f);

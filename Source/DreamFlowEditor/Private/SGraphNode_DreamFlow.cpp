@@ -313,6 +313,28 @@ void SGraphNode_DreamFlow::UpdateGraphNode()
                                                 .ColorAndOpacity(this, &SGraphNode_DreamFlow::GetBadgeTextColor)
                                             ]
                                         ]
+                                        + SHorizontalBox::Slot()
+                                        .AutoWidth()
+                                        .Padding(6.0f, 0.0f, 0.0f, 0.0f)
+                                        [
+                                            SNew(SBorder)
+                                            .Visibility(this, &SGraphNode_DreamFlow::GetTransitionModeVisibility)
+                                            .BorderImage(this, &SGraphNode_DreamFlow::GetBadgeBrush)
+                                            .BorderBackgroundColor_Lambda([this]()
+                                            {
+                                                const UDreamFlowNode* RuntimeNode = GetFlowNode() != nullptr ? GetFlowNode()->GetRuntimeNode() : nullptr;
+                                                return RuntimeNode != nullptr && RuntimeNode->GetTransitionMode() == EDreamFlowNodeTransitionMode::Automatic
+                                                    ? FStyleColors::Primary
+                                                    : FStyleColors::Recessed;
+                                            })
+                                            .Padding(FMargin(8.0f, 3.0f))
+                                            [
+                                                SNew(STextBlock)
+                                                .Text(this, &SGraphNode_DreamFlow::GetTransitionModeLabel)
+                                                .TextStyle(FAppStyle::Get(), "SmallText")
+                                                .ColorAndOpacity(FSlateColor(EStyleColor::White))
+                                            ]
+                                        ]
                                     ]
 
                                     + SVerticalBox::Slot()
@@ -1021,6 +1043,13 @@ FText SGraphNode_DreamFlow::GetNodeAccentLabel() const
     return RuntimeNode ? RuntimeNode->GetNodeAccentLabel() : FText::GetEmpty();
 }
 
+FText SGraphNode_DreamFlow::GetTransitionModeLabel() const
+{
+    const UDreamFlowEdGraphNode* FlowNode = GetFlowNode();
+    const UDreamFlowNode* RuntimeNode = FlowNode ? FlowNode->GetRuntimeNode() : nullptr;
+    return RuntimeNode ? RuntimeNode->GetTransitionModeLabel() : FText::GetEmpty();
+}
+
 FText SGraphNode_DreamFlow::GetNodeConnectionLabel() const
 {
     const UDreamFlowEdGraphNode* FlowNode = GetFlowNode();
@@ -1080,6 +1109,11 @@ EVisibility SGraphNode_DreamFlow::GetBreakpointVisibility() const
 EVisibility SGraphNode_DreamFlow::GetAccentVisibility() const
 {
     return GetNodeAccentLabel().IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible;
+}
+
+EVisibility SGraphNode_DreamFlow::GetTransitionModeVisibility() const
+{
+    return GetTransitionModeLabel().IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible;
 }
 
 EVisibility SGraphNode_DreamFlow::GetDescriptionVisibility() const

@@ -101,6 +101,7 @@ UDreamFlowBranchNode::UDreamFlowBranchNode()
     Title = FText::FromString(TEXT("Branch"));
     Description = FText::FromString(TEXT("Chooses the first child when the condition is true, otherwise the second child."));
     ConditionBinding.LiteralValue.Type = EDreamFlowValueType::Bool;
+    TransitionMode = EDreamFlowNodeTransitionMode::Automatic;
 
 #if WITH_EDITORONLY_DATA
     NodeTint = FLinearColor(0.80f, 0.52f, 0.15f, 1.0f);
@@ -146,7 +147,7 @@ TArray<FDreamFlowNodeOutputPin> UDreamFlowBranchNode::GetOutputPins_Implementati
 bool UDreamFlowBranchNode::SupportsAutomaticTransition_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
 {
     (void)Context;
-    return Executor != nullptr;
+    return Executor != nullptr && GetTransitionMode() == EDreamFlowNodeTransitionMode::Automatic;
 }
 
 FName UDreamFlowBranchNode::ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
@@ -191,6 +192,7 @@ UDreamFlowCompareNode::UDreamFlowCompareNode()
     Description = FText::FromString(TEXT("Compares two values and branches to child 0 when the comparison is true, otherwise child 1."));
     LeftValue.LiteralValue.Type = EDreamFlowValueType::Int;
     RightValue.LiteralValue.Type = EDreamFlowValueType::Int;
+    TransitionMode = EDreamFlowNodeTransitionMode::Automatic;
 
 #if WITH_EDITORONLY_DATA
     NodeTint = FLinearColor(0.23f, 0.55f, 0.80f, 1.0f);
@@ -238,7 +240,7 @@ TArray<FDreamFlowNodeOutputPin> UDreamFlowCompareNode::GetOutputPins_Implementat
 bool UDreamFlowCompareNode::SupportsAutomaticTransition_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
 {
     (void)Context;
-    return Executor != nullptr;
+    return Executor != nullptr && GetTransitionMode() == EDreamFlowNodeTransitionMode::Automatic;
 }
 
 FName UDreamFlowCompareNode::ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
@@ -305,6 +307,7 @@ UDreamFlowSetVariableNode::UDreamFlowSetVariableNode()
     Title = FText::FromString(TEXT("Set Variable"));
     Description = FText::FromString(TEXT("Writes a flow variable, then continues to the first child if one exists."));
     ValueBinding.LiteralValue.Type = EDreamFlowValueType::Bool;
+    TransitionMode = EDreamFlowNodeTransitionMode::Automatic;
 
 #if WITH_EDITORONLY_DATA
     NodeTint = FLinearColor(0.18f, 0.66f, 0.42f, 1.0f);
@@ -354,7 +357,7 @@ bool UDreamFlowSetVariableNode::SupportsAutomaticTransition_Implementation(UObje
 {
     (void)Context;
     (void)Executor;
-    return true;
+    return GetTransitionMode() == EDreamFlowNodeTransitionMode::Automatic;
 }
 
 FName UDreamFlowSetVariableNode::ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const

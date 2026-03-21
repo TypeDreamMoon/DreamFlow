@@ -12,6 +12,13 @@ class UDreamFlowExecutor;
 class UDreamFlowNode;
 class UTexture2D;
 
+UENUM(BlueprintType)
+enum class EDreamFlowNodeTransitionMode : uint8
+{
+    Manual UMETA(DisplayName = "Manual"),
+    Automatic UMETA(DisplayName = "Automatic")
+};
+
 USTRUCT(BlueprintType)
 struct DREAMFLOW_API FDreamFlowNodeOutputPin
 {
@@ -68,6 +75,9 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Flow|Compatibility")
     TSubclassOf<UDreamFlowAsset> SupportedFlowAssetType;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flow|Execution")
+    EDreamFlowNodeTransitionMode TransitionMode = EDreamFlowNodeTransitionMode::Manual;
 
 #if WITH_EDITORONLY_DATA
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Editor")
@@ -139,6 +149,14 @@ public:
     bool IsTerminalNode() const;
     virtual bool IsTerminalNode_Implementation() const;
 
+    UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Flow|Execution")
+    EDreamFlowNodeTransitionMode GetTransitionMode() const;
+    virtual EDreamFlowNodeTransitionMode GetTransitionMode_Implementation() const;
+
+    UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Flow|Execution")
+    FText GetTransitionModeLabel() const;
+    virtual FText GetTransitionModeLabel_Implementation() const;
+
     UFUNCTION(BlueprintNativeEvent, BlueprintCallable, BlueprintPure = false, Category = "Flow")
     bool CanEnterNode(UObject* Context) const;
     virtual bool CanEnterNode_Implementation(UObject* Context) const;
@@ -166,6 +184,12 @@ public:
     UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Flow|Execution")
     FName ResolveAutomaticTransitionOutputPin(UObject* Context, UDreamFlowExecutor* Executor) const;
     virtual FName ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Flow|Execution")
+    bool ContinueFlow(UDreamFlowExecutor* Executor);
+
+    UFUNCTION(BlueprintCallable, Category = "Flow|Execution")
+    bool ContinueFlowFromOutputPin(UDreamFlowExecutor* Executor, FName OutputPinName);
 
     UFUNCTION(BlueprintCallable, Category = "Flow")
     void SetChildren(const TArray<UDreamFlowNode*>& InChildren);

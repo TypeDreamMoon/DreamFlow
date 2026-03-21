@@ -19,6 +19,7 @@ UDreamFlowAsyncNode::UDreamFlowAsyncNode()
 {
     Title = FText::FromString(TEXT("Async Node"));
     Description = FText::FromString(TEXT("Starts asynchronous work and resumes when the async context reports completion."));
+    TransitionMode = EDreamFlowNodeTransitionMode::Automatic;
 
 #if WITH_EDITORONLY_DATA
     NodeTint = FLinearColor(0.66f, 0.28f, 0.74f, 1.0f);

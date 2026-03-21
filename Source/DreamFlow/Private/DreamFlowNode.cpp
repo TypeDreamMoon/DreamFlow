@@ -139,6 +139,18 @@ bool UDreamFlowNode::IsTerminalNode_Implementation() const
     return false;
 }
 
+EDreamFlowNodeTransitionMode UDreamFlowNode::GetTransitionMode_Implementation() const
+{
+    return TransitionMode;
+}
+
+FText UDreamFlowNode::GetTransitionModeLabel_Implementation() const
+{
+    return GetTransitionMode() == EDreamFlowNodeTransitionMode::Automatic
+        ? FText::FromString(TEXT("Auto"))
+        : FText::FromString(TEXT("Manual"));
+}
+
 bool UDreamFlowNode::CanEnterNode_Implementation(UObject* Context) const
 {
     (void)Context;
@@ -165,7 +177,7 @@ bool UDreamFlowNode::SupportsAutomaticTransition_Implementation(UObject* Context
 {
     (void)Context;
     (void)Executor;
-    return false;
+    return GetTransitionMode() == EDreamFlowNodeTransitionMode::Automatic;
 }
 
 int32 UDreamFlowNode::ResolveAutomaticTransitionChildIndex_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
@@ -180,9 +192,39 @@ FName UDreamFlowNode::ResolveAutomaticTransitionOutputPin_Implementation(UObject
     const int32 ChildIndex = ResolveAutomaticTransitionChildIndex(Context, Executor);
     const TArray<FDreamFlowNodeOutputPin> OutputPins = GetOutputPins();
 
-    return OutputPins.IsValidIndex(ChildIndex)
-        ? OutputPins[ChildIndex].PinName
+    if (OutputPins.IsValidIndex(ChildIndex))
+    {
+        return OutputPins[ChildIndex].PinName;
+    }
+
+    TSet<FName> ConnectedPinNames;
+    for (const FDreamFlowNodeOutputLink& OutputLink : OutputLinks)
+    {
+        if (!OutputLink.PinName.IsNone() && OutputLink.Child != nullptr)
+        {
+            ConnectedPinNames.Add(OutputLink.PinName);
+        }
+    }
+
+    if (ConnectedPinNames.Num() == 1)
+    {
+        TArray<FName> ConnectedPinArray = ConnectedPinNames.Array();
+        return ConnectedPinArray[0];
+    }
+
+    return OutputPins.Num() == 1
+        ? OutputPins[0].PinName
         : NAME_None;
+}
+
+bool UDreamFlowNode::ContinueFlow(UDreamFlowExecutor* Executor)
+{
+    return Executor != nullptr ? Executor->Step() : false;
+}
+
+bool UDreamFlowNode::ContinueFlowFromOutputPin(UDreamFlowExecutor* Executor, FName OutputPinName)
+{
+    return Executor != nullptr ? Executor->StepToOutputPin(OutputPinName) : false;
 }
 
 void UDreamFlowNode::SetChildren(const TArray<UDreamFlowNode*>& InChildren)
