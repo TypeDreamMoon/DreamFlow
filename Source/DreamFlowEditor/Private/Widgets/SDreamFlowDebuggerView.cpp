@@ -145,8 +145,26 @@ void SDreamFlowDebuggerView::Tick(const FGeometry& AllottedGeometry, const doubl
     RefreshExecutors();
 }
 
+void SDreamFlowDebuggerView::CleanupCachedExecutors()
+{
+    CachedExecutors.RemoveAll([](const TWeakObjectPtr<UDreamFlowExecutor>& WeakExecutor)
+    {
+        return !WeakExecutor.IsValid();
+    });
+
+    if (!SelectedExecutor.IsValid())
+    {
+        SelectedExecutor.Reset();
+    }
+}
+
 void SDreamFlowDebuggerView::RefreshExecutors()
 {
+    const int32 PreviousCachedCount = CachedExecutors.Num();
+    const bool bHadSelectedExecutor = SelectedExecutor.IsValid();
+    CleanupCachedExecutors();
+    const bool bLocalCleanupChanged = PreviousCachedCount != CachedExecutors.Num() || bHadSelectedExecutor != SelectedExecutor.IsValid();
+
     TArray<UDreamFlowExecutor*> NewExecutors;
     if (GEngine != nullptr)
     {
@@ -156,7 +174,19 @@ void SDreamFlowDebuggerView::RefreshExecutors()
         }
     }
 
-    if (!HasExecutorSnapshotChanged(NewExecutors))
+    bool bSelectionChanged = false;
+    if (SelectedExecutor.IsValid() && !NewExecutors.Contains(SelectedExecutor.Get()))
+    {
+        SelectedExecutor = NewExecutors.Num() > 0 ? NewExecutors[0] : nullptr;
+        bSelectionChanged = true;
+    }
+    else if (!SelectedExecutor.IsValid() && NewExecutors.Num() > 0)
+    {
+        SelectedExecutor = NewExecutors[0];
+        bSelectionChanged = true;
+    }
+
+    if (!HasExecutorSnapshotChanged(NewExecutors) && !bSelectionChanged && !bLocalCleanupChanged)
     {
         if (SummaryTextBlock.IsValid())
         {
@@ -174,11 +204,6 @@ void SDreamFlowDebuggerView::RefreshExecutors()
     if (!SelectedExecutor.IsValid() && CachedExecutors.Num() > 0)
     {
         SelectedExecutor = CachedExecutors[0];
-    }
-
-    if (SelectedExecutor.IsValid() && !NewExecutors.Contains(SelectedExecutor.Get()))
-    {
-        SelectedExecutor = CachedExecutors.Num() > 0 ? CachedExecutors[0] : nullptr;
     }
 
     RebuildExecutorList();
@@ -225,19 +250,21 @@ void SDreamFlowDebuggerView::RebuildExecutorList()
 
 TSharedRef<SWidget> SDreamFlowDebuggerView::BuildExecutorCard(UDreamFlowExecutor* Executor) const
 {
+    const TWeakObjectPtr<UDreamFlowExecutor> WeakExecutor = Executor;
+
     return SNew(SButton)
         .ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
         .ContentPadding(0.0f)
-        .OnClicked(this, &SDreamFlowDebuggerView::HandleSelectExecutor, Executor)
+        .OnClicked(this, &SDreamFlowDebuggerView::HandleSelectExecutor, WeakExecutor)
         [
             SNew(SBorder)
             .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-            .BorderBackgroundColor(this, &SDreamFlowDebuggerView::GetExecutorBorderColor, Executor)
+            .BorderBackgroundColor(this, &SDreamFlowDebuggerView::GetExecutorBorderColor, WeakExecutor)
             .Padding(1.0f)
             [
                 SNew(SBorder)
                 .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-                .BorderBackgroundColor(this, &SDreamFlowDebuggerView::GetExecutorCardColor, Executor)
+                .BorderBackgroundColor(this, &SDreamFlowDebuggerView::GetExecutorCardColor, WeakExecutor)
                 .Padding(FMargin(10.0f, 8.0f))
                 [
                     SNew(SVerticalBox)
@@ -245,7 +272,7 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildExecutorCard(UDreamFlowExecutor
                     .AutoHeight()
                     [
                         SNew(STextBlock)
-                        .Text(this, &SDreamFlowDebuggerView::GetExecutorDisplayNameText, Executor)
+                        .Text(this, &SDreamFlowDebuggerView::GetExecutorDisplayNameText, WeakExecutor)
                         .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
                         .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
                     ]
@@ -254,7 +281,7 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildExecutorCard(UDreamFlowExecutor
                     .Padding(0.0f, 3.0f, 0.0f, 0.0f)
                     [
                         SNew(STextBlock)
-                        .Text(GetExecutorStateText(Executor))
+                        .Text(this, &SDreamFlowDebuggerView::GetExecutorStateText, WeakExecutor)
                         .TextStyle(FAppStyle::Get(), "SmallText")
                         .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
                     ]
@@ -263,7 +290,7 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildExecutorCard(UDreamFlowExecutor
                     .Padding(0.0f, 3.0f, 0.0f, 0.0f)
                     [
                         SNew(STextBlock)
-                        .Text(this, &SDreamFlowDebuggerView::GetExecutorCurrentNodeText, Executor)
+                        .Text(this, &SDreamFlowDebuggerView::GetExecutorCurrentNodeText, WeakExecutor)
                         .TextStyle(FAppStyle::Get(), "SmallText")
                         .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
                         .WrapTextAt(260.0f)
@@ -277,12 +304,6 @@ void SDreamFlowDebuggerView::SelectExecutor(UDreamFlowExecutor* Executor)
 {
     SelectedExecutor = Executor;
     RebuildExecutorList();
-}
-
-FReply SDreamFlowDebuggerView::HandleSelectExecutor(UDreamFlowExecutor* Executor) const
-{
-    const_cast<SDreamFlowDebuggerView*>(this)->SelectExecutor(Executor);
-    return FReply::Handled();
 }
 
 FReply SDreamFlowDebuggerView::HandleContinueClicked() const
@@ -384,14 +405,20 @@ FText SDreamFlowDebuggerView::GetSummaryText() const
         DreamFlowDebuggerView::GetDebugStateLabel(Executor->GetDebugState()));
 }
 
-FText SDreamFlowDebuggerView::GetExecutorDisplayNameText(UDreamFlowExecutor* Executor) const
+FReply SDreamFlowDebuggerView::HandleSelectExecutor(TWeakObjectPtr<UDreamFlowExecutor> Executor) const
 {
-    return FText::FromString(GetNameSafe(Executor));
+    const_cast<SDreamFlowDebuggerView*>(this)->SelectExecutor(Executor.Get());
+    return FReply::Handled();
 }
 
-FText SDreamFlowDebuggerView::GetExecutorStateText(UDreamFlowExecutor* Executor) const
+FText SDreamFlowDebuggerView::GetExecutorDisplayNameText(TWeakObjectPtr<UDreamFlowExecutor> Executor) const
 {
-    if (Executor == nullptr)
+    return FText::FromString(GetNameSafe(Executor.Get()));
+}
+
+FText SDreamFlowDebuggerView::GetExecutorStateText(TWeakObjectPtr<UDreamFlowExecutor> Executor) const
+{
+    if (!Executor.IsValid())
     {
         return FText::GetEmpty();
     }
@@ -399,9 +426,9 @@ FText SDreamFlowDebuggerView::GetExecutorStateText(UDreamFlowExecutor* Executor)
     return DreamFlowDebuggerView::GetDebugStateLabel(Executor->GetDebugState());
 }
 
-FText SDreamFlowDebuggerView::GetExecutorCurrentNodeText(UDreamFlowExecutor* Executor) const
+FText SDreamFlowDebuggerView::GetExecutorCurrentNodeText(TWeakObjectPtr<UDreamFlowExecutor> Executor) const
 {
-    const UDreamFlowNode* CurrentNode = Executor != nullptr ? Executor->GetCurrentNode() : nullptr;
+    const UDreamFlowNode* CurrentNode = Executor.IsValid() ? Executor->GetCurrentNode() : nullptr;
     return CurrentNode != nullptr
         ? FText::Format(FText::FromString(TEXT("Current: {0}")), CurrentNode->GetNodeDisplayName())
         : FText::FromString(TEXT("Current: None"));
@@ -417,16 +444,16 @@ FText SDreamFlowDebuggerView::GetSelectedNodeText() const
         : FText::FromString(TEXT("Focused node: None"));
 }
 
-FSlateColor SDreamFlowDebuggerView::GetExecutorCardColor(UDreamFlowExecutor* Executor) const
+FSlateColor SDreamFlowDebuggerView::GetExecutorCardColor(TWeakObjectPtr<UDreamFlowExecutor> Executor) const
 {
-    return SelectedExecutor.Get() == Executor
+    return SelectedExecutor.Get() == Executor.Get()
         ? FSlateColor(EStyleColor::Primary)
         : FSlateColor(EStyleColor::Panel);
 }
 
-FSlateColor SDreamFlowDebuggerView::GetExecutorBorderColor(UDreamFlowExecutor* Executor) const
+FSlateColor SDreamFlowDebuggerView::GetExecutorBorderColor(TWeakObjectPtr<UDreamFlowExecutor> Executor) const
 {
-    return SelectedExecutor.Get() == Executor
+    return SelectedExecutor.Get() == Executor.Get()
         ? FSlateColor(EStyleColor::PrimaryHover)
         : FSlateColor(EStyleColor::InputOutline);
 }
@@ -451,5 +478,5 @@ bool SDreamFlowDebuggerView::HasExecutorSnapshotChanged(const TArray<UDreamFlowE
 
 UDreamFlowExecutor* SDreamFlowDebuggerView::GetSelectedExecutor() const
 {
-    return SelectedExecutor.Get();
+    return SelectedExecutor.IsValid() ? SelectedExecutor.Get() : nullptr;
 }

@@ -20,11 +20,12 @@ public:
     virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 
 private:
+    void CleanupCachedExecutors();
     void RefreshExecutors();
     void RebuildExecutorList();
     TSharedRef<SWidget> BuildExecutorCard(UDreamFlowExecutor* Executor) const;
     void SelectExecutor(UDreamFlowExecutor* Executor);
-    FReply HandleSelectExecutor(UDreamFlowExecutor* Executor) const;
+    FReply HandleSelectExecutor(TWeakObjectPtr<UDreamFlowExecutor> Executor) const;
     FReply HandleContinueClicked() const;
     FReply HandleStepClicked() const;
     FReply HandlePauseClicked() const;
@@ -36,12 +37,12 @@ private:
     bool CanStop() const;
     bool CanFocusNode() const;
     FText GetSummaryText() const;
-    FText GetExecutorDisplayNameText(UDreamFlowExecutor* Executor) const;
-    FText GetExecutorStateText(UDreamFlowExecutor* Executor) const;
-    FText GetExecutorCurrentNodeText(UDreamFlowExecutor* Executor) const;
+    FText GetExecutorDisplayNameText(TWeakObjectPtr<UDreamFlowExecutor> Executor) const;
+    FText GetExecutorStateText(TWeakObjectPtr<UDreamFlowExecutor> Executor) const;
+    FText GetExecutorCurrentNodeText(TWeakObjectPtr<UDreamFlowExecutor> Executor) const;
     FText GetSelectedNodeText() const;
-    FSlateColor GetExecutorCardColor(UDreamFlowExecutor* Executor) const;
-    FSlateColor GetExecutorBorderColor(UDreamFlowExecutor* Executor) const;
+    FSlateColor GetExecutorCardColor(TWeakObjectPtr<UDreamFlowExecutor> Executor) const;
+    FSlateColor GetExecutorBorderColor(TWeakObjectPtr<UDreamFlowExecutor> Executor) const;
     bool HasExecutorSnapshotChanged(const TArray<UDreamFlowExecutor*>& NewExecutors) const;
     UDreamFlowExecutor* GetSelectedExecutor() const;
 

@@ -17,4 +17,6 @@ public:
     virtual bool IsEntryNode_Implementation() const override;
     virtual bool IsUserCreatable_Implementation() const override;
     virtual bool CanConnectTo_Implementation(const UDreamFlowNode* OtherNode) const override;
+    virtual bool SupportsAutomaticTransition_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const override;
+    virtual FName ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const override;
 };

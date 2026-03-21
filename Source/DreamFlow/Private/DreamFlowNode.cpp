@@ -17,6 +17,21 @@ UDreamFlowNode::UDreamFlowNode()
 #endif
 }
 
+void UDreamFlowNode::PostLoad()
+{
+    Super::PostLoad();
+
+    if (OutputLinks.Num() == 0 && Children.Num() > 0)
+    {
+        FixupLegacyOutputLinksFromChildren();
+    }
+    else if (OutputLinks.Num() > 0)
+    {
+        const TArray<FDreamFlowNodeOutputLink> ExistingOutputLinks = OutputLinks;
+        SetOutputLinks(ExistingOutputLinks);
+    }
+}
+
 FText UDreamFlowNode::GetNodeDisplayName_Implementation() const
 {
     if (!Title.IsEmpty())
@@ -149,6 +164,32 @@ void UDreamFlowNode::SetChildren(const TArray<UDreamFlowNode*>& InChildren)
             OutputLink.PinName = DefaultPinName;
             OutputLink.Child = Child;
         }
+    }
+}
+
+void UDreamFlowNode::FixupLegacyOutputLinksFromChildren()
+{
+    if (Children.Num() == 0 || OutputLinks.Num() > 0)
+    {
+        return;
+    }
+
+    const TArray<FDreamFlowNodeOutputPin> OutputPins = GetOutputPins();
+    const FName DefaultPinName = OutputPins.Num() > 0 ? OutputPins[0].PinName : FName(TEXT("Out"));
+
+    for (int32 ChildIndex = 0; ChildIndex < Children.Num(); ++ChildIndex)
+    {
+        UDreamFlowNode* Child = Children[ChildIndex];
+        if (Child == nullptr)
+        {
+            continue;
+        }
+
+        FDreamFlowNodeOutputLink& OutputLink = OutputLinks.AddDefaulted_GetRef();
+        OutputLink.PinName = OutputPins.IsValidIndex(ChildIndex)
+            ? OutputPins[ChildIndex].PinName
+            : DefaultPinName;
+        OutputLink.Child = Child;
     }
 }
 

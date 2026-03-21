@@ -22,7 +22,7 @@ class DREAMFLOW_API UDreamFlowBranchNode : public UDreamFlowCoreNode
 public:
     UDreamFlowBranchNode();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Branch")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Branch", meta = (DreamFlowExpectedValueType = "Bool"))
     FDreamFlowValueBinding ConditionBinding;
 
     virtual FText GetNodeDisplayName_Implementation() const override;

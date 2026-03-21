@@ -48,6 +48,7 @@ DreamFlow is a lightweight Unreal flow graph framework designed as a reusable ba
 Every `UDreamFlowAsset` now owns a `Variables` array, so each flow asset can define its own environment-style data without pushing everything into one global runtime object.
 
 - Variable definitions are now surfaced in a dedicated `Variables` editor tab.
+- The variables tab supports type-first creation, so designers can add `Bool`, `Int`, `Float`, `Name`, `String`, `Text`, and `GameplayTag` variables directly from the header menu.
 - Each variable has a `Name`, `Description`, and typed `DefaultValue`.
 - Supported value types are `Bool`, `Int`, `Float`, `Name`, `String`, `Text`, and `GameplayTag`.
 - When a `UDreamFlowExecutor` initializes, it copies those defaults into its runtime variable map.
@@ -60,6 +61,7 @@ DreamFlow now includes a lightweight binding struct, `FDreamFlowValueBinding`, f
 
 - A binding can read from either a literal value or a named flow variable.
 - The details UI now exposes a dedicated source picker and a variable dropdown so bindings feel closer to the StateTree workflow.
+- Bindings can expose an expected value type, and the variable picker filters out incompatible flow variables when possible.
 - The executor resolves bindings at runtime and converts values to the target variable type when possible.
 - Validation reports missing variables and incompatible literal values.
 

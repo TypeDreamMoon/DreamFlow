@@ -3,6 +3,7 @@
 #include "DreamFlowVariableTypes.h"
 #include "IPropertyTypeCustomization.h"
 
+struct FDreamFlowVariableDefinition;
 class IPropertyHandle;
 class IPropertyUtilities;
 class UDreamFlowAsset;
@@ -19,9 +20,13 @@ public:
 private:
     EDreamFlowValueSourceType GetCurrentSourceType() const;
     UDreamFlowAsset* ResolveOwningFlowAsset() const;
+    TOptional<EDreamFlowValueType> ResolveExpectedValueType() const;
+    bool IsVariableDefinitionCompatible(const FDreamFlowVariableDefinition& VariableDefinition) const;
+    FText GetExpectedTypeLabel() const;
     FText GetBindingSummary() const;
     FText GetSourceTypeLabel() const;
     FText GetVariablePickerLabel() const;
+    void EnsureLiteralValueMatchesExpectedType() const;
     void SetSourceType(EDreamFlowValueSourceType NewSourceType) const;
     void SetVariableName(FName NewVariableName) const;
     TSharedRef<SWidget> BuildSourceTypeMenu() const;

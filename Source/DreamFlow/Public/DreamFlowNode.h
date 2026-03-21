@@ -44,6 +44,7 @@ class DREAMFLOW_API UDreamFlowNode : public UObject
 
 public:
     UDreamFlowNode();
+    virtual void PostLoad() override;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flow")
     FGuid NodeGuid;
@@ -173,4 +174,7 @@ public:
 #if WITH_EDITOR
     void SetEditorPosition(const FVector2D& InPosition);
 #endif
+
+protected:
+    void FixupLegacyOutputLinksFromChildren();
 };

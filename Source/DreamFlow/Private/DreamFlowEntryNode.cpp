@@ -34,3 +34,17 @@ bool UDreamFlowEntryNode::CanConnectTo_Implementation(const UDreamFlowNode* Othe
 {
     return OtherNode != nullptr && OtherNode != this && !OtherNode->IsEntryNode();
 }
+
+bool UDreamFlowEntryNode::SupportsAutomaticTransition_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
+{
+    (void)Context;
+    (void)Executor;
+    return GetChildrenCopy().Num() > 0;
+}
+
+FName UDreamFlowEntryNode::ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
+{
+    (void)Context;
+    (void)Executor;
+    return FName(TEXT("Out"));
+}
