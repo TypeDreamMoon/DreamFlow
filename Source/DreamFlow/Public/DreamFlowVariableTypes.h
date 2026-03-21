@@ -67,7 +67,9 @@ struct DREAMFLOW_API FDreamFlowValue
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Value", meta = (EditCondition = "Type == EDreamFlowValueType::Object", EditConditionHides, AllowedClasses = "/Script/CoreUObject.Object"))
     TObjectPtr<UObject> ObjectValue = nullptr;
 
+    FString DescribeType() const;
     FString Describe() const;
+    FString DescribeCompact() const;
 };
 
 USTRUCT(BlueprintType)
@@ -100,6 +102,7 @@ struct DREAMFLOW_API FDreamFlowValueBinding
     FDreamFlowValue LiteralValue;
 
     FString Describe() const;
+    FString DescribeCompact() const;
 };
 
 namespace DreamFlowVariable

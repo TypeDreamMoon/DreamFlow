@@ -2,6 +2,39 @@
 
 namespace
 {
+    static const TCHAR* GetValueTypeLabel(const EDreamFlowValueType Type)
+    {
+        switch (Type)
+        {
+        case EDreamFlowValueType::Bool:
+            return TEXT("Bool");
+
+        case EDreamFlowValueType::Int:
+            return TEXT("Int");
+
+        case EDreamFlowValueType::Float:
+            return TEXT("Float");
+
+        case EDreamFlowValueType::Name:
+            return TEXT("Name");
+
+        case EDreamFlowValueType::String:
+            return TEXT("String");
+
+        case EDreamFlowValueType::Text:
+            return TEXT("Text");
+
+        case EDreamFlowValueType::GameplayTag:
+            return TEXT("GameplayTag");
+
+        case EDreamFlowValueType::Object:
+            return TEXT("Object");
+
+        default:
+            return TEXT("Unknown");
+        }
+    }
+
     static bool IsNumericType(const EDreamFlowValueType Type)
     {
         return Type == EDreamFlowValueType::Int || Type == EDreamFlowValueType::Float;
@@ -21,6 +54,11 @@ namespace
             return 0.0;
         }
     }
+}
+
+FString FDreamFlowValue::DescribeType() const
+{
+    return GetValueTypeLabel(Type);
 }
 
 FString FDreamFlowValue::Describe() const
@@ -56,11 +94,28 @@ FString FDreamFlowValue::Describe() const
     }
 }
 
+FString FDreamFlowValue::DescribeCompact() const
+{
+    return FString::Printf(TEXT("Type: %s  Value: %s"), *DescribeType(), *Describe());
+}
+
 FString FDreamFlowValueBinding::Describe() const
 {
     return SourceType == EDreamFlowValueSourceType::FlowVariable
         ? (VariableName.IsNone() ? TEXT("<variable>") : VariableName.ToString())
         : LiteralValue.Describe();
+}
+
+FString FDreamFlowValueBinding::DescribeCompact() const
+{
+    if (SourceType == EDreamFlowValueSourceType::FlowVariable)
+    {
+        return FString::Printf(
+            TEXT("Type: Variable  Value: %s"),
+            VariableName.IsNone() ? TEXT("<variable>") : *VariableName.ToString());
+    }
+
+    return LiteralValue.DescribeCompact();
 }
 
 bool DreamFlowVariable::TryConvertValue(const FDreamFlowValue& InValue, EDreamFlowValueType TargetType, FDreamFlowValue& OutValue)

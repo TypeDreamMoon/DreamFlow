@@ -308,4 +308,21 @@ FLinearColor UDreamFlowEdGraphSchema::GetPinTypeColor(const FEdGraphPinType& Pin
     return FLinearColor(0.07f, 0.72f, 0.78f, 1.0f);
 }
 
+FLinearColor UDreamFlowEdGraphSchema::GetPinColor(const UEdGraphPin* InPin) const
+{
+    if (const UDreamFlowEdGraphNode* FlowGraphNode = InPin != nullptr ? Cast<UDreamFlowEdGraphNode>(InPin->GetOwningNode()) : nullptr)
+    {
+        const FLinearColor NodeColor = FlowGraphNode->GetNodeTitleColor();
+        const FLinearColor AccentBase = FLinearColor::LerpUsingHSV(FLinearColor(0.22f, 0.26f, 0.31f, 1.0f), NodeColor, 0.82f);
+        const float BrightnessBoost = InPin->Direction == EGPD_Output ? 1.14f : 1.0f;
+        return FLinearColor(
+            FMath::Clamp(AccentBase.R * BrightnessBoost, 0.0f, 1.0f),
+            FMath::Clamp(AccentBase.G * BrightnessBoost, 0.0f, 1.0f),
+            FMath::Clamp(AccentBase.B * BrightnessBoost, 0.0f, 1.0f),
+            1.0f);
+    }
+
+    return GetPinTypeColor(InPin != nullptr ? InPin->PinType : FEdGraphPinType());
+}
+
 #undef LOCTEXT_NAMESPACE

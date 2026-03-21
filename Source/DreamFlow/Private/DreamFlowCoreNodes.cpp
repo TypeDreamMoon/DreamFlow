@@ -120,7 +120,7 @@ FText UDreamFlowBranchNode::GetNodeAccentLabel_Implementation() const
 TArray<FDreamFlowNodeDisplayItem> UDreamFlowBranchNode::GetNodeDisplayItems_Implementation() const
 {
     TArray<FDreamFlowNodeDisplayItem> Items = Super::GetNodeDisplayItems_Implementation();
-    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Condition")), ConditionBinding.Describe()));
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Condition")), ConditionBinding.DescribeCompact()));
     Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Outputs")), TEXT("True / False")));
     return Items;
 }
@@ -210,9 +210,9 @@ FText UDreamFlowCompareNode::GetNodeAccentLabel_Implementation() const
 TArray<FDreamFlowNodeDisplayItem> UDreamFlowCompareNode::GetNodeDisplayItems_Implementation() const
 {
     TArray<FDreamFlowNodeDisplayItem> Items = Super::GetNodeDisplayItems_Implementation();
-    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Left")), LeftValue.Describe()));
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Left")), LeftValue.DescribeCompact()));
     Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Op")), MakeComparisonLabel(Operation).ToString()));
-    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Right")), RightValue.Describe()));
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Right")), RightValue.DescribeCompact()));
     Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Outputs")), TEXT("True / False")));
     return Items;
 }
@@ -325,7 +325,7 @@ TArray<FDreamFlowNodeDisplayItem> UDreamFlowSetVariableNode::GetNodeDisplayItems
 {
     TArray<FDreamFlowNodeDisplayItem> Items = Super::GetNodeDisplayItems_Implementation();
     Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Target")), TargetVariable.IsNone() ? TEXT("<variable>") : TargetVariable.ToString()));
-    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Value")), ValueBinding.Describe()));
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Value")), ValueBinding.DescribeCompact()));
     return Items;
 }
 

@@ -209,4 +209,29 @@ bool FDreamFlowLogSettingsFilterTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowBindingCompactDescriptionTest,
+    "DreamFlow.Core.Display.BindingCompactDescription",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowBindingCompactDescriptionTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    FDreamFlowValue LiteralValue = MakeBoolValue(true);
+    TestEqual(TEXT("Literal values should expose a short compact summary."), LiteralValue.DescribeCompact(), FString(TEXT("Type: Bool  Value: True")));
+
+    FDreamFlowValueBinding VariableBinding;
+    VariableBinding.SourceType = EDreamFlowValueSourceType::FlowVariable;
+    VariableBinding.VariableName = TEXT("QuestState");
+    TestEqual(TEXT("Variable bindings should expose a compact variable summary."), VariableBinding.DescribeCompact(), FString(TEXT("Type: Variable  Value: QuestState")));
+
+    FDreamFlowValueBinding LiteralBinding;
+    LiteralBinding.SourceType = EDreamFlowValueSourceType::Literal;
+    LiteralBinding.LiteralValue = LiteralValue;
+    TestEqual(TEXT("Literal bindings should reuse the compact value summary."), LiteralBinding.DescribeCompact(), FString(TEXT("Type: Bool  Value: True")));
+
+    return true;
+}
+
 #endif

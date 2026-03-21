@@ -265,6 +265,7 @@ DreamFlow now ships with automation coverage for core runtime behavior.
 - `DreamFlow.Core.Validation.MissingVariable`
 - `DreamFlow.Core.Network.ReplicatedStateMirror`
 - `DreamFlow.Core.Logging.SettingsFiltering`
+- `DreamFlow.Core.Display.BindingCompactDescription`
 
 You can run them from the Automation window or from command line with:
 

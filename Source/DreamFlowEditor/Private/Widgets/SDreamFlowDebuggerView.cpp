@@ -13,6 +13,7 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SGridPanel.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSeparator.h"
 #include "Widgets/SBoxPanel.h"
@@ -89,6 +90,20 @@ namespace DreamFlowDebuggerView
         default:
             return FSlateColor(EStyleColor::Warning);
         }
+    }
+
+    static TSharedRef<SWidget> BuildChip(const FText& Text, const FSlateColor& ForegroundColor, const FLinearColor& BackgroundColor)
+    {
+        return SNew(SBorder)
+            .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+            .BorderBackgroundColor(BackgroundColor)
+            .Padding(FMargin(7.0f, 3.0f))
+            [
+                SNew(STextBlock)
+                .Text(Text)
+                .TextStyle(FAppStyle::Get(), "SmallText")
+                .ColorAndOpacity(ForegroundColor)
+            ];
     }
 
     static bool AreValuesEqual(const FDreamFlowValue& LeftValue, const FDreamFlowValue& RightValue)
@@ -700,71 +715,65 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildSelectedExecutorInspector() con
 
             + SVerticalBox::Slot()
             .AutoHeight()
-            .Padding(0.0f, 8.0f, 0.0f, 0.0f)
+            .Padding(0.0f, 10.0f, 0.0f, 0.0f)
             [
-                BuildInfoRow(FText::FromString(TEXT("Name")), FText::FromString(GetNameSafe(Executor)))
-            ]
+                SNew(SGridPanel)
+                .FillColumn(0, 1.0f)
+                .FillColumn(1, 1.0f)
 
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, 4.0f, 0.0f, 0.0f)
-            [
-                BuildInfoRow(FText::FromString(TEXT("Flow")), FText::FromString(GetNameSafe(Asset)))
-            ]
+                + SGridPanel::Slot(0, 0)
+                .Padding(0.0f, 0.0f, 6.0f, 8.0f)
+                [
+                    BuildInfoRow(FText::FromString(TEXT("Name")), FText::FromString(GetNameSafe(Executor)))
+                ]
 
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, 4.0f, 0.0f, 0.0f)
-            [
-                BuildInfoRow(FText::FromString(TEXT("State")), DreamFlowDebuggerView::GetDebugStateLabel(Executor->GetDebugState()))
-            ]
+                + SGridPanel::Slot(1, 0)
+                .Padding(6.0f, 0.0f, 0.0f, 8.0f)
+                [
+                    BuildInfoRow(FText::FromString(TEXT("Flow")), FText::FromString(GetNameSafe(Asset)))
+                ]
 
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, 4.0f, 0.0f, 0.0f)
-            [
-                BuildInfoRow(
-                    FText::FromString(TEXT("Current Node")),
-                    CurrentNode != nullptr ? CurrentNode->GetNodeDisplayName() : FText::FromString(TEXT("None")))
-            ]
+                + SGridPanel::Slot(0, 1)
+                .Padding(0.0f, 0.0f, 6.0f, 8.0f)
+                [
+                    BuildInfoRow(
+                        FText::FromString(TEXT("Current Node")),
+                        CurrentNode != nullptr ? CurrentNode->GetNodeDisplayName() : FText::FromString(TEXT("None")))
+                ]
 
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, 4.0f, 0.0f, 0.0f)
-            [
-                BuildInfoRow(FText::FromString(TEXT("Execution Context")), ExecutionContextText)
-            ]
+                + SGridPanel::Slot(1, 1)
+                .Padding(6.0f, 0.0f, 0.0f, 8.0f)
+                [
+                    BuildInfoRow(FText::FromString(TEXT("Execution Context")), ExecutionContextText)
+                ]
 
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, 4.0f, 0.0f, 0.0f)
-            [
-                BuildInfoRow(FText::FromString(TEXT("Visited Nodes")), FText::AsNumber(Executor->GetVisitedNodes().Num()))
-            ]
+                + SGridPanel::Slot(0, 2)
+                .Padding(0.0f, 0.0f, 6.0f, 8.0f)
+                [
+                    BuildInfoRow(FText::FromString(TEXT("Visited Nodes")), FText::AsNumber(Executor->GetVisitedNodes().Num()))
+                ]
 
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, 4.0f, 0.0f, 0.0f)
-            [
-                BuildInfoRow(FText::FromString(TEXT("Available Children")), FText::AsNumber(Executor->GetAvailableChildren().Num()))
-            ]
+                + SGridPanel::Slot(1, 2)
+                .Padding(6.0f, 0.0f, 0.0f, 8.0f)
+                [
+                    BuildInfoRow(FText::FromString(TEXT("Available Children")), FText::AsNumber(Executor->GetAvailableChildren().Num()))
+                ]
 
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, 4.0f, 0.0f, 0.0f)
-            [
-                BuildInfoRow(
-                    FText::FromString(TEXT("Pause On Breakpoints")),
-                    Executor->GetPauseOnBreakpoints() ? FText::FromString(TEXT("Enabled")) : FText::FromString(TEXT("Disabled")))
-            ]
+                + SGridPanel::Slot(0, 3)
+                .Padding(0.0f, 0.0f, 6.0f, 0.0f)
+                [
+                    BuildInfoRow(
+                        FText::FromString(TEXT("Pause On Breakpoints")),
+                        Executor->GetPauseOnBreakpoints() ? FText::FromString(TEXT("Enabled")) : FText::FromString(TEXT("Disabled")))
+                ]
 
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, 4.0f, 0.0f, 0.0f)
-            [
-                BuildInfoRow(
-                    FText::FromString(TEXT("Breakpoint Focus")),
-                    bIsCurrentBreakpoint ? FText::FromString(TEXT("Hit Breakpoint")) : FText::FromString(TEXT("No Breakpoint")))
+                + SGridPanel::Slot(1, 3)
+                .Padding(6.0f, 0.0f, 0.0f, 0.0f)
+                [
+                    BuildInfoRow(
+                        FText::FromString(TEXT("Breakpoint Focus")),
+                        bIsCurrentBreakpoint ? FText::FromString(TEXT("Hit Breakpoint")) : FText::FromString(TEXT("No Breakpoint")))
+                ]
             ]
 
             + SVerticalBox::Slot()
@@ -796,9 +805,67 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildSelectedExecutorInspector() con
 
             + SVerticalBox::Slot()
             .AutoHeight()
+            .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+            [
+                SNew(SBorder)
+                .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                .BorderBackgroundColor(FSlateColor(EStyleColor::Header))
+                .Padding(FMargin(10.0f, 6.0f))
+                [
+                    SNew(SHorizontalBox)
+
+                    + SHorizontalBox::Slot()
+                    .FillWidth(0.24f)
+                    [
+                        SNew(STextBlock)
+                        .Text(FText::FromString(TEXT("Variable")))
+                        .TextStyle(FAppStyle::Get(), "SmallText")
+                        .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                    ]
+
+                    + SHorizontalBox::Slot()
+                    .FillWidth(0.12f)
+                    [
+                        SNew(STextBlock)
+                        .Text(FText::FromString(TEXT("Type")))
+                        .TextStyle(FAppStyle::Get(), "SmallText")
+                        .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                    ]
+
+                    + SHorizontalBox::Slot()
+                    .FillWidth(0.28f)
+                    [
+                        SNew(STextBlock)
+                        .Text(FText::FromString(TEXT("Value")))
+                        .TextStyle(FAppStyle::Get(), "SmallText")
+                        .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                    ]
+
+                    + SHorizontalBox::Slot()
+                    .FillWidth(0.24f)
+                    [
+                        SNew(STextBlock)
+                        .Text(FText::FromString(TEXT("Default")))
+                        .TextStyle(FAppStyle::Get(), "SmallText")
+                        .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                    ]
+
+                    + SHorizontalBox::Slot()
+                    .FillWidth(0.12f)
+                    [
+                        SNew(STextBlock)
+                        .Text(FText::FromString(TEXT("State")))
+                        .TextStyle(FAppStyle::Get(), "SmallText")
+                        .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                    ]
+                ]
+            ]
+
+            + SVerticalBox::Slot()
+            .AutoHeight()
             [
                 SNew(SBox)
-                .MaxDesiredHeight(220.0f)
+                .MaxDesiredHeight(300.0f)
                 [
                     SNew(SScrollBox)
                     + SScrollBox::Slot()
@@ -815,29 +882,26 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildInfoRow(const FText& Label, con
     return SNew(SBorder)
         .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
         .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
-        .Padding(FMargin(8.0f, 6.0f))
+        .Padding(FMargin(10.0f, 8.0f))
         [
-            SNew(SHorizontalBox)
-
-            + SHorizontalBox::Slot()
-            .FillWidth(0.42f)
-            .VAlign(VAlign_Center)
+            SNew(SVerticalBox)
+            + SVerticalBox::Slot()
+            .AutoHeight()
             [
                 SNew(STextBlock)
                 .Text(Label)
                 .TextStyle(FAppStyle::Get(), "SmallText")
                 .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
             ]
-
-            + SHorizontalBox::Slot()
-            .FillWidth(0.58f)
-            .VAlign(VAlign_Center)
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0.0f, 4.0f, 0.0f, 0.0f)
             [
                 SNew(STextBlock)
                 .Text(Value)
                 .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
                 .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
-                .WrapTextAt(240.0f)
+                .AutoWrapText(true)
             ]
         ];
 }
@@ -849,99 +913,96 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildVariableRow(const FDreamFlowVar
         ? FText::FromString(TEXT("Default"))
         : (bIsModified ? FText::FromString(TEXT("Modified")) : FText::FromString(TEXT("Runtime")));
 
-    const FSlateColor StatusColor = bIsModified
-        ? FSlateColor(EStyleColor::Primary)
-        : FSlateColor(EStyleColor::ForegroundHeader);
+    const FSlateColor StatusColor = !bHasRuntimeValue
+        ? FSlateColor(EStyleColor::ForegroundHeader)
+        : (bIsModified ? FSlateColor(EStyleColor::Primary) : FSlateColor(EStyleColor::AccentGreen));
 
     const FText NameText = VariableDefinition.Name.IsNone()
         ? FText::FromString(TEXT("<unnamed>"))
         : FText::FromName(VariableDefinition.Name);
 
+    const bool bShowDefaultLine = !bHasRuntimeValue || bIsModified;
+    const FLinearColor AccentColor = StatusColor.GetSpecifiedColor();
+    const FLinearColor StatusBackground = AccentColor.CopyWithNewOpacity(bIsModified ? 0.18f : 0.12f);
+
     return SNew(SBorder)
-        .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-        .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
-        .Padding(FMargin(8.0f, 6.0f))
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+        .Padding(1.0f)
         .ToolTipText(VariableDefinition.Description.IsEmpty() ? NameText : VariableDefinition.Description)
         [
-            SNew(SVerticalBox)
+            SNew(SHorizontalBox)
 
-            + SVerticalBox::Slot()
-            .AutoHeight()
+            + SHorizontalBox::Slot()
+            .AutoWidth()
             [
-                SNew(SHorizontalBox)
+                SNew(SBorder)
+                .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                .BorderBackgroundColor(AccentColor)
+                .Padding(FMargin(2.0f, 0.0f))
+            ]
 
-                + SHorizontalBox::Slot()
-                .FillWidth(1.0f)
-                .VAlign(VAlign_Center)
+            + SHorizontalBox::Slot()
+            .FillWidth(1.0f)
+            [
+                SNew(SBorder)
+                .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
+                .Padding(FMargin(10.0f, 8.0f))
                 [
-                    SNew(STextBlock)
-                    .Text(NameText)
-                    .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-                    .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
-                ]
+                    SNew(SHorizontalBox)
 
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(6.0f, 0.0f, 0.0f, 0.0f)
-                .VAlign(VAlign_Center)
-                [
-                    SNew(SBorder)
-                    .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-                    .BorderBackgroundColor(FSlateColor(EStyleColor::Panel))
-                    .Padding(FMargin(6.0f, 2.0f))
+                    + SHorizontalBox::Slot()
+                    .FillWidth(0.24f)
+                    .VAlign(VAlign_Center)
+                    [
+                        SNew(STextBlock)
+                        .Text(NameText)
+                        .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+                        .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                        .AutoWrapText(true)
+                    ]
+
+                    + SHorizontalBox::Slot()
+                    .FillWidth(0.12f)
+                    .Padding(8.0f, 0.0f, 8.0f, 0.0f)
+                    .VAlign(VAlign_Center)
                     [
                         SNew(STextBlock)
                         .Text(DreamFlowDebuggerView::GetValueTypeLabel(VariableDefinition.DefaultValue.Type))
                         .TextStyle(FAppStyle::Get(), "SmallText")
                         .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
                     ]
+
+                    + SHorizontalBox::Slot()
+                    .FillWidth(0.28f)
+                    .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                    .VAlign(VAlign_Center)
+                    [
+                        SNew(STextBlock)
+                        .Text(FText::FromString(CurrentValue.Describe()))
+                        .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                        .AutoWrapText(true)
+                    ]
+
+                    + SHorizontalBox::Slot()
+                    .FillWidth(0.24f)
+                    .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                    .VAlign(VAlign_Center)
+                    [
+                        SNew(STextBlock)
+                        .Text(FText::FromString(VariableDefinition.DefaultValue.Describe()))
+                        .TextStyle(FAppStyle::Get(), "SmallText")
+                        .ColorAndOpacity(bShowDefaultLine ? FSlateColor(EStyleColor::ForegroundHeader) : FSlateColor(EStyleColor::ForegroundHover))
+                        .AutoWrapText(true)
+                    ]
+
+                    + SHorizontalBox::Slot()
+                    .FillWidth(0.12f)
+                    .VAlign(VAlign_Center)
+                    [
+                        DreamFlowDebuggerView::BuildChip(StatusText, StatusColor, StatusBackground)
+                    ]
                 ]
-
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(6.0f, 0.0f, 0.0f, 0.0f)
-                .VAlign(VAlign_Center)
-                [
-                    SNew(STextBlock)
-                    .Text(StatusText)
-                    .TextStyle(FAppStyle::Get(), "SmallText")
-                    .ColorAndOpacity(StatusColor)
-                ]
-            ]
-
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, 4.0f, 0.0f, 0.0f)
-            [
-                SNew(STextBlock)
-                .Text(FText::FromString(CurrentValue.Describe()))
-                .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
-                .WrapTextAt(260.0f)
-            ]
-
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, 2.0f, 0.0f, 0.0f)
-            [
-                SNew(STextBlock)
-                .Visibility(VariableDefinition.Description.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
-                .Text(VariableDefinition.Description)
-                .TextStyle(FAppStyle::Get(), "SmallText")
-                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
-                .WrapTextAt(260.0f)
-            ]
-
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, VariableDefinition.Description.IsEmpty() ? 2.0f : 6.0f, 0.0f, 0.0f)
-            [
-                SNew(STextBlock)
-                .Text(FText::Format(
-                    FText::FromString(TEXT("Default: {0}")),
-                    FText::FromString(VariableDefinition.DefaultValue.Describe())))
-                .TextStyle(FAppStyle::Get(), "SmallText")
-                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
-                .WrapTextAt(260.0f)
             ]
         ];
 }

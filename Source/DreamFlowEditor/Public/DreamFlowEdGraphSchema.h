@@ -20,4 +20,5 @@ public:
     virtual void CreateDefaultNodesForGraph(UEdGraph& Graph) const override;
     virtual bool ShouldHidePinDefaultValue(UEdGraphPin* Pin) const override;
     virtual FLinearColor GetPinTypeColor(const FEdGraphPinType& PinType) const override;
+    virtual FLinearColor GetPinColor(const UEdGraphPin* InPin) const override;
 };
