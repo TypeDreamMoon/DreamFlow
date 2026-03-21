@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DreamFlowVariableTypes.h"
 #include "DreamFlowTypes.generated.h"
 
 UENUM(BlueprintType)
@@ -36,4 +37,37 @@ struct DREAMFLOW_API FDreamFlowValidationMessage
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DreamFlow")
     FText Message;
+};
+
+USTRUCT(BlueprintType)
+struct DREAMFLOW_API FDreamFlowReplicatedVariableValue
+{
+    GENERATED_BODY()
+
+    UPROPERTY()
+    FName Name;
+
+    UPROPERTY()
+    FDreamFlowValue Value;
+};
+
+USTRUCT(BlueprintType)
+struct DREAMFLOW_API FDreamFlowReplicatedExecutionState
+{
+    GENERATED_BODY()
+
+    UPROPERTY()
+    EDreamFlowExecutorDebugState DebugState = EDreamFlowExecutorDebugState::Idle;
+
+    UPROPERTY()
+    FGuid CurrentNodeGuid;
+
+    UPROPERTY()
+    TArray<FGuid> VisitedNodeGuids;
+
+    UPROPERTY()
+    TArray<FDreamFlowReplicatedVariableValue> Variables;
+
+    UPROPERTY()
+    bool bPauseOnBreakpoints = true;
 };

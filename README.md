@@ -48,9 +48,9 @@ DreamFlow is a lightweight Unreal flow graph framework designed as a reusable ba
 Every `UDreamFlowAsset` now owns a `Variables` array, so each flow asset can define its own environment-style data without pushing everything into one global runtime object.
 
 - Variable definitions are now surfaced in a dedicated `Variables` editor tab.
-- The variables tab supports type-first creation, so designers can add `Bool`, `Int`, `Float`, `Name`, `String`, `Text`, and `GameplayTag` variables directly from the header menu.
+- The variables tab supports type-first creation, so designers can add `Bool`, `Int`, `Float`, `Name`, `String`, `Text`, `GameplayTag`, and `Object` variables directly from the header menu.
 - Each variable has a `Name`, `Description`, and typed `DefaultValue`.
-- Supported value types are `Bool`, `Int`, `Float`, `Name`, `String`, `Text`, and `GameplayTag`.
+- Supported value types are `Bool`, `Int`, `Float`, `Name`, `String`, `Text`, `GameplayTag`, and `Object`.
 - When a `UDreamFlowExecutor` initializes, it copies those defaults into its runtime variable map.
 
 This makes the variable model feel closer to Blueprint variables, but still scoped per DreamFlow asset.
@@ -226,6 +226,22 @@ It also exposes Blueprint delegates for:
 - `OnExecutionPaused`
 - `OnExecutionResumed`
 - `OnDebugStateChanged`
+
+## Networking
+
+`UDreamFlowExecutorComponent` now supports a server-authoritative replication flow.
+
+- The server owns the real `UDreamFlowExecutor` and runs node logic there.
+- The component replicates flow asset assignment, current node GUID, visited node GUIDs, pause state, and runtime flow variables.
+- Clients build a mirrored local executor from that replicated snapshot, so Blueprint reads such as `GetCurrentNode` and `GetVariable...Value` continue to work on remote machines.
+- Client calls made through `UDreamFlowExecutorComponent` such as `StartFlow`, `Advance`, `ChooseChild`, `MoveToOutputPin`, `SetVariable...Value`, and `ResetVariablesToDefaults` are forwarded to the server with RPCs.
+- For multiplayer gameplay, prefer calling the component APIs instead of invoking `UDreamFlowExecutor` directly.
+
+Notes:
+
+- The owning Actor still needs normal Unreal replication enabled.
+- This first pass syncs execution state and variables, but it does not replay arbitrary node-side gameplay effects on clients; those should still be driven by your own replicated gameplay systems.
+- `Object` variables are only safe to use over the network when they point to references Unreal can already replicate or resolve on remote machines.
 
 ## Debugger
 

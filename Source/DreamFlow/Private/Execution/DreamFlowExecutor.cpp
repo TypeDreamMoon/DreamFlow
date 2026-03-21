@@ -26,19 +26,12 @@ namespace DreamFlowExecutorPrivate
 
 void UDreamFlowExecutor::Initialize(UDreamFlowAsset* InFlowAsset, UObject* InExecutionContext)
 {
-    UnregisterFromDebugger();
-    FlowAsset = InFlowAsset;
-    ExecutionContext = InExecutionContext;
-    CurrentNode = nullptr;
-    VisitedNodes.Reset();
-    RuntimeVariables.Reset();
-    bIsRunning = false;
-    bIsPaused = false;
-    bBreakOnNextNode = false;
-    bHasFinished = false;
+    ResetRuntimeState(InFlowAsset, InExecutionContext, true);
+}
 
-    ResetVariablesToDefaults();
-    BroadcastDebugStateChanged();
+void UDreamFlowExecutor::InitializeReplicatedMirror(UDreamFlowAsset* InFlowAsset, UObject* InExecutionContext)
+{
+    ResetRuntimeState(InFlowAsset, InExecutionContext, false);
 }
 
 void UDreamFlowExecutor::ResetVariablesToDefaults()
@@ -324,6 +317,74 @@ EDreamFlowExecutorDebugState UDreamFlowExecutor::GetDebugState() const
     }
 
     return bHasFinished ? EDreamFlowExecutorDebugState::Finished : EDreamFlowExecutorDebugState::Idle;
+}
+
+void UDreamFlowExecutor::BuildReplicatedState(FDreamFlowReplicatedExecutionState& OutState) const
+{
+    OutState = FDreamFlowReplicatedExecutionState();
+    OutState.DebugState = GetDebugState();
+    OutState.CurrentNodeGuid = CurrentNode != nullptr ? CurrentNode->NodeGuid : FGuid();
+    OutState.bPauseOnBreakpoints = bPauseOnBreakpoints;
+
+    for (UDreamFlowNode* VisitedNode : VisitedNodes)
+    {
+        if (VisitedNode != nullptr && VisitedNode->NodeGuid.IsValid())
+        {
+            OutState.VisitedNodeGuids.Add(VisitedNode->NodeGuid);
+        }
+    }
+
+    TArray<FName> VariableNames;
+    RuntimeVariables.GenerateKeyArray(VariableNames);
+    VariableNames.Sort(FNameLexicalLess());
+
+    for (const FName VariableName : VariableNames)
+    {
+        if (const FDreamFlowValue* Value = RuntimeVariables.Find(VariableName))
+        {
+            FDreamFlowReplicatedVariableValue& ReplicatedVariable = OutState.Variables.AddDefaulted_GetRef();
+            ReplicatedVariable.Name = VariableName;
+            ReplicatedVariable.Value = *Value;
+        }
+    }
+}
+
+void UDreamFlowExecutor::ApplyReplicatedState(const FDreamFlowReplicatedExecutionState& InState)
+{
+    bPauseOnBreakpoints = InState.bPauseOnBreakpoints;
+    bBreakOnNextNode = false;
+    bIsPaused = InState.DebugState == EDreamFlowExecutorDebugState::Paused;
+    bIsRunning = InState.DebugState == EDreamFlowExecutorDebugState::Running || InState.DebugState == EDreamFlowExecutorDebugState::Paused;
+    bHasFinished = InState.DebugState == EDreamFlowExecutorDebugState::Finished;
+
+    CurrentNode = FlowAsset != nullptr ? FlowAsset->FindNodeByGuid(InState.CurrentNodeGuid) : nullptr;
+
+    VisitedNodes.Reset();
+    if (FlowAsset != nullptr)
+    {
+        for (const FGuid& NodeGuid : InState.VisitedNodeGuids)
+        {
+            if (UDreamFlowNode* VisitedNode = FlowAsset->FindNodeByGuid(NodeGuid))
+            {
+                VisitedNodes.AddUnique(VisitedNode);
+            }
+        }
+    }
+
+    RuntimeVariables.Reset();
+    ResetVariablesToDefaults();
+    for (const FDreamFlowReplicatedVariableValue& ReplicatedVariable : InState.Variables)
+    {
+        if (!ReplicatedVariable.Name.IsNone())
+        {
+            RuntimeVariables.FindOrAdd(ReplicatedVariable.Name) = ReplicatedVariable.Value;
+        }
+    }
+}
+
+FDreamFlowExecutorRuntimeStateChangedNativeSignature& UDreamFlowExecutor::OnRuntimeStateChangedNative()
+{
+    return RuntimeStateChangedNative;
 }
 
 bool UDreamFlowExecutor::HasVariable(FName VariableName) const
@@ -636,6 +697,8 @@ void UDreamFlowExecutor::UnregisterFromDebugger()
 
 void UDreamFlowExecutor::NotifyDebuggerStateChanged()
 {
+    RuntimeStateChangedNative.Broadcast(this);
+
     if (GEngine == nullptr)
     {
         return;
@@ -644,5 +707,27 @@ void UDreamFlowExecutor::NotifyDebuggerStateChanged()
     if (UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>())
     {
         DebuggerSubsystem->NotifyExecutorChanged(this);
+    }
+}
+
+void UDreamFlowExecutor::ResetRuntimeState(UDreamFlowAsset* InFlowAsset, UObject* InExecutionContext, bool bNotifyDebugger)
+{
+    UnregisterFromDebugger();
+    FlowAsset = InFlowAsset;
+    ExecutionContext = InExecutionContext;
+    CurrentNode = nullptr;
+    VisitedNodes.Reset();
+    RuntimeVariables.Reset();
+    bIsRunning = false;
+    bIsPaused = false;
+    bPauseOnBreakpoints = true;
+    bBreakOnNextNode = false;
+    bHasFinished = false;
+
+    ResetVariablesToDefaults();
+
+    if (bNotifyDebugger)
+    {
+        BroadcastDebugStateChanged();
     }
 }

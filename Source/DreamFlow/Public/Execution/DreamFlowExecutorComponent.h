@@ -5,6 +5,7 @@
 #include "Components/ActorComponent.h"
 #include "DreamFlowExecutorComponent.generated.h"
 
+class FLifetimeProperty;
 class UDreamFlowAsset;
 
 UCLASS(ClassGroup = (Dream), BlueprintType, Blueprintable, meta = (BlueprintSpawnableComponent))
@@ -16,6 +17,7 @@ public:
     UDreamFlowExecutorComponent();
 
     virtual void BeginPlay() override;
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     UDreamFlowExecutor* CreateExecutor();
@@ -126,13 +128,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
     void ResetVariablesToDefaults();
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DreamFlow")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_FlowAsset, Category = "DreamFlow")
     TObjectPtr<UDreamFlowAsset> FlowAsset;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DreamFlow")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category = "DreamFlow")
     TSubclassOf<UDreamFlowExecutor> ExecutorClass;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DreamFlow")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category = "DreamFlow")
     bool bAutoStart = false;
 
     UPROPERTY(BlueprintAssignable, Category = "DreamFlow|Execution")
@@ -160,6 +162,67 @@ protected:
     UFUNCTION()
     void HandleNodeExited(UDreamFlowNode* Node);
 
+    UFUNCTION()
+    void OnRep_FlowAsset();
+
+    UFUNCTION()
+    void OnRep_ReplicatedExecutionState();
+
+    UFUNCTION(Server, Reliable)
+    void ServerStartFlow();
+
+    UFUNCTION(Server, Reliable)
+    void ServerRestartFlow();
+
+    UFUNCTION(Server, Reliable)
+    void ServerFinishFlow();
+
+    UFUNCTION(Server, Reliable)
+    void ServerAdvance();
+
+    UFUNCTION(Server, Reliable)
+    void ServerMoveToChildByIndex(int32 ChildIndex);
+
+    UFUNCTION(Server, Reliable)
+    void ServerMoveToOutputPin(FName OutputPinName);
+
+    UFUNCTION(Server, Reliable)
+    void ServerChooseChildByGuid(FGuid ChildNodeGuid);
+
+    UFUNCTION(Server, Reliable)
+    void ServerSetVariableValue(FName VariableName, FDreamFlowValue InValue);
+
+    UFUNCTION(Server, Reliable)
+    void ServerResetVariablesToDefaults();
+
+    bool IsServerAuthority() const;
+    UDreamFlowExecutor* GetOrCreateExecutor(bool bInitializeFromCurrentConfig);
+    UDreamFlowExecutor* ResetExecutorToCurrentConfig();
+    void BindExecutorDelegates(UDreamFlowExecutor* InExecutor);
+    void UnbindExecutorDelegates(UDreamFlowExecutor* InExecutor);
+    void SyncReplicatedStateFromExecutor();
+    bool ApplyReplicatedStateToMirror();
+    bool StartFlowLocal();
+    bool RestartFlowLocal();
+    void FinishFlowLocal();
+    bool AdvanceLocal();
+    bool MoveToChildByIndexLocal(int32 ChildIndex);
+    bool MoveToOutputPinLocal(FName OutputPinName);
+    bool ChooseChildByGuidLocal(const FGuid& ChildNodeGuid);
+    bool SetVariableValueLocal(FName VariableName, const FDreamFlowValue& InValue);
+    void ResetVariablesToDefaultsLocal();
+    void BroadcastReplicatedStateEvents(const FDreamFlowReplicatedExecutionState& PreviousState, const FDreamFlowReplicatedExecutionState& NewState);
+    void HandleExecutorRuntimeStateChanged(UDreamFlowExecutor* InExecutor);
+
     UPROPERTY(Transient)
     TObjectPtr<UDreamFlowExecutor> Executor;
+
+    UPROPERTY(Transient, ReplicatedUsing = OnRep_ReplicatedExecutionState)
+    FDreamFlowReplicatedExecutionState ReplicatedExecutionState;
+
+    UPROPERTY(Transient)
+    FDreamFlowReplicatedExecutionState LastAppliedReplicatedState;
+
+private:
+    FDelegateHandle ExecutorRuntimeStateChangedHandle;
 };

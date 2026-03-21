@@ -12,6 +12,7 @@ class UDreamFlowNode;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FDreamFlowExecutorEventSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FDreamFlowExecutorNodeEventSignature, UDreamFlowNode*, Node);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FDreamFlowExecutorStateChangedSignature, EDreamFlowExecutorDebugState, DebugState, UDreamFlowNode*, FocusNode);
+DECLARE_MULTICAST_DELEGATE_OneParam(FDreamFlowExecutorRuntimeStateChangedNativeSignature, UDreamFlowExecutor*);
 
 UCLASS(BlueprintType, Blueprintable)
 class DREAMFLOW_API UDreamFlowExecutor : public UObject
@@ -21,6 +22,8 @@ class DREAMFLOW_API UDreamFlowExecutor : public UObject
 public:
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     void Initialize(UDreamFlowAsset* InFlowAsset, UObject* InExecutionContext = nullptr);
+
+    void InitializeReplicatedMirror(UDreamFlowAsset* InFlowAsset, UObject* InExecutionContext = nullptr);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool StartFlow();
@@ -87,6 +90,10 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Debug")
     EDreamFlowExecutorDebugState GetDebugState() const;
+
+    void BuildReplicatedState(FDreamFlowReplicatedExecutionState& OutState) const;
+    void ApplyReplicatedState(const FDreamFlowReplicatedExecutionState& InState);
+    FDreamFlowExecutorRuntimeStateChangedNativeSignature& OnRuntimeStateChangedNative();
 
     /** Returns true if the executor currently exposes a variable with this name. */
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
@@ -201,6 +208,7 @@ protected:
     void RegisterWithDebugger();
     void UnregisterFromDebugger();
     void NotifyDebuggerStateChanged();
+    void ResetRuntimeState(UDreamFlowAsset* InFlowAsset, UObject* InExecutionContext, bool bNotifyDebugger);
 
     UPROPERTY(Transient)
     TObjectPtr<UDreamFlowAsset> FlowAsset;
@@ -231,4 +239,7 @@ protected:
 
     UPROPERTY(Transient)
     bool bHasFinished = false;
+
+private:
+    FDreamFlowExecutorRuntimeStateChangedNativeSignature RuntimeStateChangedNative;
 };
