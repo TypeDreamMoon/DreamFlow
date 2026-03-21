@@ -3,10 +3,12 @@
 #include "DreamFlowAsset.h"
 #include "DreamFlowEdGraph.h"
 #include "DreamFlowEdGraphNode.h"
+#include "DreamFlowEditorCommands.h"
 #include "DreamFlowEditorUtils.h"
 #include "DreamFlowVariablesEditorData.h"
 #include "Widgets/SDreamFlowDebuggerView.h"
 #include "DreamFlowNode.h"
+#include "Widgets/SDreamFlowGraphDropTarget.h"
 #include "Widgets/SDreamFlowNodePalette.h"
 #include "Widgets/SDreamFlowValidationView.h"
 #include "EdGraphUtilities.h"
@@ -21,9 +23,71 @@
 #include "ScopedTransaction.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "UObject/UObjectGlobals.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SSeparator.h"
+#include "Widgets/SBoxPanel.h"
 #include "Widgets/Docking/SDockTab.h"
+#include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "DreamFlowEditorToolkit"
+
+namespace DreamFlowEditorToolkit
+{
+    static TSharedRef<SWidget> BuildTabShell(const FText& Title, const FText& Subtitle, const TSharedRef<SWidget>& Content)
+    {
+        return SNew(SBorder)
+            .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+            .Padding(0.0f)
+            [
+                SNew(SVerticalBox)
+
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                [
+                    SNew(SBorder)
+                    .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                    .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
+                    .Padding(FMargin(14.0f, 12.0f))
+                    [
+                        SNew(SVerticalBox)
+
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        [
+                            SNew(STextBlock)
+                            .Text(Title)
+                            .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
+                            .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                        ]
+
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        .Padding(0.0f, 4.0f, 0.0f, 0.0f)
+                        [
+                            SNew(STextBlock)
+                            .Text(Subtitle)
+                            .TextStyle(FAppStyle::Get(), "SmallText")
+                            .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                            .WrapTextAt(420.0f)
+                        ]
+                    ]
+                ]
+
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                [
+                    SNew(SSeparator)
+                    .Thickness(1.0f)
+                ]
+
+                + SVerticalBox::Slot()
+                .FillHeight(1.0f)
+                [
+                    Content
+                ]
+            ];
+    }
+}
 
 TMap<UDreamFlowAsset*, FDreamFlowEditorToolkit*> FDreamFlowEditorToolkit::ActiveEditors;
 const FName FDreamFlowEditorToolkit::PaletteTabId(TEXT("DreamFlowEditor_Palette"));
@@ -82,21 +146,34 @@ void FDreamFlowEditorToolkit::InitEditor(const EToolkitMode::Type Mode, const TS
         ObjectPropertyChangedHandle = FCoreUObjectDelegates::OnObjectPropertyChanged.AddRaw(this, &FDreamFlowEditorToolkit::HandleObjectPropertyChanged);
     }
 
-    const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout("DreamFlowEditorLayout_v1")
+    const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout("DreamFlowEditorLayout_v2")
         ->AddArea
         (
             FTabManager::NewPrimaryArea()->SetOrientation(Orient_Horizontal)
             ->Split
             (
-                FTabManager::NewStack()
+                FTabManager::NewSplitter()
+                ->SetOrientation(Orient_Vertical)
                 ->SetSizeCoefficient(0.22f)
-                ->AddTab(PaletteTabId, ETabState::OpenedTab)
-                ->SetHideTabWell(true)
+                ->Split
+                (
+                    FTabManager::NewStack()
+                    ->SetSizeCoefficient(0.72f)
+                    ->AddTab(PaletteTabId, ETabState::OpenedTab)
+                    ->SetHideTabWell(true)
+                )
+                ->Split
+                (
+                    FTabManager::NewStack()
+                    ->SetSizeCoefficient(0.28f)
+                    ->AddTab(ValidationTabId, ETabState::OpenedTab)
+                    ->SetHideTabWell(true)
+                )
             )
             ->Split
             (
                 FTabManager::NewStack()
-                ->SetSizeCoefficient(0.53f)
+                ->SetSizeCoefficient(0.54f)
                 ->AddTab(GraphTabId, ETabState::OpenedTab)
                 ->SetHideTabWell(true)
             )
@@ -104,11 +181,11 @@ void FDreamFlowEditorToolkit::InitEditor(const EToolkitMode::Type Mode, const TS
             (
                 FTabManager::NewSplitter()
                 ->SetOrientation(Orient_Vertical)
-                ->SetSizeCoefficient(0.25f)
+                ->SetSizeCoefficient(0.24f)
                 ->Split
                 (
                     FTabManager::NewStack()
-                    ->SetSizeCoefficient(0.42f)
+                    ->SetSizeCoefficient(0.46f)
                     ->AddTab(DetailsTabId, ETabState::OpenedTab)
                     ->SetHideTabWell(true)
                 )
@@ -122,15 +199,8 @@ void FDreamFlowEditorToolkit::InitEditor(const EToolkitMode::Type Mode, const TS
                 ->Split
                 (
                     FTabManager::NewStack()
-                    ->SetSizeCoefficient(0.20f)
+                    ->SetSizeCoefficient(0.32f)
                     ->AddTab(DebuggerTabId, ETabState::OpenedTab)
-                    ->SetHideTabWell(true)
-                )
-                ->Split
-                (
-                    FTabManager::NewStack()
-                    ->SetSizeCoefficient(0.16f)
-                    ->AddTab(ValidationTabId, ETabState::OpenedTab)
                     ->SetHideTabWell(true)
                 )
             )
@@ -197,6 +267,33 @@ bool FDreamFlowEditorToolkit::OpenAssetAndFocusNode(UDreamFlowAsset* InFlowAsset
     return false;
 }
 
+bool FDreamFlowEditorToolkit::GetValidationMessagesForGraphNode(UEdGraph* Graph, const FGuid& NodeGuid, TArray<FDreamFlowValidationMessage>& OutMessages)
+{
+    OutMessages.Reset();
+
+    if (Graph == nullptr || !NodeGuid.IsValid())
+    {
+        return false;
+    }
+
+    UDreamFlowAsset* Asset = FDreamFlowEditorUtils::GetFlowAssetFromGraph(Graph);
+    FDreamFlowEditorToolkit* Toolkit = Asset != nullptr ? ActiveEditors.FindRef(Asset) : nullptr;
+    if (Toolkit == nullptr)
+    {
+        return false;
+    }
+
+    for (const FDreamFlowValidationMessage& Message : Toolkit->ValidationMessages)
+    {
+        if (Message.NodeGuid == NodeGuid)
+        {
+            OutMessages.Add(Message);
+        }
+    }
+
+    return OutMessages.Num() > 0;
+}
+
 FName FDreamFlowEditorToolkit::GetToolkitFName() const
 {
     return FName(TEXT("DreamFlowEditor"));
@@ -229,22 +326,28 @@ void FDreamFlowEditorToolkit::RegisterTabSpawners(const TSharedRef<FTabManager>&
     FAssetEditorToolkit::RegisterTabSpawners(InTabManager);
 
     InTabManager->RegisterTabSpawner(PaletteTabId, FOnSpawnTab::CreateSP(this, &FDreamFlowEditorToolkit::SpawnPaletteTab))
-        .SetDisplayName(LOCTEXT("PaletteTabLabel", "Palette"));
+        .SetDisplayName(LOCTEXT("PaletteTabLabel", "Palette"))
+        .SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.PlusCircle"));
 
     InTabManager->RegisterTabSpawner(GraphTabId, FOnSpawnTab::CreateSP(this, &FDreamFlowEditorToolkit::SpawnGraphTab))
-        .SetDisplayName(LOCTEXT("GraphTabLabel", "Graph"));
+        .SetDisplayName(LOCTEXT("GraphTabLabel", "Graph"))
+        .SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "GraphEditor.EventGraph_16x"));
 
     InTabManager->RegisterTabSpawner(DetailsTabId, FOnSpawnTab::CreateSP(this, &FDreamFlowEditorToolkit::SpawnDetailsTab))
-        .SetDisplayName(LOCTEXT("DetailsTabLabel", "Node Editor"));
+        .SetDisplayName(LOCTEXT("DetailsTabLabel", "Node Editor"))
+        .SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Details"));
 
     InTabManager->RegisterTabSpawner(VariablesTabId, FOnSpawnTab::CreateSP(this, &FDreamFlowEditorToolkit::SpawnVariablesTab))
-        .SetDisplayName(LOCTEXT("VariablesTabLabel", "Variables"));
+        .SetDisplayName(LOCTEXT("VariablesTabLabel", "Variables"))
+        .SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Kismet.Tabs.Variables"));
 
     InTabManager->RegisterTabSpawner(DebuggerTabId, FOnSpawnTab::CreateSP(this, &FDreamFlowEditorToolkit::SpawnDebuggerTab))
-        .SetDisplayName(LOCTEXT("DebuggerTabLabel", "Debugger"));
+        .SetDisplayName(LOCTEXT("DebuggerTabLabel", "Debugger"))
+        .SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Kismet.Tabs.Debugger"));
 
     InTabManager->RegisterTabSpawner(ValidationTabId, FOnSpawnTab::CreateSP(this, &FDreamFlowEditorToolkit::SpawnValidationTab))
-        .SetDisplayName(LOCTEXT("ValidationTabLabel", "Validation"));
+        .SetDisplayName(LOCTEXT("ValidationTabLabel", "Validation"))
+        .SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Kismet.Tabs.CompilerResults"));
 }
 
 void FDreamFlowEditorToolkit::UnregisterTabSpawners(const TSharedRef<FTabManager>& InTabManager)
@@ -294,7 +397,14 @@ TSharedRef<SDockTab> FDreamFlowEditorToolkit::SpawnGraphTab(const FSpawnTabArgs&
     (void)Args;
     return SNew(SDockTab)
         [
-            GraphEditorWidget.ToSharedRef()
+            DreamFlowEditorToolkit::BuildTabShell(
+                LOCTEXT("GraphShellTitle", "Flow Graph"),
+                FlowAsset != nullptr
+                    ? FText::Format(
+                        LOCTEXT("GraphShellSubtitle", "Author reusable logic inside {0}. Click or drag nodes in from the palette, edit key properties directly on the graph, and use the side panels for deeper inspection."),
+                        FText::FromString(FlowAsset->GetName()))
+                    : LOCTEXT("GraphShellSubtitleFallback", "Author reusable logic, inspect node data, and debug execution from the surrounding panels."),
+                GraphDropTargetWidget.ToSharedRef())
         ];
 }
 
@@ -312,7 +422,10 @@ TSharedRef<SDockTab> FDreamFlowEditorToolkit::SpawnDetailsTab(const FSpawnTabArg
     (void)Args;
     return SNew(SDockTab)
         [
-            DetailsView.ToSharedRef()
+            DreamFlowEditorToolkit::BuildTabShell(
+                LOCTEXT("DetailsShellTitle", "Node Details"),
+                LOCTEXT("DetailsShellSubtitle", "Select a graph node to edit its runtime properties, preview data, bindings, and behavior."),
+                DetailsView.ToSharedRef())
         ];
 }
 
@@ -321,7 +434,10 @@ TSharedRef<SDockTab> FDreamFlowEditorToolkit::SpawnVariablesTab(const FSpawnTabA
     (void)Args;
     return SNew(SDockTab)
         [
-            VariablesDetailsView.ToSharedRef()
+            DreamFlowEditorToolkit::BuildTabShell(
+                LOCTEXT("VariablesShellTitle", "Flow Variables"),
+                LOCTEXT("VariablesShellSubtitle", "Manage flow-scoped environment variables and defaults that bindings can read at runtime."),
+                VariablesDetailsView.ToSharedRef())
         ];
 }
 
@@ -348,17 +464,29 @@ void FDreamFlowEditorToolkit::CreateWidgets()
     FPropertyEditorModule& PropertyEditorModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 
     FDetailsViewArgs DetailsArgs;
+    DetailsArgs.bUpdatesFromSelection = false;
+    DetailsArgs.bLockable = false;
+    DetailsArgs.bAllowSearch = true;
     DetailsArgs.bHideSelectionTip = true;
-    DetailsArgs.NameAreaSettings = FDetailsViewArgs::ObjectsUseNameArea;
+    DetailsArgs.NameAreaSettings = FDetailsViewArgs::HideNameArea;
+    DetailsArgs.bSearchInitialKeyFocus = false;
+    DetailsArgs.bShowOptions = false;
+    DetailsArgs.bShowPropertyMatrixButton = false;
+    DetailsArgs.ColumnWidth = 0.36f;
     DetailsView = PropertyEditorModule.CreateDetailView(DetailsArgs);
-    VariablesDetailsView = PropertyEditorModule.CreateDetailView(DetailsArgs);
+
+    FDetailsViewArgs VariablesDetailsArgs = DetailsArgs;
+    VariablesDetailsArgs.ColumnWidth = 0.34f;
+    VariablesDetailsArgs.DefaultsOnlyVisibility = EEditDefaultsOnlyNodeVisibility::Automatic;
+    VariablesDetailsView = PropertyEditorModule.CreateDetailView(VariablesDetailsArgs);
 
     VariablesEditorData = NewObject<UDreamFlowVariablesEditorData>(GetTransientPackage(), NAME_None, RF_Transactional);
     VariablesDetailsView->SetObject(VariablesEditorData);
 
     PaletteWidget = SNew(SDreamFlowNodePalette)
         .FlowAsset(FlowAsset)
-        .OnNodeClassPicked(SDreamFlowNodePalette::FOnNodeClassPicked::CreateSP(this, &FDreamFlowEditorToolkit::CreateNodeFromPalette));
+        .OnNodeClassPicked(SDreamFlowNodePalette::FOnNodeClassPicked::CreateSP(this, &FDreamFlowEditorToolkit::CreateNodeFromPalette))
+        .OnNodeClassDropped(SDreamFlowNodePalette::FOnNodeClassDropped::CreateSP(this, &FDreamFlowEditorToolkit::CreateNodeFromPaletteAtPosition));
 
     DebuggerWidget = SNew(SDreamFlowDebuggerView)
         .FlowAsset(FlowAsset)
@@ -368,7 +496,7 @@ void FDreamFlowEditorToolkit::CreateWidgets()
         .OnMessageActivated(SDreamFlowValidationView::FOnMessageActivated::CreateSP(this, &FDreamFlowEditorToolkit::HandleNodeGuidActivated));
 
     FGraphAppearanceInfo AppearanceInfo;
-    AppearanceInfo.CornerText = LOCTEXT("GraphCornerText", "Dream Flow Studio");
+    AppearanceInfo.CornerText = LOCTEXT("GraphCornerText", "DREAM FLOW");
 
     SGraphEditor::FGraphEditorEvents GraphEditorEvents;
     GraphEditorEvents.OnSelectionChanged = SGraphEditor::FOnSelectionChanged::CreateSP(this, &FDreamFlowEditorToolkit::HandleSelectedNodesChanged);
@@ -379,6 +507,11 @@ void FDreamFlowEditorToolkit::CreateWidgets()
         .Appearance(AppearanceInfo)
         .GraphToEdit(EditingGraph)
         .GraphEvents(GraphEditorEvents);
+
+    GraphDropTargetWidget = SNew(SDreamFlowGraphDropTarget)
+        .GraphEditor(GraphEditorWidget)
+        .Content(GraphEditorWidget)
+        .OnNodeClassDropped(SDreamFlowGraphDropTarget::FOnNodeClassDropped::CreateSP(this, &FDreamFlowEditorToolkit::CreateNodeFromPaletteAtPosition));
 }
 
 void FDreamFlowEditorToolkit::BindCommands()
@@ -422,6 +555,11 @@ void FDreamFlowEditorToolkit::BindCommands()
     GraphEditorCommands->MapAction(
         FGenericCommands::Get().Redo,
         FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::RedoGraphAction));
+
+    GraphEditorCommands->MapAction(
+        FDreamFlowEditorCommands::Get().ToggleBreakpoint,
+        FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::ToggleBreakpointsOnSelectedNodes),
+        FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanToggleBreakpointsOnSelectedNodes));
 }
 
 void FDreamFlowEditorToolkit::HandleSelectedNodesChanged(const TSet<UObject*>& NewSelection)
@@ -772,6 +910,53 @@ void FDreamFlowEditorToolkit::RedoGraphAction()
     }
 }
 
+void FDreamFlowEditorToolkit::ToggleBreakpointsOnSelectedNodes()
+{
+    if (!GraphEditorWidget.IsValid())
+    {
+        return;
+    }
+
+    const FGraphPanelSelectionSet SelectedNodes = GraphEditorWidget->GetSelectedNodes();
+    bool bToggledAnyBreakpoint = false;
+
+    const FScopedTransaction Transaction(LOCTEXT("ToggleDreamFlowBreakpoint", "Toggle Dream Flow Breakpoint"));
+
+    for (UObject* SelectedObject : SelectedNodes)
+    {
+        if (UDreamFlowEdGraphNode* FlowGraphNode = Cast<UDreamFlowEdGraphNode>(SelectedObject))
+        {
+            FlowGraphNode->Modify();
+            FlowGraphNode->ToggleBreakpoint();
+            bToggledAnyBreakpoint = true;
+        }
+    }
+
+    if (bToggledAnyBreakpoint)
+    {
+        RefreshValidation();
+    }
+}
+
+bool FDreamFlowEditorToolkit::CanToggleBreakpointsOnSelectedNodes() const
+{
+    if (!GraphEditorWidget.IsValid())
+    {
+        return false;
+    }
+
+    const FGraphPanelSelectionSet SelectedNodes = GraphEditorWidget->GetSelectedNodes();
+    for (UObject* SelectedObject : SelectedNodes)
+    {
+        if (Cast<UDreamFlowEdGraphNode>(SelectedObject) != nullptr)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void FDreamFlowEditorToolkit::CreateNodeFromPalette(TSubclassOf<UDreamFlowNode> NodeClass)
 {
     if (EditingGraph == nullptr || !GraphEditorWidget.IsValid() || NodeClass == nullptr)
@@ -782,10 +967,20 @@ void FDreamFlowEditorToolkit::CreateNodeFromPalette(TSubclassOf<UDreamFlowNode> 
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
     const FVector2D PasteLocation = GraphEditorWidget->GetPasteLocation();
 PRAGMA_ENABLE_DEPRECATION_WARNINGS
+    CreateNodeFromPaletteAtPosition(NodeClass, FVector2f(PasteLocation.X, PasteLocation.Y));
+}
+
+void FDreamFlowEditorToolkit::CreateNodeFromPaletteAtPosition(TSubclassOf<UDreamFlowNode> NodeClass, const FVector2f& GraphPosition)
+{
+    if (EditingGraph == nullptr || !GraphEditorWidget.IsValid() || NodeClass == nullptr)
+    {
+        return;
+    }
+
     UDreamFlowEdGraphNode* NewNode = FDreamFlowEditorUtils::CreateNodeInGraph(
         EditingGraph,
         NodeClass,
-        FVector2f(PasteLocation.X, PasteLocation.Y),
+        GraphPosition,
         nullptr,
         true);
 

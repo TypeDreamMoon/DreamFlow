@@ -24,13 +24,13 @@ class DREAMFLOWDIALOGUE_API UDreamFlowDialogueLineNode : public UDreamFlowDialog
 public:
     UDreamFlowDialogueLineNode();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "20"))
     FText SpeakerName;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (MultiLine = true))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (MultiLine = true, DreamFlowInlineEditable, DreamFlowInlinePriority = "30"))
     FText LineText;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "40"))
     FName VoiceTag;
 
     virtual FText GetNodeDisplayName_Implementation() const override;
@@ -46,10 +46,10 @@ class DREAMFLOWDIALOGUE_API UDreamFlowDialogueChoiceNode : public UDreamFlowDial
 public:
     UDreamFlowDialogueChoiceNode();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (MultiLine = true))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (MultiLine = true, DreamFlowInlineEditable, DreamFlowInlinePriority = "20"))
     FText Prompt;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "30"))
     TArray<FText> ChoiceLabels;
 
     virtual FText GetNodeDisplayName_Implementation() const override;
@@ -65,7 +65,7 @@ class DREAMFLOWDIALOGUE_API UDreamFlowDialogueEndNode : public UDreamFlowDialogu
 public:
     UDreamFlowDialogueEndNode();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "20"))
     FText EndLabel;
 
     virtual FText GetNodeDisplayName_Implementation() const override;

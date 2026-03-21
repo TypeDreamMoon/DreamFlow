@@ -13,4 +13,6 @@ class DREAMFLOWEDITOR_API UDreamFlowVariablesEditorData : public UObject
 public:
     UPROPERTY(EditAnywhere, Category = "Variables")
     TArray<FDreamFlowVariableDefinition> Variables;
+
+    int32 SelectedVariableIndex = INDEX_NONE;
 };

@@ -27,5 +27,6 @@ private:
     TSharedPtr<IPropertyHandle> StringHandle;
     TSharedPtr<IPropertyHandle> TextHandle;
     TSharedPtr<IPropertyHandle> GameplayTagHandle;
+    TSharedPtr<IPropertyHandle> ObjectHandle;
     TSharedPtr<IPropertyUtilities> PropertyUtilities;
 };

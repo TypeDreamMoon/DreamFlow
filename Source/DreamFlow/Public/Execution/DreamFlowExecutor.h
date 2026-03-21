@@ -88,13 +88,80 @@ public:
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Debug")
     EDreamFlowExecutorDebugState GetDebugState() const;
 
+    /** Returns true if the executor currently exposes a variable with this name. */
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
     bool HasVariable(FName VariableName) const;
 
+    /** Read a variable as a bool. Returns false if the variable is missing or cannot be converted. */
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool GetVariableBoolValue(FName VariableName, bool& OutValue) const;
+
+    /** Read a variable as an int. Returns false if the variable is missing or cannot be converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool GetVariableIntValue(FName VariableName, int32& OutValue) const;
+
+    /** Read a variable as a float. Returns false if the variable is missing or cannot be converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool GetVariableFloatValue(FName VariableName, float& OutValue) const;
+
+    /** Read a variable as a name. Returns false if the variable is missing or cannot be converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool GetVariableNameValue(FName VariableName, FName& OutValue) const;
+
+    /** Read a variable as a string. Returns false if the variable is missing or cannot be converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool GetVariableStringValue(FName VariableName, FString& OutValue) const;
+
+    /** Read a variable as text. Returns false if the variable is missing or cannot be converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool GetVariableTextValue(FName VariableName, FText& OutValue) const;
+
+    /** Read a variable as a gameplay tag. Returns false if the variable is missing or cannot be converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool GetVariableGameplayTagValue(FName VariableName, FGameplayTag& OutValue) const;
+
+    /** Read a variable as an object reference. Returns false if the variable is missing or not an object value. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    bool GetVariableObjectValue(FName VariableName, UObject*& OutValue) const;
+
+    /** Low-level raw struct variable access. Prefer typed getters in Blueprint when possible. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Low Level")
     bool GetVariableValue(FName VariableName, FDreamFlowValue& OutValue) const;
 
+    /** Write a bool variable value. */
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
+    bool SetVariableBoolValue(FName VariableName, bool InValue);
+
+    /** Write an int variable value. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
+    bool SetVariableIntValue(FName VariableName, int32 InValue);
+
+    /** Write a float variable value. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
+    bool SetVariableFloatValue(FName VariableName, float InValue);
+
+    /** Write a name variable value. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
+    bool SetVariableNameValue(FName VariableName, FName InValue);
+
+    /** Write a string variable value. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
+    bool SetVariableStringValue(FName VariableName, const FString& InValue);
+
+    /** Write a text variable value. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
+    bool SetVariableTextValue(FName VariableName, const FText& InValue);
+
+    /** Write a gameplay tag variable value. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
+    bool SetVariableGameplayTagValue(FName VariableName, FGameplayTag InValue);
+
+    /** Write an object reference variable value. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
+    bool SetVariableObjectValue(FName VariableName, UObject* InValue);
+
+    /** Low-level raw struct variable write. Prefer typed setters in Blueprint when possible. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Low Level")
     bool SetVariableValue(FName VariableName, const FDreamFlowValue& InValue);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")

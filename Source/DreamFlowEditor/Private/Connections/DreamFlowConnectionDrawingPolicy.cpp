@@ -2,6 +2,7 @@
 
 #include "DreamFlowEdGraphNode.h"
 #include "DreamFlowEdGraphSchema.h"
+#include "Styling/StyleColors.h"
 
 FDreamFlowConnectionDrawingPolicy::FDreamFlowConnectionDrawingPolicy(
     int32 InBackLayerID,
@@ -19,20 +20,13 @@ void FDreamFlowConnectionDrawingPolicy::DetermineWiringStyle(UEdGraphPin* Output
 {
     FConnectionDrawingPolicy::DetermineWiringStyle(OutputPin, InputPin, Params);
 
-    Params.WireThickness = 3.0f;
-    Params.WireColor = FLinearColor(0.21f, 0.76f, 0.83f, 0.9f);
-
-    const UDreamFlowEdGraphNode* SourceNode = OutputPin != nullptr ? Cast<UDreamFlowEdGraphNode>(OutputPin->GetOwningNode()) : nullptr;
-    if (SourceNode != nullptr)
-    {
-        const FLinearColor SourceColor = SourceNode->GetNodeTitleColor();
-        Params.WireColor = FLinearColor(SourceColor.R, SourceColor.G, SourceColor.B, 0.88f);
-    }
+    Params.WireThickness = FMath::Max(Params.WireThickness, 4.0f);
+    Params.WireColor = FStyleColors::Foreground.GetSpecifiedColor().CopyWithNewOpacity(0.86f);
 
     if ((OutputPin != nullptr && OutputPin->bOrphanedPin) || (InputPin != nullptr && InputPin->bOrphanedPin))
     {
         Params.WireColor = FLinearColor(0.85f, 0.22f, 0.22f, 0.95f);
-        Params.WireThickness = 2.0f;
+        Params.WireThickness = 3.0f;
     }
 }
 

@@ -48,6 +48,9 @@ FString FDreamFlowValue::Describe() const
     case EDreamFlowValueType::GameplayTag:
         return GameplayTagValue.ToString();
 
+    case EDreamFlowValueType::Object:
+        return GetNameSafe(ObjectValue);
+
     default:
         return TEXT("<unset>");
     }
@@ -137,6 +140,9 @@ bool DreamFlowVariable::TryConvertValue(const FDreamFlowValue& InValue, EDreamFl
         }
         break;
 
+    case EDreamFlowValueType::Object:
+        break;
+
     default:
         break;
     }
@@ -211,6 +217,10 @@ bool DreamFlowVariable::TryCompareValues(const FDreamFlowValue& LeftValue, const
 
         case EDreamFlowValueType::GameplayTag:
             OutResult = LeftValue.GameplayTagValue == ConvertedRightValue.GameplayTagValue;
+            break;
+
+        case EDreamFlowValueType::Object:
+            OutResult = LeftValue.ObjectValue == ConvertedRightValue.ObjectValue;
             break;
 
         default:

@@ -2,6 +2,8 @@
 
 #include "DreamFlowAsset.h"
 #include "Execution/DreamFlowExecutor.h"
+#include "Engine/Texture2D.h"
+#include "UObject/Field.h"
 #include "UObject/Class.h"
 
 UDreamFlowNode::UDreamFlowNode()
@@ -13,6 +15,7 @@ UDreamFlowNode::UDreamFlowNode()
 
 #if WITH_EDITORONLY_DATA
     NodeTint = FLinearColor(0.13f, 0.42f, 0.55f, 1.0f);
+    NodeIconStyleName = NAME_None;
     EditorPosition = FVector2D::ZeroVector;
 #endif
 }
@@ -59,6 +62,42 @@ FText UDreamFlowNode::GetNodeCategory_Implementation() const
 FText UDreamFlowNode::GetNodeAccentLabel_Implementation() const
 {
     return FText::GetEmpty();
+}
+
+FName UDreamFlowNode::GetNodeIconStyleName_Implementation() const
+{
+#if WITH_EDITORONLY_DATA
+    return NodeIconStyleName;
+#else
+    return NAME_None;
+#endif
+}
+
+UTexture2D* UDreamFlowNode::GetNodeIconTexture_Implementation() const
+{
+#if WITH_EDITORONLY_DATA
+    return NodeIconTexture.LoadSynchronous();
+#else
+    return nullptr;
+#endif
+}
+
+TArray<FName> UDreamFlowNode::GetInlineEditablePropertyNames_Implementation() const
+{
+    TArray<FName> PropertyNames;
+
+#if WITH_EDITOR
+    for (TFieldIterator<FProperty> It(GetClass(), EFieldIteratorFlags::IncludeSuper); It; ++It)
+    {
+        const FProperty* Property = *It;
+        if (Property != nullptr && Property->HasMetaData(TEXT("DreamFlowInlineEditable")))
+        {
+            PropertyNames.Add(Property->GetFName());
+        }
+    }
+#endif
+
+    return PropertyNames;
 }
 
 TArray<FDreamFlowNodeDisplayItem> UDreamFlowNode::GetNodeDisplayItems_Implementation() const

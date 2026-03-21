@@ -22,7 +22,7 @@ class DREAMFLOW_API UDreamFlowBranchNode : public UDreamFlowCoreNode
 public:
     UDreamFlowBranchNode();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Branch", meta = (DreamFlowExpectedValueType = "Bool"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Branch", meta = (DreamFlowExpectedValueType = "Bool", DreamFlowInlineEditable, DreamFlowInlinePriority = "20"))
     FDreamFlowValueBinding ConditionBinding;
 
     virtual FText GetNodeDisplayName_Implementation() const override;
@@ -43,13 +43,13 @@ class DREAMFLOW_API UDreamFlowCompareNode : public UDreamFlowCoreNode
 public:
     UDreamFlowCompareNode();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Compare")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Compare", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "20"))
     FDreamFlowValueBinding LeftValue;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Compare")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Compare", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "30"))
     EDreamFlowComparisonOperation Operation = EDreamFlowComparisonOperation::Equal;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Compare")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Compare", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "40"))
     FDreamFlowValueBinding RightValue;
 
     virtual FText GetNodeDisplayName_Implementation() const override;
@@ -70,10 +70,10 @@ class DREAMFLOW_API UDreamFlowSetVariableNode : public UDreamFlowCoreNode
 public:
     UDreamFlowSetVariableNode();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Variables")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Variables", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "20"))
     FName TargetVariable;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Variables")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Variables", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "30"))
     FDreamFlowValueBinding ValueBinding;
 
     virtual FText GetNodeDisplayName_Implementation() const override;

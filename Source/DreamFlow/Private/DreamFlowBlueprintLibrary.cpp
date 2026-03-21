@@ -49,9 +49,89 @@ TArray<FDreamFlowVariableDefinition> UDreamFlowBlueprintLibrary::GetFlowVariable
     return FlowAsset ? FlowAsset->GetVariablesCopy() : TArray<FDreamFlowVariableDefinition>();
 }
 
+bool UDreamFlowBlueprintLibrary::GetExecutorBoolVariable(const UDreamFlowExecutor* Executor, FName VariableName, bool& OutValue)
+{
+    return Executor ? Executor->GetVariableBoolValue(VariableName, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorIntVariable(const UDreamFlowExecutor* Executor, FName VariableName, int32& OutValue)
+{
+    return Executor ? Executor->GetVariableIntValue(VariableName, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorFloatVariable(const UDreamFlowExecutor* Executor, FName VariableName, float& OutValue)
+{
+    return Executor ? Executor->GetVariableFloatValue(VariableName, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorNameVariable(const UDreamFlowExecutor* Executor, FName VariableName, FName& OutValue)
+{
+    return Executor ? Executor->GetVariableNameValue(VariableName, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorStringVariable(const UDreamFlowExecutor* Executor, FName VariableName, FString& OutValue)
+{
+    return Executor ? Executor->GetVariableStringValue(VariableName, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorTextVariable(const UDreamFlowExecutor* Executor, FName VariableName, FText& OutValue)
+{
+    return Executor ? Executor->GetVariableTextValue(VariableName, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorGameplayTagVariable(const UDreamFlowExecutor* Executor, FName VariableName, FGameplayTag& OutValue)
+{
+    return Executor ? Executor->GetVariableGameplayTagValue(VariableName, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorObjectVariable(const UDreamFlowExecutor* Executor, FName VariableName, UObject*& OutValue)
+{
+    return Executor ? Executor->GetVariableObjectValue(VariableName, OutValue) : false;
+}
+
 bool UDreamFlowBlueprintLibrary::GetExecutorVariable(const UDreamFlowExecutor* Executor, FName VariableName, FDreamFlowValue& OutValue)
 {
     return Executor ? Executor->GetVariableValue(VariableName, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorBoolVariable(UDreamFlowExecutor* Executor, FName VariableName, bool InValue)
+{
+    return Executor ? Executor->SetVariableBoolValue(VariableName, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorIntVariable(UDreamFlowExecutor* Executor, FName VariableName, int32 InValue)
+{
+    return Executor ? Executor->SetVariableIntValue(VariableName, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorFloatVariable(UDreamFlowExecutor* Executor, FName VariableName, float InValue)
+{
+    return Executor ? Executor->SetVariableFloatValue(VariableName, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorNameVariable(UDreamFlowExecutor* Executor, FName VariableName, FName InValue)
+{
+    return Executor ? Executor->SetVariableNameValue(VariableName, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorStringVariable(UDreamFlowExecutor* Executor, FName VariableName, const FString& InValue)
+{
+    return Executor ? Executor->SetVariableStringValue(VariableName, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorTextVariable(UDreamFlowExecutor* Executor, FName VariableName, const FText& InValue)
+{
+    return Executor ? Executor->SetVariableTextValue(VariableName, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorGameplayTagVariable(UDreamFlowExecutor* Executor, FName VariableName, FGameplayTag InValue)
+{
+    return Executor ? Executor->SetVariableGameplayTagValue(VariableName, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorObjectVariable(UDreamFlowExecutor* Executor, FName VariableName, UObject* InValue)
+{
+    return Executor ? Executor->SetVariableObjectValue(VariableName, InValue) : false;
 }
 
 bool UDreamFlowBlueprintLibrary::SetExecutorVariable(UDreamFlowExecutor* Executor, FName VariableName, const FDreamFlowValue& InValue)
@@ -112,6 +192,14 @@ FDreamFlowValue UDreamFlowBlueprintLibrary::MakeGameplayTagFlowValue(FGameplayTa
     FDreamFlowValue FlowValue;
     FlowValue.Type = EDreamFlowValueType::GameplayTag;
     FlowValue.GameplayTagValue = Value;
+    return FlowValue;
+}
+
+FDreamFlowValue UDreamFlowBlueprintLibrary::MakeObjectFlowValue(UObject* Value)
+{
+    FDreamFlowValue FlowValue;
+    FlowValue.Type = EDreamFlowValueType::Object;
+    FlowValue.ObjectValue = Value;
     return FlowValue;
 }
 

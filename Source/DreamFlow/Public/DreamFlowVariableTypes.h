@@ -14,6 +14,7 @@ enum class EDreamFlowValueType : uint8
     String,
     Text,
     GameplayTag,
+    Object,
 };
 
 UENUM(BlueprintType)
@@ -62,6 +63,9 @@ struct DREAMFLOW_API FDreamFlowValue
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Value", meta = (EditCondition = "Type == EDreamFlowValueType::GameplayTag", EditConditionHides))
     FGameplayTag GameplayTagValue;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Value", meta = (EditCondition = "Type == EDreamFlowValueType::Object", EditConditionHides, AllowedClasses = "/Script/CoreUObject.Object"))
+    TObjectPtr<UObject> ObjectValue = nullptr;
 
     FString Describe() const;
 };

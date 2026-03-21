@@ -3,12 +3,14 @@
 #include "CoreMinimal.h"
 #include "DreamFlowNodeDisplayTypes.h"
 #include "DreamFlowTypes.h"
+#include "UObject/SoftObjectPtr.h"
 #include "UObject/Object.h"
 #include "DreamFlowNode.generated.h"
 
 class UDreamFlowAsset;
 class UDreamFlowExecutor;
 class UDreamFlowNode;
+class UTexture2D;
 
 USTRUCT(BlueprintType)
 struct DREAMFLOW_API FDreamFlowNodeOutputPin
@@ -71,6 +73,12 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Editor")
     FLinearColor NodeTint;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Editor")
+    FName NodeIconStyleName;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Editor")
+    TSoftObjectPtr<UTexture2D> NodeIconTexture;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Editor")
     FVector2D EditorPosition;
 #endif
@@ -90,6 +98,18 @@ public:
     UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Flow")
     FText GetNodeAccentLabel() const;
     virtual FText GetNodeAccentLabel_Implementation() const;
+
+    UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Flow|Editor")
+    FName GetNodeIconStyleName() const;
+    virtual FName GetNodeIconStyleName_Implementation() const;
+
+    UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Flow|Editor")
+    UTexture2D* GetNodeIconTexture() const;
+    virtual UTexture2D* GetNodeIconTexture_Implementation() const;
+
+    UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Flow|Editor")
+    TArray<FName> GetInlineEditablePropertyNames() const;
+    virtual TArray<FName> GetInlineEditablePropertyNames_Implementation() const;
 
     UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Flow|Preview")
     TArray<FDreamFlowNodeDisplayItem> GetNodeDisplayItems() const;

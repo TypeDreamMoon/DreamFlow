@@ -1,6 +1,7 @@
 #include "Widgets/SDreamFlowDebuggerView.h"
 
 #include "DreamFlowAsset.h"
+#include "DreamFlowEditorModule.h"
 #include "DreamFlowNode.h"
 #include "DreamFlowVariableTypes.h"
 #include "Execution/DreamFlowDebuggerSubsystem.h"
@@ -13,6 +14,7 @@
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
+#include "Widgets/Layout/SSeparator.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -62,8 +64,30 @@ namespace DreamFlowDebuggerView
         case EDreamFlowValueType::GameplayTag:
             return FText::FromString(TEXT("GameplayTag"));
 
+        case EDreamFlowValueType::Object:
+            return FText::FromString(TEXT("Object"));
+
         default:
             return FText::FromString(TEXT("Unknown"));
+        }
+    }
+
+    static FSlateColor GetStateAccentColor(const EDreamFlowExecutorDebugState DebugState)
+    {
+        switch (DebugState)
+        {
+        case EDreamFlowExecutorDebugState::Running:
+            return FSlateColor(EStyleColor::AccentGreen);
+
+        case EDreamFlowExecutorDebugState::Paused:
+            return FSlateColor(EStyleColor::Primary);
+
+        case EDreamFlowExecutorDebugState::Finished:
+            return FSlateColor(EStyleColor::ForegroundHeader);
+
+        case EDreamFlowExecutorDebugState::Idle:
+        default:
+            return FSlateColor(EStyleColor::Warning);
         }
     }
 
@@ -96,6 +120,9 @@ namespace DreamFlowDebuggerView
 
         case EDreamFlowValueType::GameplayTag:
             return LeftValue.GameplayTagValue == RightValue.GameplayTagValue;
+
+        case EDreamFlowValueType::Object:
+            return LeftValue.ObjectValue == RightValue.ObjectValue;
 
         default:
             return false;
@@ -156,6 +183,17 @@ namespace DreamFlowDebuggerView
 
         return Snapshot;
     }
+
+    static void SyncPIEToExecutorState(const UDreamFlowExecutor* Executor)
+    {
+        if (!FDreamFlowEditorModule::IsAvailable())
+        {
+            return;
+        }
+
+        FDreamFlowEditorModule& EditorModule = FDreamFlowEditorModule::Get();
+        EditorModule.SyncPlaySessionToDebuggerState(Executor != nullptr && Executor->IsPaused());
+    }
 }
 
 void SDreamFlowDebuggerView::Construct(const FArguments& InArgs)
@@ -167,108 +205,145 @@ void SDreamFlowDebuggerView::Construct(const FArguments& InArgs)
     [
         SNew(SBorder)
         .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-        .Padding(12.0f)
+        .Padding(0.0f)
         [
             SNew(SVerticalBox)
 
             + SVerticalBox::Slot()
             .AutoHeight()
             [
-                SNew(STextBlock)
-                .Text(FText::FromString(TEXT("Debugger")))
-                .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
+                SNew(SBorder)
+                .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
+                .Padding(FMargin(12.0f, 12.0f))
+                [
+                    SNew(SVerticalBox)
+
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    [
+                        SNew(STextBlock)
+                        .Text(FText::FromString(TEXT("Debugger")))
+                        .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
+                        .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                    ]
+
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(0.0f, 4.0f, 0.0f, 0.0f)
+                    [
+                        SAssignNew(SummaryTextBlock, STextBlock)
+                        .Text(this, &SDreamFlowDebuggerView::GetSummaryText)
+                        .TextStyle(FAppStyle::Get(), "SmallText")
+                        .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                        .WrapTextAt(320.0f)
+                    ]
+                ]
             ]
 
             + SVerticalBox::Slot()
             .AutoHeight()
-            .Padding(0.0f, 6.0f, 0.0f, 10.0f)
+            .Padding(12.0f, 10.0f, 12.0f, 0.0f)
             [
-                SAssignNew(SummaryTextBlock, STextBlock)
-                .Text(this, &SDreamFlowDebuggerView::GetSummaryText)
-                .TextStyle(FAppStyle::Get(), "SmallText")
-                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
-                .WrapTextAt(320.0f)
+                SNew(SBorder)
+                .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                .BorderBackgroundColor(FSlateColor(EStyleColor::Panel))
+                .Padding(FMargin(10.0f, 8.0f))
+                [
+                    SNew(SHorizontalBox)
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .Padding(0.0f, 0.0f, 6.0f, 0.0f)
+                    [
+                        SNew(SButton)
+                        .Text(FText::FromString(TEXT("Continue")))
+                        .OnClicked(this, &SDreamFlowDebuggerView::HandleContinueClicked)
+                        .IsEnabled(this, &SDreamFlowDebuggerView::CanContinue)
+                    ]
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .Padding(0.0f, 0.0f, 6.0f, 0.0f)
+                    [
+                        SNew(SButton)
+                        .Text(FText::FromString(TEXT("Step")))
+                        .OnClicked(this, &SDreamFlowDebuggerView::HandleStepClicked)
+                        .IsEnabled(this, &SDreamFlowDebuggerView::CanStep)
+                    ]
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .Padding(0.0f, 0.0f, 6.0f, 0.0f)
+                    [
+                        SNew(SButton)
+                        .Text(FText::FromString(TEXT("Pause")))
+                        .OnClicked(this, &SDreamFlowDebuggerView::HandlePauseClicked)
+                        .IsEnabled(this, &SDreamFlowDebuggerView::CanPause)
+                    ]
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .Padding(0.0f, 0.0f, 6.0f, 0.0f)
+                    [
+                        SNew(SButton)
+                        .Text(FText::FromString(TEXT("Stop")))
+                        .OnClicked(this, &SDreamFlowDebuggerView::HandleStopClicked)
+                        .IsEnabled(this, &SDreamFlowDebuggerView::CanStop)
+                    ]
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .Padding(0.0f, 0.0f, 6.0f, 0.0f)
+                    [
+                        SNew(SButton)
+                        .Text(FText::FromString(TEXT("Focus Node")))
+                        .OnClicked(this, &SDreamFlowDebuggerView::HandleFocusNodeClicked)
+                        .IsEnabled(this, &SDreamFlowDebuggerView::CanFocusNode)
+                    ]
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    [
+                        SNew(SButton)
+                        .Text(FText::FromString(TEXT("Copy Snapshot")))
+                        .OnClicked(this, &SDreamFlowDebuggerView::HandleCopySnapshotClicked)
+                        .IsEnabled(this, &SDreamFlowDebuggerView::CanCopySnapshot)
+                    ]
+                ]
             ]
 
             + SVerticalBox::Slot()
             .AutoHeight()
+            .Padding(12.0f, 10.0f, 12.0f, 0.0f)
             [
-                SNew(SHorizontalBox)
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 6.0f, 0.0f)
+                SNew(SBorder)
+                .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                .BorderBackgroundColor(FSlateColor(EStyleColor::Header))
+                .Padding(FMargin(8.0f, 6.0f))
                 [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Continue")))
-                    .OnClicked(this, &SDreamFlowDebuggerView::HandleContinueClicked)
-                    .IsEnabled(this, &SDreamFlowDebuggerView::CanContinue)
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 6.0f, 0.0f)
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Step")))
-                    .OnClicked(this, &SDreamFlowDebuggerView::HandleStepClicked)
-                    .IsEnabled(this, &SDreamFlowDebuggerView::CanStep)
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 6.0f, 0.0f)
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Pause")))
-                    .OnClicked(this, &SDreamFlowDebuggerView::HandlePauseClicked)
-                    .IsEnabled(this, &SDreamFlowDebuggerView::CanPause)
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 6.0f, 0.0f)
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Stop")))
-                    .OnClicked(this, &SDreamFlowDebuggerView::HandleStopClicked)
-                    .IsEnabled(this, &SDreamFlowDebuggerView::CanStop)
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Focus Node")))
-                    .OnClicked(this, &SDreamFlowDebuggerView::HandleFocusNodeClicked)
-                    .IsEnabled(this, &SDreamFlowDebuggerView::CanFocusNode)
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(6.0f, 0.0f, 0.0f, 0.0f)
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Copy Snapshot")))
-                    .OnClicked(this, &SDreamFlowDebuggerView::HandleCopySnapshotClicked)
-                    .IsEnabled(this, &SDreamFlowDebuggerView::CanCopySnapshot)
+                    SNew(STextBlock)
+                    .Text(this, &SDreamFlowDebuggerView::GetSelectedNodeText)
+                    .TextStyle(FAppStyle::Get(), "SmallText")
+                    .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                    .WrapTextAt(320.0f)
                 ]
             ]
 
             + SVerticalBox::Slot()
             .AutoHeight()
-            .Padding(0.0f, 10.0f, 0.0f, 6.0f)
-            [
-                SNew(STextBlock)
-                .Text(this, &SDreamFlowDebuggerView::GetSelectedNodeText)
-                .TextStyle(FAppStyle::Get(), "SmallText")
-                .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
-                .WrapTextAt(320.0f)
-            ]
-
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, 0.0f, 0.0f, 10.0f)
+            .Padding(12.0f, 10.0f, 12.0f, 0.0f)
             [
                 SAssignNew(SelectedInspectorContainer, SVerticalBox)
             ]
 
             + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(12.0f, 12.0f, 12.0f, 6.0f)
+            [
+                SNew(STextBlock)
+                .Text(FText::FromString(TEXT("Active Sessions")))
+                .TextStyle(FAppStyle::Get(), "SmallText")
+                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+            ]
+
+            + SVerticalBox::Slot()
             .FillHeight(1.0f)
+            .Padding(12.0f, 0.0f, 12.0f, 12.0f)
             [
                 SAssignNew(ExecutorContainer, SScrollBox)
             ]
@@ -370,10 +445,17 @@ void SDreamFlowDebuggerView::RebuildExecutorList()
     {
         ExecutorContainer->AddSlot()
         [
-            SNew(STextBlock)
-            .Text(FText::FromString(TEXT("No active DreamFlow executors for this asset.")))
-            .TextStyle(FAppStyle::Get(), "SmallText")
-            .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+            SNew(SBorder)
+            .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+            .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
+            .Padding(FMargin(12.0f, 10.0f))
+            [
+                SNew(STextBlock)
+                .Text(FText::FromString(TEXT("No active DreamFlow executors for this asset.")))
+                .TextStyle(FAppStyle::Get(), "SmallText")
+                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                .WrapTextAt(320.0f)
+            ]
         ];
         return;
     }
@@ -409,6 +491,13 @@ void SDreamFlowDebuggerView::RebuildSelectedExecutorDetails()
 TSharedRef<SWidget> SDreamFlowDebuggerView::BuildExecutorCard(UDreamFlowExecutor* Executor) const
 {
     const TWeakObjectPtr<UDreamFlowExecutor> WeakExecutor = Executor;
+    const FText ContextLabel = Executor->GetExecutionContext() != nullptr
+        ? Executor->GetExecutionContext()->GetClass()->GetDisplayNameText()
+        : FText::FromString(TEXT("No Context"));
+    const FText VisitLabel = FText::Format(
+        FText::FromString(TEXT("{0} visited")),
+        FText::AsNumber(Executor->GetVisitedNodes().Num()));
+    const FSlateColor StateColor = DreamFlowDebuggerView::GetStateAccentColor(Executor->GetDebugState());
 
     return SNew(SButton)
         .ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
@@ -420,38 +509,89 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildExecutorCard(UDreamFlowExecutor
             .BorderBackgroundColor(this, &SDreamFlowDebuggerView::GetExecutorBorderColor, WeakExecutor)
             .Padding(1.0f)
             [
-                SNew(SBorder)
-                .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-                .BorderBackgroundColor(this, &SDreamFlowDebuggerView::GetExecutorCardColor, WeakExecutor)
-                .Padding(FMargin(10.0f, 8.0f))
+                SNew(SHorizontalBox)
+
+                + SHorizontalBox::Slot()
+                .AutoWidth()
                 [
-                    SNew(SVerticalBox)
-                    + SVerticalBox::Slot()
-                    .AutoHeight()
+                    SNew(SBorder)
+                    .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                    .BorderBackgroundColor(StateColor)
+                    .Padding(FMargin(3.0f, 0.0f))
+                ]
+
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SNew(SBorder)
+                    .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                    .BorderBackgroundColor(this, &SDreamFlowDebuggerView::GetExecutorCardColor, WeakExecutor)
+                    .Padding(FMargin(10.0f, 8.0f))
                     [
-                        SNew(STextBlock)
-                        .Text(this, &SDreamFlowDebuggerView::GetExecutorDisplayNameText, WeakExecutor)
-                        .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-                        .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
-                    ]
-                    + SVerticalBox::Slot()
-                    .AutoHeight()
-                    .Padding(0.0f, 3.0f, 0.0f, 0.0f)
-                    [
-                        SNew(STextBlock)
-                        .Text(this, &SDreamFlowDebuggerView::GetExecutorStateText, WeakExecutor)
-                        .TextStyle(FAppStyle::Get(), "SmallText")
-                        .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
-                    ]
-                    + SVerticalBox::Slot()
-                    .AutoHeight()
-                    .Padding(0.0f, 3.0f, 0.0f, 0.0f)
-                    [
-                        SNew(STextBlock)
-                        .Text(this, &SDreamFlowDebuggerView::GetExecutorCurrentNodeText, WeakExecutor)
-                        .TextStyle(FAppStyle::Get(), "SmallText")
-                        .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
-                        .WrapTextAt(260.0f)
+                        SNew(SVerticalBox)
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        [
+                            SNew(SHorizontalBox)
+                            + SHorizontalBox::Slot()
+                            .FillWidth(1.0f)
+                            [
+                                SNew(STextBlock)
+                                .Text(this, &SDreamFlowDebuggerView::GetExecutorDisplayNameText, WeakExecutor)
+                                .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+                                .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                            ]
+                            + SHorizontalBox::Slot()
+                            .AutoWidth()
+                            .Padding(8.0f, 0.0f, 0.0f, 0.0f)
+                            [
+                                SNew(SBorder)
+                                .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                                .BorderBackgroundColor(StateColor.GetSpecifiedColor().CopyWithNewOpacity(0.16f))
+                                .Padding(FMargin(6.0f, 2.0f))
+                                [
+                                    SNew(STextBlock)
+                                    .Text(this, &SDreamFlowDebuggerView::GetExecutorStateText, WeakExecutor)
+                                    .TextStyle(FAppStyle::Get(), "SmallText")
+                                    .ColorAndOpacity(StateColor)
+                                ]
+                            ]
+                        ]
+
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        .Padding(0.0f, 4.0f, 0.0f, 0.0f)
+                        [
+                            SNew(STextBlock)
+                            .Text(this, &SDreamFlowDebuggerView::GetExecutorCurrentNodeText, WeakExecutor)
+                            .TextStyle(FAppStyle::Get(), "SmallText")
+                            .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                            .WrapTextAt(260.0f)
+                        ]
+
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        .Padding(0.0f, 6.0f, 0.0f, 0.0f)
+                        [
+                            SNew(SHorizontalBox)
+                            + SHorizontalBox::Slot()
+                            .AutoWidth()
+                            [
+                                SNew(STextBlock)
+                                .Text(ContextLabel)
+                                .TextStyle(FAppStyle::Get(), "SmallText")
+                                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                            ]
+                            + SHorizontalBox::Slot()
+                            .AutoWidth()
+                            .Padding(8.0f, 0.0f, 0.0f, 0.0f)
+                            [
+                                SNew(STextBlock)
+                                .Text(VisitLabel)
+                                .TextStyle(FAppStyle::Get(), "SmallText")
+                                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                            ]
+                        ]
                     ]
                 ]
             ]
@@ -486,6 +626,7 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildSelectedExecutorInspector() con
         : FText::FromString(TEXT("None"));
 
     bool bIsCurrentBreakpoint = false;
+    int32 ModifiedVariableCount = 0;
     if (GEngine != nullptr && Asset != nullptr && CurrentNode != nullptr)
     {
         if (UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>())
@@ -512,6 +653,7 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildSelectedExecutorInspector() con
         {
             FDreamFlowValue CurrentValue = VariableDefinition.DefaultValue;
             const bool bHasRuntimeValue = Executor->GetVariableValue(VariableDefinition.Name, CurrentValue);
+            ModifiedVariableCount += bHasRuntimeValue && !DreamFlowDebuggerView::AreValuesEqual(CurrentValue, VariableDefinition.DefaultValue) ? 1 : 0;
 
             VariableRows->AddSlot()
             .AutoHeight()
@@ -531,10 +673,29 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildSelectedExecutorInspector() con
             + SVerticalBox::Slot()
             .AutoHeight()
             [
-                SNew(STextBlock)
-                .Text(FText::FromString(TEXT("Selected Executor")))
-                .TextStyle(FAppStyle::Get(), "SmallText")
-                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SNew(STextBlock)
+                    .Text(FText::FromString(TEXT("Selected Executor")))
+                    .TextStyle(FAppStyle::Get(), "SmallText")
+                    .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(SBorder)
+                    .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                    .BorderBackgroundColor(DreamFlowDebuggerView::GetStateAccentColor(Executor->GetDebugState()).GetSpecifiedColor().CopyWithNewOpacity(0.16f))
+                    .Padding(FMargin(6.0f, 2.0f))
+                    [
+                        SNew(STextBlock)
+                        .Text(DreamFlowDebuggerView::GetDebugStateLabel(Executor->GetDebugState()))
+                        .TextStyle(FAppStyle::Get(), "SmallText")
+                        .ColorAndOpacity(DreamFlowDebuggerView::GetStateAccentColor(Executor->GetDebugState()))
+                    ]
+                ]
             ]
 
             + SVerticalBox::Slot()
@@ -610,12 +771,27 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildSelectedExecutorInspector() con
             .AutoHeight()
             .Padding(0.0f, 10.0f, 0.0f, 6.0f)
             [
-                SNew(STextBlock)
-                .Text(FText::Format(
-                    FText::FromString(TEXT("Runtime Variables ({0})")),
-                    FText::AsNumber(Asset != nullptr ? Asset->Variables.Num() : 0)))
-                .TextStyle(FAppStyle::Get(), "SmallText")
-                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SNew(STextBlock)
+                    .Text(FText::Format(
+                        FText::FromString(TEXT("Runtime Variables ({0})")),
+                        FText::AsNumber(Asset != nullptr ? Asset->Variables.Num() : 0)))
+                    .TextStyle(FAppStyle::Get(), "SmallText")
+                    .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(STextBlock)
+                    .Text(FText::Format(
+                        FText::FromString(TEXT("{0} modified")),
+                        FText::AsNumber(ModifiedVariableCount)))
+                    .TextStyle(FAppStyle::Get(), "SmallText")
+                    .ColorAndOpacity(ModifiedVariableCount > 0 ? FSlateColor(EStyleColor::Primary) : FSlateColor(EStyleColor::ForegroundHeader))
+                ]
             ]
 
             + SVerticalBox::Slot()
@@ -659,7 +835,7 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildInfoRow(const FText& Label, con
             [
                 SNew(STextBlock)
                 .Text(Value)
-                .TextStyle(FAppStyle::Get(), "SmallText")
+                .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
                 .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
                 .WrapTextAt(240.0f)
             ]
@@ -748,6 +924,18 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildVariableRow(const FDreamFlowVar
             .Padding(0.0f, 2.0f, 0.0f, 0.0f)
             [
                 SNew(STextBlock)
+                .Visibility(VariableDefinition.Description.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+                .Text(VariableDefinition.Description)
+                .TextStyle(FAppStyle::Get(), "SmallText")
+                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                .WrapTextAt(260.0f)
+            ]
+
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0.0f, VariableDefinition.Description.IsEmpty() ? 2.0f : 6.0f, 0.0f, 0.0f)
+            [
+                SNew(STextBlock)
                 .Text(FText::Format(
                     FText::FromString(TEXT("Default: {0}")),
                     FText::FromString(VariableDefinition.DefaultValue.Describe())))
@@ -768,7 +956,10 @@ FReply SDreamFlowDebuggerView::HandleContinueClicked() const
 {
     if (UDreamFlowExecutor* Executor = GetSelectedExecutor())
     {
-        Executor->ContinueExecution();
+        if (Executor->ContinueExecution())
+        {
+            DreamFlowDebuggerView::SyncPIEToExecutorState(Executor);
+        }
     }
 
     return FReply::Handled();
@@ -778,7 +969,10 @@ FReply SDreamFlowDebuggerView::HandleStepClicked() const
 {
     if (UDreamFlowExecutor* Executor = GetSelectedExecutor())
     {
-        Executor->StepExecution();
+        if (Executor->StepExecution())
+        {
+            DreamFlowDebuggerView::SyncPIEToExecutorState(Executor);
+        }
     }
 
     return FReply::Handled();
@@ -788,7 +982,10 @@ FReply SDreamFlowDebuggerView::HandlePauseClicked() const
 {
     if (UDreamFlowExecutor* Executor = GetSelectedExecutor())
     {
-        Executor->PauseExecution();
+        if (Executor->PauseExecution())
+        {
+            DreamFlowDebuggerView::SyncPIEToExecutorState(Executor);
+        }
     }
 
     return FReply::Handled();
@@ -799,6 +996,7 @@ FReply SDreamFlowDebuggerView::HandleStopClicked() const
     if (UDreamFlowExecutor* Executor = GetSelectedExecutor())
     {
         Executor->FinishFlow();
+        DreamFlowDebuggerView::SyncPIEToExecutorState(Executor);
     }
 
     return FReply::Handled();
@@ -877,7 +1075,8 @@ FText SDreamFlowDebuggerView::GetSummaryText() const
     }
 
     return FText::Format(
-        FText::FromString(TEXT("Active executors: {0}  Selected state: {1}")),
+        FText::FromString(TEXT("Inspect runtime state for {0}. Active executors: {1}  Selected state: {2}")),
+        Executor->GetFlowAsset() != nullptr ? FText::FromString(Executor->GetFlowAsset()->GetName()) : FText::FromString(TEXT("this flow")),
         FText::AsNumber(CachedExecutors.Num()),
         DreamFlowDebuggerView::GetDebugStateLabel(Executor->GetDebugState()));
 }
@@ -924,8 +1123,8 @@ FText SDreamFlowDebuggerView::GetSelectedNodeText() const
 FSlateColor SDreamFlowDebuggerView::GetExecutorCardColor(TWeakObjectPtr<UDreamFlowExecutor> Executor) const
 {
     return SelectedExecutor.Get() == Executor.Get()
-        ? FSlateColor(EStyleColor::Primary)
-        : FSlateColor(EStyleColor::Panel);
+        ? FSlateColor(EStyleColor::Panel)
+        : FSlateColor(EStyleColor::Recessed);
 }
 
 FSlateColor SDreamFlowDebuggerView::GetExecutorBorderColor(TWeakObjectPtr<UDreamFlowExecutor> Executor) const

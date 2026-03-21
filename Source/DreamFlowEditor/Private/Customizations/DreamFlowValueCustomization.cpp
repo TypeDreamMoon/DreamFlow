@@ -21,6 +21,7 @@ void FDreamFlowValueCustomization::CustomizeHeader(TSharedRef<IPropertyHandle> S
     StringHandle = StructPropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValue, StringValue));
     TextHandle = StructPropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValue, TextValue));
     GameplayTagHandle = StructPropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValue, GameplayTagValue));
+    ObjectHandle = StructPropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValue, ObjectValue));
 
     if (TypeHandle.IsValid() && PropertyUtilities.IsValid())
     {
@@ -83,6 +84,8 @@ TSharedPtr<IPropertyHandle> FDreamFlowValueCustomization::GetActiveValueHandle()
         return TextHandle;
     case EDreamFlowValueType::GameplayTag:
         return GameplayTagHandle;
+    case EDreamFlowValueType::Object:
+        return ObjectHandle;
     default:
         return nullptr;
     }

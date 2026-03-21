@@ -5,6 +5,25 @@
 #include "Engine/Engine.h"
 #include "Execution/DreamFlowDebuggerSubsystem.h"
 
+namespace DreamFlowExecutorPrivate
+{
+    static bool TryGetConvertedValue(const UDreamFlowExecutor* Executor, const FName VariableName, const EDreamFlowValueType TargetType, FDreamFlowValue& OutValue)
+    {
+        if (Executor == nullptr)
+        {
+            return false;
+        }
+
+        FDreamFlowValue StoredValue;
+        if (!Executor->GetVariableValue(VariableName, StoredValue))
+        {
+            return false;
+        }
+
+        return DreamFlowVariable::TryConvertValue(StoredValue, TargetType, OutValue);
+    }
+}
+
 void UDreamFlowExecutor::Initialize(UDreamFlowAsset* InFlowAsset, UObject* InExecutionContext)
 {
     UnregisterFromDebugger();
@@ -321,6 +340,166 @@ bool UDreamFlowExecutor::GetVariableValue(FName VariableName, FDreamFlowValue& O
     }
 
     return false;
+}
+
+bool UDreamFlowExecutor::GetVariableBoolValue(FName VariableName, bool& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedValue(this, VariableName, EDreamFlowValueType::Bool, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.BoolValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetVariableIntValue(FName VariableName, int32& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedValue(this, VariableName, EDreamFlowValueType::Int, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.IntValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetVariableFloatValue(FName VariableName, float& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedValue(this, VariableName, EDreamFlowValueType::Float, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.FloatValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetVariableNameValue(FName VariableName, FName& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedValue(this, VariableName, EDreamFlowValueType::Name, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.NameValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetVariableStringValue(FName VariableName, FString& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedValue(this, VariableName, EDreamFlowValueType::String, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.StringValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetVariableTextValue(FName VariableName, FText& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedValue(this, VariableName, EDreamFlowValueType::Text, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.TextValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetVariableGameplayTagValue(FName VariableName, FGameplayTag& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedValue(this, VariableName, EDreamFlowValueType::GameplayTag, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.GameplayTagValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetVariableObjectValue(FName VariableName, UObject*& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedValue(this, VariableName, EDreamFlowValueType::Object, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.ObjectValue.Get();
+    return true;
+}
+
+bool UDreamFlowExecutor::SetVariableBoolValue(FName VariableName, bool InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Bool;
+    Value.BoolValue = InValue;
+    return SetVariableValue(VariableName, Value);
+}
+
+bool UDreamFlowExecutor::SetVariableIntValue(FName VariableName, int32 InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Int;
+    Value.IntValue = InValue;
+    return SetVariableValue(VariableName, Value);
+}
+
+bool UDreamFlowExecutor::SetVariableFloatValue(FName VariableName, float InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Float;
+    Value.FloatValue = InValue;
+    return SetVariableValue(VariableName, Value);
+}
+
+bool UDreamFlowExecutor::SetVariableNameValue(FName VariableName, FName InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Name;
+    Value.NameValue = InValue;
+    return SetVariableValue(VariableName, Value);
+}
+
+bool UDreamFlowExecutor::SetVariableStringValue(FName VariableName, const FString& InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::String;
+    Value.StringValue = InValue;
+    return SetVariableValue(VariableName, Value);
+}
+
+bool UDreamFlowExecutor::SetVariableTextValue(FName VariableName, const FText& InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Text;
+    Value.TextValue = InValue;
+    return SetVariableValue(VariableName, Value);
+}
+
+bool UDreamFlowExecutor::SetVariableGameplayTagValue(FName VariableName, FGameplayTag InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::GameplayTag;
+    Value.GameplayTagValue = InValue;
+    return SetVariableValue(VariableName, Value);
+}
+
+bool UDreamFlowExecutor::SetVariableObjectValue(FName VariableName, UObject* InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Object;
+    Value.ObjectValue = InValue;
+    return SetVariableValue(VariableName, Value);
 }
 
 bool UDreamFlowExecutor::SetVariableValue(FName VariableName, const FDreamFlowValue& InValue)

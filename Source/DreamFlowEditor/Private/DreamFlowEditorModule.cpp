@@ -1,6 +1,7 @@
 #include "DreamFlowEditorModule.h"
 
 #include "Connections/DreamFlowConnectionDrawingPolicy.h"
+#include "Customizations/DreamFlowObjectDetailsCustomization.h"
 #include "Customizations/DreamFlowValueBindingCustomization.h"
 #include "Customizations/DreamFlowValueCustomization.h"
 #include "Customizations/DreamFlowVariableDefinitionCustomization.h"
@@ -8,12 +9,15 @@
 #include "DreamDialogueFlowAsset.h"
 #include "DreamFlowAsset.h"
 #include "DreamFlowAssetTypeActions.h"
+#include "DreamFlowEditorCommands.h"
 #include "DreamFlowEditorToolkit.h"
+#include "DreamFlowNode.h"
 #include "DreamFlowVariablesEditorData.h"
 #include "DreamQuestFlowAsset.h"
 #include "AssetToolsModule.h"
 #include "EdGraphUtilities.h"
 #include "Editor.h"
+#include "Framework/Application/SlateApplication.h"
 #include "IAssetTools.h"
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
@@ -33,6 +37,7 @@ bool FDreamFlowEditorModule::IsAvailable()
 void FDreamFlowEditorModule::StartupModule()
 {
     RegisterAssetTools();
+    RegisterEditorCommands();
     RegisterConnectionFactory();
     RegisterPropertyCustomizations();
 
@@ -53,7 +58,64 @@ void FDreamFlowEditorModule::ShutdownModule()
 
     UnregisterPropertyCustomizations();
     UnregisterConnectionFactory();
+    UnregisterEditorCommands();
     UnregisterAssetTools();
+}
+
+void FDreamFlowEditorModule::PausePlaySessionForDreamFlow()
+{
+    if (GEditor == nullptr || GEditor->PlayWorld == nullptr)
+    {
+        return;
+    }
+
+    if (!GEditor->PlayWorld->bDebugPauseExecution && GEditor->SetPIEWorldsPaused(true))
+    {
+        GEditor->PlaySessionPaused();
+        bOwnsPlaySessionPause = true;
+    }
+}
+
+void FDreamFlowEditorModule::ResumePlaySessionForDreamFlow()
+{
+    if (!bOwnsPlaySessionPause)
+    {
+        return;
+    }
+
+    if (GEditor == nullptr || GEditor->PlayWorld == nullptr)
+    {
+        bOwnsPlaySessionPause = false;
+        return;
+    }
+
+    if (GEditor->PlayWorld->bDebugPauseExecution)
+    {
+        GEditor->SetPIEWorldsPaused(false);
+        GEditor->PlaySessionResumed();
+
+        uint32 UserIndex = 0;
+        FSlateApplication::Get().SetUserFocusToGameViewport(UserIndex);
+    }
+
+    bOwnsPlaySessionPause = false;
+}
+
+void FDreamFlowEditorModule::SyncPlaySessionToDebuggerState(bool bShouldPause)
+{
+    if (bShouldPause)
+    {
+        PausePlaySessionForDreamFlow();
+    }
+    else
+    {
+        ResumePlaySessionForDreamFlow();
+    }
+}
+
+bool FDreamFlowEditorModule::IsPlaySessionPaused() const
+{
+    return GEditor != nullptr && GEditor->PlayWorld != nullptr && GEditor->PlayWorld->bDebugPauseExecution;
 }
 
 void FDreamFlowEditorModule::RegisterAssetTools()
@@ -98,6 +160,22 @@ void FDreamFlowEditorModule::UnregisterAssetTools()
     RegisteredAssetTypeActions.Reset();
 }
 
+void FDreamFlowEditorModule::RegisterEditorCommands()
+{
+    if (!FDreamFlowEditorCommands::IsRegistered())
+    {
+        FDreamFlowEditorCommands::Register();
+    }
+}
+
+void FDreamFlowEditorModule::UnregisterEditorCommands()
+{
+    if (FDreamFlowEditorCommands::IsRegistered())
+    {
+        FDreamFlowEditorCommands::Unregister();
+    }
+}
+
 void FDreamFlowEditorModule::RegisterConnectionFactory()
 {
     if (!ConnectionFactory.IsValid())
@@ -122,6 +200,8 @@ void FDreamFlowEditorModule::RegisterPropertyCustomizations()
     PropertyEditorModule.RegisterCustomPropertyTypeLayout(TEXT("DreamFlowValue"), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FDreamFlowValueCustomization::MakeInstance));
     PropertyEditorModule.RegisterCustomPropertyTypeLayout(TEXT("DreamFlowValueBinding"), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FDreamFlowValueBindingCustomization::MakeInstance));
     PropertyEditorModule.RegisterCustomPropertyTypeLayout(TEXT("DreamFlowVariableDefinition"), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FDreamFlowVariableDefinitionCustomization::MakeInstance));
+    PropertyEditorModule.RegisterCustomClassLayout(UDreamFlowAsset::StaticClass()->GetFName(), FOnGetDetailCustomizationInstance::CreateStatic(&FDreamFlowAssetDetailsCustomization::MakeInstance));
+    PropertyEditorModule.RegisterCustomClassLayout(UDreamFlowNode::StaticClass()->GetFName(), FOnGetDetailCustomizationInstance::CreateStatic(&FDreamFlowNodeDetailsCustomization::MakeInstance));
     PropertyEditorModule.RegisterCustomClassLayout(UDreamFlowVariablesEditorData::StaticClass()->GetFName(), FOnGetDetailCustomizationInstance::CreateStatic(&FDreamFlowVariablesEditorDataDetails::MakeInstance));
     PropertyEditorModule.NotifyCustomizationModuleChanged();
 }
@@ -137,6 +217,8 @@ void FDreamFlowEditorModule::UnregisterPropertyCustomizations()
     PropertyEditorModule.UnregisterCustomPropertyTypeLayout(TEXT("DreamFlowValue"));
     PropertyEditorModule.UnregisterCustomPropertyTypeLayout(TEXT("DreamFlowValueBinding"));
     PropertyEditorModule.UnregisterCustomPropertyTypeLayout(TEXT("DreamFlowVariableDefinition"));
+    PropertyEditorModule.UnregisterCustomClassLayout(UDreamFlowAsset::StaticClass()->GetFName());
+    PropertyEditorModule.UnregisterCustomClassLayout(UDreamFlowNode::StaticClass()->GetFName());
     PropertyEditorModule.UnregisterCustomClassLayout(UDreamFlowVariablesEditorData::StaticClass()->GetFName());
     PropertyEditorModule.NotifyCustomizationModuleChanged();
 }
@@ -152,6 +234,15 @@ bool FDreamFlowEditorModule::HandleDebuggerTicker(float DeltaTime)
             bHasPendingBreakpointFocus = false;
             PendingBreakpointFocus.Reset();
         }
+    }
+
+    if (GEditor == nullptr || GEditor->PlayWorld == nullptr)
+    {
+        bOwnsPlaySessionPause = false;
+    }
+    else if (!GEditor->PlayWorld->bDebugPauseExecution)
+    {
+        bOwnsPlaySessionPause = false;
     }
 
     if (GEditor == nullptr || GEngine == nullptr)
@@ -179,11 +270,7 @@ bool FDreamFlowEditorModule::HandleDebuggerTicker(float DeltaTime)
         return true;
     }
 
-    if (GEditor->PlayWorld != nullptr && !GEditor->PlayWorld->bDebugPauseExecution)
-    {
-        GEditor->SetPIEWorldsPaused(true);
-        GEditor->PlaySessionPaused();
-    }
+    PausePlaySessionForDreamFlow();
 
     if (!FocusBreakpointLocation(BreakpointLocation))
     {

@@ -16,9 +16,16 @@ public:
     virtual void StartupModule() override;
     virtual void ShutdownModule() override;
 
+    void PausePlaySessionForDreamFlow();
+    void ResumePlaySessionForDreamFlow();
+    void SyncPlaySessionToDebuggerState(bool bShouldPause);
+    bool IsPlaySessionPaused() const;
+
 private:
     void RegisterAssetTools();
     void UnregisterAssetTools();
+    void RegisterEditorCommands();
+    void UnregisterEditorCommands();
     void RegisterConnectionFactory();
     void UnregisterConnectionFactory();
     void RegisterPropertyCustomizations();
@@ -32,6 +39,7 @@ private:
     FTSTicker::FDelegateHandle DebuggerTickerHandle;
     uint64 LastHandledBreakpointHitSerial = 0;
     bool bHasPendingBreakpointFocus = false;
+    bool bOwnsPlaySessionPause = false;
     FDreamFlowExecutionLocation PendingBreakpointFocus;
     uint32 AssetCategory = 0;
 };

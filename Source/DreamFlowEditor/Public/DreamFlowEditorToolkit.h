@@ -9,6 +9,7 @@
 
 class IDetailsView;
 class SGraphEditor;
+class SDreamFlowGraphDropTarget;
 class SDreamFlowDebuggerView;
 class SDreamFlowNodePalette;
 class SDreamFlowValidationView;
@@ -25,6 +26,7 @@ public:
     void InitEditor(const EToolkitMode::Type Mode, const TSharedPtr<class IToolkitHost>& InitToolkitHost, UDreamFlowAsset* InFlowAsset);
     static void OpenNodeEditorForGraph(UEdGraph* Graph, UObject* ObjectToEdit);
     static bool OpenAssetAndFocusNode(UDreamFlowAsset* InFlowAsset, const FGuid& NodeGuid);
+    static bool GetValidationMessagesForGraphNode(UEdGraph* Graph, const FGuid& NodeGuid, TArray<FDreamFlowValidationMessage>& OutMessages);
 
     virtual FName GetToolkitFName() const override;
     virtual FText GetBaseToolkitName() const override;
@@ -70,7 +72,10 @@ private:
     bool CanDuplicateNodes() const;
     void UndoGraphAction();
     void RedoGraphAction();
+    void ToggleBreakpointsOnSelectedNodes();
+    bool CanToggleBreakpointsOnSelectedNodes() const;
     void CreateNodeFromPalette(TSubclassOf<UDreamFlowNode> NodeClass);
+    void CreateNodeFromPaletteAtPosition(TSubclassOf<UDreamFlowNode> NodeClass, const FVector2f& GraphPosition);
     void HandleNodeGuidActivated(const FGuid& NodeGuid);
     bool JumpToNodeGuid(const FGuid& NodeGuid);
     void OpenNodeEditor(UObject* ObjectToEdit);
@@ -93,6 +98,7 @@ private:
     TArray<FDreamFlowValidationMessage> ValidationMessages;
     TSharedPtr<SDreamFlowNodePalette> PaletteWidget;
     TSharedPtr<SGraphEditor> GraphEditorWidget;
+    TSharedPtr<SDreamFlowGraphDropTarget> GraphDropTargetWidget;
     TSharedPtr<IDetailsView> DetailsView;
     TSharedPtr<IDetailsView> VariablesDetailsView;
     TSharedPtr<SDreamFlowDebuggerView> DebuggerWidget;

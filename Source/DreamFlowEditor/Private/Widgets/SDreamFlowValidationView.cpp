@@ -1,7 +1,7 @@
 #include "Widgets/SDreamFlowValidationView.h"
 
 #include "Styling/AppStyle.h"
-#include "Styling/CoreStyle.h"
+#include "Styling/StyleColors.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SScrollBox.h"
@@ -16,31 +16,45 @@ void SDreamFlowValidationView::Construct(const FArguments& InArgs)
     [
         SNew(SBorder)
         .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-        .Padding(12.0f)
+        .Padding(0.0f)
         [
             SNew(SVerticalBox)
 
             + SVerticalBox::Slot()
             .AutoHeight()
             [
-                SNew(STextBlock)
-                .Text(FText::FromString(TEXT("Validation")))
-                .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
-            ]
+                SNew(SBorder)
+                .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
+                .Padding(FMargin(12.0f, 12.0f))
+                [
+                    SNew(SVerticalBox)
 
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, 6.0f, 0.0f, 10.0f)
-            [
-                SAssignNew(SummaryTextBlock, STextBlock)
-                .Text(this, &SDreamFlowValidationView::GetSummaryText)
-                .TextStyle(FAppStyle::Get(), "SmallText")
-                .ColorAndOpacity(FLinearColor(0.79f, 0.83f, 0.88f, 0.95f))
-                .WrapTextAt(320.0f)
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    [
+                        SNew(STextBlock)
+                        .Text(FText::FromString(TEXT("Validation")))
+                        .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
+                        .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                    ]
+
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(0.0f, 4.0f, 0.0f, 0.0f)
+                    [
+                        SAssignNew(SummaryTextBlock, STextBlock)
+                        .Text(this, &SDreamFlowValidationView::GetSummaryText)
+                        .TextStyle(FAppStyle::Get(), "SmallText")
+                        .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                        .WrapTextAt(320.0f)
+                    ]
+                ]
             ]
 
             + SVerticalBox::Slot()
             .FillHeight(1.0f)
+            .Padding(12.0f, 10.0f, 12.0f, 12.0f)
             [
                 SAssignNew(MessageContainer, SScrollBox)
             ]
@@ -74,10 +88,17 @@ void SDreamFlowValidationView::RebuildMessages()
     {
         MessageContainer->AddSlot()
         [
-            SNew(STextBlock)
-            .Text(FText::FromString(TEXT("No validation issues were found.")))
-            .TextStyle(FAppStyle::Get(), "NormalText")
-            .ColorAndOpacity(FLinearColor(0.72f, 0.88f, 0.75f, 0.96f))
+            SNew(SBorder)
+            .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+            .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
+            .Padding(FMargin(12.0f, 10.0f))
+            [
+                SNew(STextBlock)
+                .Text(FText::FromString(TEXT("No validation issues were found. This flow is ready for editing and runtime testing.")))
+                .TextStyle(FAppStyle::Get(), "NormalText")
+                .ColorAndOpacity(FSlateColor(EStyleColor::Success))
+                .WrapTextAt(320.0f)
+            ]
         ];
         return;
     }
@@ -93,47 +114,69 @@ void SDreamFlowValidationView::RebuildMessages()
             .ContentPadding(0.0f)
             [
                 SNew(SBorder)
-                .BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+                .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
                 .BorderBackgroundColor(GetSeverityColor(Message.Severity))
                 .Padding(1.0f)
                 [
-                    SNew(SBorder)
-                    .BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
-                    .BorderBackgroundColor(FLinearColor(0.07f, 0.10f, 0.13f, 1.0f))
-                    .Padding(FMargin(10.0f, 8.0f))
+                    SNew(SHorizontalBox)
+
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
                     [
-                        SNew(SVerticalBox)
-                        + SVerticalBox::Slot()
-                        .AutoHeight()
+                        SNew(SBorder)
+                        .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                        .BorderBackgroundColor(GetSeverityColor(Message.Severity))
+                        .Padding(FMargin(3.0f, 0.0f))
+                    ]
+
+                    + SHorizontalBox::Slot()
+                    .FillWidth(1.0f)
+                    [
+                        SNew(SBorder)
+                        .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                        .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
+                        .Padding(FMargin(10.0f, 8.0f))
                         [
-                            SNew(SHorizontalBox)
-                            + SHorizontalBox::Slot()
-                            .AutoWidth()
+                            SNew(SVerticalBox)
+                            + SVerticalBox::Slot()
+                            .AutoHeight()
+                            [
+                                SNew(SHorizontalBox)
+                                + SHorizontalBox::Slot()
+                                .AutoWidth()
+                                [
+                                    SNew(SBorder)
+                                    .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                                    .BorderBackgroundColor(GetSeverityColor(Message.Severity).GetSpecifiedColor().CopyWithNewOpacity(0.16f))
+                                    .Padding(FMargin(6.0f, 2.0f))
+                                    [
+                                        SNew(STextBlock)
+                                        .Text(GetSeverityText(Message.Severity))
+                                        .TextStyle(FAppStyle::Get(), "SmallText")
+                                        .ColorAndOpacity(GetSeverityColor(Message.Severity))
+                                    ]
+                                ]
+                                + SHorizontalBox::Slot()
+                                .FillWidth(1.0f)
+                                .Padding(8.0f, 0.0f, 0.0f, 0.0f)
+                                [
+                                    SNew(STextBlock)
+                                    .Text(!Message.NodeTitle.IsEmpty() ? Message.NodeTitle : FText::FromString(TEXT("Graph")))
+                                    .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+                                    .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                                ]
+                            ]
+
+                            + SVerticalBox::Slot()
+                            .AutoHeight()
+                            .Padding(0.0f, 6.0f, 0.0f, 0.0f)
                             [
                                 SNew(STextBlock)
-                                .Text(GetSeverityText(Message.Severity))
-                                .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-                                .ColorAndOpacity(GetSeverityColor(Message.Severity))
+                                .Text(Message.Message)
+                                .TextStyle(FAppStyle::Get(), "SmallText")
+                                .WrapTextAt(340.0f)
+                                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
                             ]
-                            + SHorizontalBox::Slot()
-                            .FillWidth(1.0f)
-                            .Padding(8.0f, 0.0f, 0.0f, 0.0f)
-                            [
-                                SNew(STextBlock)
-                                .Text(!Message.NodeTitle.IsEmpty() ? Message.NodeTitle : FText::FromString(TEXT("Graph")))
-                                .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-                                .ColorAndOpacity(FLinearColor::White)
-                            ]
-                        ]
-                        + SVerticalBox::Slot()
-                        .AutoHeight()
-                        .Padding(0.0f, 4.0f, 0.0f, 0.0f)
-                        [
-                            SNew(STextBlock)
-                            .Text(Message.Message)
-                            .TextStyle(FAppStyle::Get(), "SmallText")
-                            .WrapTextAt(340.0f)
-                            .ColorAndOpacity(FLinearColor(0.80f, 0.84f, 0.89f, 0.97f))
                         ]
                     ]
                 ]
@@ -157,14 +200,14 @@ FSlateColor SDreamFlowValidationView::GetSeverityColor(EDreamFlowValidationSever
     switch (Severity)
     {
     case EDreamFlowValidationSeverity::Info:
-        return FLinearColor(0.21f, 0.67f, 0.89f, 1.0f);
+        return FSlateColor(EStyleColor::AccentBlue);
 
     case EDreamFlowValidationSeverity::Warning:
-        return FLinearColor(0.94f, 0.66f, 0.22f, 1.0f);
+        return FSlateColor(EStyleColor::Warning);
 
     case EDreamFlowValidationSeverity::Error:
     default:
-        return FLinearColor(0.92f, 0.24f, 0.29f, 1.0f);
+        return FSlateColor(EStyleColor::Error);
     }
 }
 
@@ -194,7 +237,7 @@ FText SDreamFlowValidationView::GetSummaryText() const
     }
 
     return FText::Format(
-        FText::FromString(TEXT("{0} errors, {1} warnings, {2} infos")),
+        FText::FromString(TEXT("{0} errors, {1} warnings, {2} infos. Click an item to focus the owning node.")),
         ErrorCount,
         WarningCount,
         InfoCount);

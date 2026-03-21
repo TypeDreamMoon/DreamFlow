@@ -94,9 +94,89 @@ bool UDreamFlowExecutorComponent::GetVariableValue(FName VariableName, FDreamFlo
     return Executor != nullptr && Executor->GetVariableValue(VariableName, OutValue);
 }
 
+bool UDreamFlowExecutorComponent::GetVariableBoolValue(FName VariableName, bool& OutValue) const
+{
+    return Executor != nullptr && Executor->GetVariableBoolValue(VariableName, OutValue);
+}
+
+bool UDreamFlowExecutorComponent::GetVariableIntValue(FName VariableName, int32& OutValue) const
+{
+    return Executor != nullptr && Executor->GetVariableIntValue(VariableName, OutValue);
+}
+
+bool UDreamFlowExecutorComponent::GetVariableFloatValue(FName VariableName, float& OutValue) const
+{
+    return Executor != nullptr && Executor->GetVariableFloatValue(VariableName, OutValue);
+}
+
+bool UDreamFlowExecutorComponent::GetVariableNameValue(FName VariableName, FName& OutValue) const
+{
+    return Executor != nullptr && Executor->GetVariableNameValue(VariableName, OutValue);
+}
+
+bool UDreamFlowExecutorComponent::GetVariableStringValue(FName VariableName, FString& OutValue) const
+{
+    return Executor != nullptr && Executor->GetVariableStringValue(VariableName, OutValue);
+}
+
+bool UDreamFlowExecutorComponent::GetVariableTextValue(FName VariableName, FText& OutValue) const
+{
+    return Executor != nullptr && Executor->GetVariableTextValue(VariableName, OutValue);
+}
+
+bool UDreamFlowExecutorComponent::GetVariableGameplayTagValue(FName VariableName, FGameplayTag& OutValue) const
+{
+    return Executor != nullptr && Executor->GetVariableGameplayTagValue(VariableName, OutValue);
+}
+
+bool UDreamFlowExecutorComponent::GetVariableObjectValue(FName VariableName, UObject*& OutValue) const
+{
+    return Executor != nullptr && Executor->GetVariableObjectValue(VariableName, OutValue);
+}
+
 bool UDreamFlowExecutorComponent::SetVariableValue(FName VariableName, const FDreamFlowValue& InValue)
 {
     return Executor != nullptr && Executor->SetVariableValue(VariableName, InValue);
+}
+
+bool UDreamFlowExecutorComponent::SetVariableBoolValue(FName VariableName, bool InValue)
+{
+    return Executor != nullptr && Executor->SetVariableBoolValue(VariableName, InValue);
+}
+
+bool UDreamFlowExecutorComponent::SetVariableIntValue(FName VariableName, int32 InValue)
+{
+    return Executor != nullptr && Executor->SetVariableIntValue(VariableName, InValue);
+}
+
+bool UDreamFlowExecutorComponent::SetVariableFloatValue(FName VariableName, float InValue)
+{
+    return Executor != nullptr && Executor->SetVariableFloatValue(VariableName, InValue);
+}
+
+bool UDreamFlowExecutorComponent::SetVariableNameValue(FName VariableName, FName InValue)
+{
+    return Executor != nullptr && Executor->SetVariableNameValue(VariableName, InValue);
+}
+
+bool UDreamFlowExecutorComponent::SetVariableStringValue(FName VariableName, const FString& InValue)
+{
+    return Executor != nullptr && Executor->SetVariableStringValue(VariableName, InValue);
+}
+
+bool UDreamFlowExecutorComponent::SetVariableTextValue(FName VariableName, const FText& InValue)
+{
+    return Executor != nullptr && Executor->SetVariableTextValue(VariableName, InValue);
+}
+
+bool UDreamFlowExecutorComponent::SetVariableGameplayTagValue(FName VariableName, FGameplayTag InValue)
+{
+    return Executor != nullptr && Executor->SetVariableGameplayTagValue(VariableName, InValue);
+}
+
+bool UDreamFlowExecutorComponent::SetVariableObjectValue(FName VariableName, UObject* InValue)
+{
+    return Executor != nullptr && Executor->SetVariableObjectValue(VariableName, InValue);
 }
 
 void UDreamFlowExecutorComponent::ResetVariablesToDefaults()
