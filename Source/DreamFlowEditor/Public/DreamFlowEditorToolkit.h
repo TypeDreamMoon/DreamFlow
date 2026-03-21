@@ -5,6 +5,7 @@
 #include "Toolkits/AssetEditorToolkit.h"
 #include "EdGraph/EdGraph.h"
 #include "EditorUndoClient.h"
+#include "Types/SlateEnums.h"
 #include "UObject/GCObject.h"
 
 class IDetailsView;
@@ -15,9 +16,12 @@ class SDreamFlowValidationView;
 class UDreamFlowAsset;
 class UDreamFlowVariablesEditorData;
 class UEdGraph;
+class UEdGraphNode;
 class UDreamFlowNode;
 class FExtender;
+class FReply;
 class FToolBarBuilder;
+struct FInputChord;
 struct FPropertyChangedEvent;
 struct FEdGraphEditAction;
 
@@ -59,7 +63,10 @@ private:
     void FillToolbar(FToolBarBuilder& ToolbarBuilder);
     void HandleSelectedNodesChanged(const TSet<UObject*>& NewSelection);
     void HandleObjectPropertyChanged(UObject* ObjectBeingModified, FPropertyChangedEvent& PropertyChangedEvent);
+    bool HandleNodeVerifyTitleCommit(const FText& NewText, UEdGraphNode* NodeBeingChanged, FText& OutErrorMessage);
+    void HandleNodeTitleCommitted(const FText& NewText, ETextCommit::Type CommitInfo, UEdGraphNode* NodeBeingChanged);
     void HandleGraphChanged(const FEdGraphEditAction& Action);
+    bool ShouldSynchronizeGraphChange(const FEdGraphEditAction& Action) const;
     void DeleteSelectedNodes();
     void DeleteSelectedDuplicatableNodes();
     bool CanDeleteSelectedNodes() const;
@@ -78,6 +85,9 @@ private:
     void RedoGraphAction();
     void ToggleBreakpointsOnSelectedNodes();
     bool CanToggleBreakpointsOnSelectedNodes() const;
+    void CreateCommentNode();
+    bool CanCreateComment() const;
+    FReply HandleSpawnNodeByShortcutAtLocation(FInputChord InChord, const FVector2f& GraphPosition);
     void CreateNodeFromPalette(TSubclassOf<UDreamFlowNode> NodeClass);
     void CreateNodeFromPaletteAtPosition(TSubclassOf<UDreamFlowNode> NodeClass, const FVector2f& GraphPosition);
     void HandleNodeGuidActivated(const FGuid& NodeGuid);

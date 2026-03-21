@@ -3,6 +3,7 @@
 #include "DreamFlowAsset.h"
 #include "DreamFlowEdGraph.h"
 #include "DreamFlowEdGraphNode.h"
+#include "DreamFlowEdGraphRerouteNode.h"
 #include "DreamFlowEditorCommands.h"
 #include "DreamFlowEditorUtils.h"
 #include "DreamFlowVariablesEditorData.h"
@@ -13,11 +14,15 @@
 #include "EdGraphUtilities.h"
 #include "Editor.h"
 #include "EdGraph/EdGraph.h"
+#include "EdGraph/EdGraphNode.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Commands/GenericCommands.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
+#include "GraphEditAction.h"
 #include "GraphEditor.h"
+#include "GraphEditorActions.h"
 #include "HAL/PlatformApplicationMisc.h"
+#include "Kismet2/Kismet2NameValidators.h"
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
 #include "ScopedTransaction.h"
@@ -514,6 +519,9 @@ void FDreamFlowEditorToolkit::CreateWidgets()
 
     SGraphEditor::FGraphEditorEvents GraphEditorEvents;
     GraphEditorEvents.OnSelectionChanged = SGraphEditor::FOnSelectionChanged::CreateSP(this, &FDreamFlowEditorToolkit::HandleSelectedNodesChanged);
+    GraphEditorEvents.OnVerifyTextCommit = FOnNodeVerifyTextCommit::CreateSP(this, &FDreamFlowEditorToolkit::HandleNodeVerifyTitleCommit);
+    GraphEditorEvents.OnTextCommitted = FOnNodeTextCommitted::CreateSP(this, &FDreamFlowEditorToolkit::HandleNodeTitleCommitted);
+    GraphEditorEvents.OnSpawnNodeByShortcutAtLocation = SGraphEditor::FOnSpawnNodeByShortcutAtLocation::CreateSP(this, &FDreamFlowEditorToolkit::HandleSpawnNodeByShortcutAtLocation);
 
     GraphEditorWidget = SNew(SGraphEditor)
         .IsEditable(true)
@@ -574,6 +582,11 @@ void FDreamFlowEditorToolkit::BindCommands()
         FDreamFlowEditorCommands::Get().ToggleBreakpoint,
         FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::ToggleBreakpointsOnSelectedNodes),
         FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanToggleBreakpointsOnSelectedNodes));
+
+    GraphEditorCommands->MapAction(
+        FGraphEditorCommands::Get().CreateComment,
+        FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CreateCommentNode),
+        FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanCreateComment));
 }
 
 void FDreamFlowEditorToolkit::ExtendToolbar()
@@ -617,6 +630,11 @@ void FDreamFlowEditorToolkit::HandleSelectedNodesChanged(const TSet<UObject*>& N
             OpenNodeEditor(SelectedNode->GetRuntimeNode());
             return;
         }
+
+        if (Cast<UEdGraphNode>(SelectedObject) != nullptr)
+        {
+            return;
+        }
     }
 
     if (NewSelection.Num() == 0
@@ -645,6 +663,16 @@ void FDreamFlowEditorToolkit::HandleObjectPropertyChanged(UObject* ObjectBeingMo
         return;
     }
 
+    if (ObjectBeingModified->IsIn(EditingGraph))
+    {
+        const UEdGraphNode* GraphNode = Cast<UEdGraphNode>(ObjectBeingModified);
+        if (GraphNode != nullptr
+            && Cast<UDreamFlowEdGraphNode>(GraphNode) == nullptr)
+        {
+            return;
+        }
+    }
+
     // Runtime nodes are instanced under the flow asset, so this catches both asset and node edits.
     if (ObjectBeingModified != FlowAsset && !ObjectBeingModified->IsIn(FlowAsset))
     {
@@ -660,17 +688,91 @@ void FDreamFlowEditorToolkit::HandleObjectPropertyChanged(UObject* ObjectBeingMo
     MarkValidationDirty();
 }
 
+bool FDreamFlowEditorToolkit::HandleNodeVerifyTitleCommit(const FText& NewText, UEdGraphNode* NodeBeingChanged, FText& OutErrorMessage)
+{
+    if (NodeBeingChanged == nullptr || !NodeBeingChanged->GetCanRenameNode())
+    {
+        return false;
+    }
+
+    NodeBeingChanged->ErrorMsg.Empty();
+    NodeBeingChanged->bHasCompilerMessage = false;
+
+    const TSharedPtr<INameValidatorInterface> NameValidator = FNameValidatorFactory::MakeValidator(NodeBeingChanged);
+    if (!NameValidator.IsValid())
+    {
+        return true;
+    }
+
+    const FString NewName = NewText.ToString();
+    const EValidatorResult OriginalValidationResult = NameValidator->IsValid(NewName, true);
+    if (OriginalValidationResult == EValidatorResult::Ok)
+    {
+        return true;
+    }
+
+    const EValidatorResult ValidationResult = NameValidator->IsValid(NewName, false);
+    const FText ErrorText = INameValidatorInterface::GetErrorText(NewName, ValidationResult);
+    OutErrorMessage = ErrorText;
+    NodeBeingChanged->bHasCompilerMessage = true;
+    NodeBeingChanged->ErrorMsg = ErrorText.ToString();
+    NodeBeingChanged->ErrorType = EMessageSeverity::Error;
+    return false;
+}
+
+void FDreamFlowEditorToolkit::HandleNodeTitleCommitted(const FText& NewText, ETextCommit::Type CommitInfo, UEdGraphNode* NodeBeingChanged)
+{
+    (void)CommitInfo;
+
+    if (NodeBeingChanged == nullptr)
+    {
+        return;
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("RenameDreamFlowGraphNode", "Rename Node"));
+    NodeBeingChanged->Modify();
+    NodeBeingChanged->OnRenameNode(NewText.ToString());
+}
+
 void FDreamFlowEditorToolkit::HandleGraphChanged(const FEdGraphEditAction& Action)
 {
-    (void)Action;
-
     if (bIsRefreshingValidationGraph)
+    {
+        return;
+    }
+
+    if (!ShouldSynchronizeGraphChange(Action))
     {
         return;
     }
 
     FDreamFlowEditorUtils::SynchronizeAssetFromGraph(FlowAsset);
     MarkValidationDirty();
+}
+
+bool FDreamFlowEditorToolkit::ShouldSynchronizeGraphChange(const FEdGraphEditAction& Action) const
+{
+    const bool bSelectOnly = (Action.Action & GRAPHACTION_SelectNode) != 0
+        && (Action.Action & (GRAPHACTION_AddNode | GRAPHACTION_RemoveNode | GRAPHACTION_EditNode)) == 0;
+    if (bSelectOnly)
+    {
+        return false;
+    }
+
+    if (Action.Nodes.IsEmpty())
+    {
+        return true;
+    }
+
+    for (const UEdGraphNode* Node : Action.Nodes)
+    {
+        if (Cast<UDreamFlowEdGraphNode>(Node) != nullptr || Cast<UDreamFlowEdGraphRerouteNode>(Node) != nullptr)
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void FDreamFlowEditorToolkit::DeleteSelectedNodes()
@@ -1009,6 +1111,43 @@ bool FDreamFlowEditorToolkit::CanToggleBreakpointsOnSelectedNodes() const
     }
 
     return false;
+}
+
+void FDreamFlowEditorToolkit::CreateCommentNode()
+{
+    if (!GraphEditorWidget.IsValid())
+    {
+        return;
+    }
+
+    if (UEdGraph* Graph = GraphEditorWidget->GetCurrentGraph())
+    {
+        if (const UEdGraphSchema* Schema = Graph->GetSchema())
+        {
+            if (TSharedPtr<FEdGraphSchemaAction> Action = Schema->GetCreateCommentAction())
+            {
+                Action->PerformAction(Graph, nullptr, FVector2f::ZeroVector);
+            }
+        }
+    }
+}
+
+bool FDreamFlowEditorToolkit::CanCreateComment() const
+{
+    return GraphEditorWidget.IsValid() && GraphEditorWidget->GetCurrentGraph() != nullptr;
+}
+
+FReply FDreamFlowEditorToolkit::HandleSpawnNodeByShortcutAtLocation(FInputChord InChord, const FVector2f& GraphPosition)
+{
+    (void)GraphPosition;
+
+    if (InChord.Key == EKeys::C && !InChord.HasAnyModifierKeys())
+    {
+        CreateCommentNode();
+        return FReply::Handled();
+    }
+
+    return FReply::Unhandled();
 }
 
 void FDreamFlowEditorToolkit::CreateNodeFromPalette(TSubclassOf<UDreamFlowNode> NodeClass)

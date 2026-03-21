@@ -3,6 +3,7 @@
 #include "DreamFlowAsset.h"
 #include "DreamFlowEdGraph.h"
 #include "DreamFlowEdGraphNode.h"
+#include "DreamFlowEdGraphRerouteNode.h"
 #include "DreamFlowEdGraphSchema.h"
 #include "DreamFlowEntryNode.h"
 #include "DreamFlowNode.h"
@@ -12,6 +13,47 @@
 #include "ScopedTransaction.h"
 
 #define LOCTEXT_NAMESPACE "DreamFlowEditorUtils"
+
+namespace DreamFlowEditorUtils
+{
+    static void CollectRuntimeTargetsFromLinkedPin(
+        const UEdGraphPin* LinkedPin,
+        UDreamFlowNode* SourceNode,
+        TArray<UDreamFlowNode*>& OutTargets,
+        TSet<const UEdGraphPin*>& VisitedPins)
+    {
+        if (LinkedPin == nullptr || VisitedPins.Contains(LinkedPin))
+        {
+            return;
+        }
+
+        VisitedPins.Add(LinkedPin);
+
+        if (const UDreamFlowEdGraphNode* TargetGraphNode = Cast<UDreamFlowEdGraphNode>(LinkedPin->GetOwningNode()))
+        {
+            if (UDreamFlowNode* TargetNode = TargetGraphNode->GetRuntimeNode())
+            {
+                if (TargetNode != SourceNode)
+                {
+                    OutTargets.AddUnique(TargetNode);
+                }
+            }
+
+            return;
+        }
+
+        if (const UDreamFlowEdGraphRerouteNode* RerouteNode = Cast<UDreamFlowEdGraphRerouteNode>(LinkedPin->GetOwningNode()))
+        {
+            if (const UEdGraphPin* PassThroughPin = RerouteNode->GetPassThroughPin(LinkedPin))
+            {
+                for (const UEdGraphPin* NextLinkedPin : PassThroughPin->LinkedTo)
+                {
+                    CollectRuntimeTargetsFromLinkedPin(NextLinkedPin, SourceNode, OutTargets, VisitedPins);
+                }
+            }
+        }
+    }
+}
 
 UDreamFlowEdGraph* FDreamFlowEditorUtils::GetOrCreateGraph(UDreamFlowAsset* FlowAsset)
 {
@@ -98,6 +140,37 @@ UDreamFlowEdGraphNode* FDreamFlowEditorUtils::CreateNodeInGraph(
     return GraphNode;
 }
 
+UDreamFlowEdGraphRerouteNode* FDreamFlowEditorUtils::CreateRerouteNodeInGraph(
+    UEdGraph* Graph,
+    const FVector2f& Location,
+    UEdGraphPin* FromPin,
+    bool bSelectNewNode)
+{
+    UDreamFlowEdGraph* FlowGraph = Cast<UDreamFlowEdGraph>(Graph);
+    UDreamFlowAsset* FlowAsset = FlowGraph ? FlowGraph->GetFlowAsset() : nullptr;
+
+    if (FlowGraph == nullptr || FlowAsset == nullptr)
+    {
+        return nullptr;
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("CreateFlowRerouteNode", "Create Dream Flow Reroute Node"));
+
+    FlowAsset->Modify();
+    FlowGraph->Modify();
+
+    FGraphNodeCreator<UDreamFlowEdGraphRerouteNode> NodeCreator(*FlowGraph);
+    UDreamFlowEdGraphRerouteNode* GraphNode = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+    GraphNode->NodePosX = FMath::RoundToInt(Location.X);
+    GraphNode->NodePosY = FMath::RoundToInt(Location.Y);
+    NodeCreator.Finalize();
+    GraphNode->AutowireNewNode(FromPin);
+
+    SynchronizeAssetFromGraph(FlowAsset);
+    FlowGraph->NotifyGraphChanged();
+    return GraphNode;
+}
+
 void FDreamFlowEditorUtils::SynchronizeAssetFromGraph(UDreamFlowAsset* FlowAsset)
 {
     UDreamFlowEdGraph* FlowGraph = FlowAsset ? Cast<UDreamFlowEdGraph>(FlowAsset->GetEditorGraph()) : nullptr;
@@ -163,18 +236,23 @@ void FDreamFlowEditorUtils::SynchronizeAssetFromGraph(UDreamFlowAsset* FlowAsset
 
             for (UEdGraphPin* LinkedPin : OutputPin->LinkedTo)
             {
-                if (LinkedPin == nullptr)
-                {
-                    continue;
-                }
+                TArray<UDreamFlowNode*> ResolvedTargets;
+                TSet<const UEdGraphPin*> VisitedPins;
+                DreamFlowEditorUtils::CollectRuntimeTargetsFromLinkedPin(LinkedPin, SourceNode, ResolvedTargets, VisitedPins);
 
-                UDreamFlowEdGraphNode* TargetGraphNode = Cast<UDreamFlowEdGraphNode>(LinkedPin->GetOwningNode());
-                UDreamFlowNode* TargetNode = TargetGraphNode ? TargetGraphNode->GetRuntimeNode() : nullptr;
-                if (TargetNode != nullptr && TargetNode != SourceNode)
+                for (UDreamFlowNode* TargetNode : ResolvedTargets)
                 {
-                    FDreamFlowNodeOutputLink& OutputLink = SourceOutputLinks.AddDefaulted_GetRef();
-                    OutputLink.PinName = OutputPin->PinName;
-                    OutputLink.Child = TargetNode;
+                    const bool bAlreadyLinked = SourceOutputLinks.ContainsByPredicate([OutputPin, TargetNode](const FDreamFlowNodeOutputLink& ExistingLink)
+                    {
+                        return ExistingLink.PinName == OutputPin->PinName && ExistingLink.Child == TargetNode;
+                    });
+
+                    if (!bAlreadyLinked)
+                    {
+                        FDreamFlowNodeOutputLink& OutputLink = SourceOutputLinks.AddDefaulted_GetRef();
+                        OutputLink.PinName = OutputPin->PinName;
+                        OutputLink.Child = TargetNode;
+                    }
                 }
             }
         }

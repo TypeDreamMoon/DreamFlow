@@ -11,9 +11,11 @@ class DREAMFLOWEDITOR_API UDreamFlowEdGraphSchema : public UEdGraphSchema
 
 public:
     virtual void GetGraphContextActions(FGraphContextMenuBuilder& ContextMenuBuilder) const override;
+    virtual TSharedPtr<FEdGraphSchemaAction> GetCreateCommentAction() const override;
     virtual void GetContextMenuActions(UToolMenu* Menu, UGraphNodeContextMenuContext* Context) const override;
     virtual const FPinConnectionResponse CanCreateConnection(const UEdGraphPin* PinA, const UEdGraphPin* PinB) const override;
     virtual bool TryCreateConnection(UEdGraphPin* PinA, UEdGraphPin* PinB) const override;
+    virtual void OnPinConnectionDoubleCicked(UEdGraphPin* PinA, UEdGraphPin* PinB, const FVector2f& GraphPosition) const override;
     virtual void BreakNodeLinks(UEdGraphNode& TargetNode) const override;
     virtual void BreakPinLinks(UEdGraphPin& TargetPin, bool bSendsNodeNotification) const override;
     virtual void BreakSinglePinLink(UEdGraphPin* SourcePin, UEdGraphPin* TargetPin) const override;

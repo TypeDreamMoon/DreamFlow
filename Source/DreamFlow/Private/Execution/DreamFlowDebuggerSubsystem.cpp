@@ -3,6 +3,34 @@
 #include "DreamFlowAsset.h"
 #include "DreamFlowNode.h"
 #include "Execution/DreamFlowExecutor.h"
+#include "Engine/World.h"
+
+namespace DreamFlowDebuggerSubsystemPrivate
+{
+    static FString BuildComparableAssetPath(const UDreamFlowAsset* FlowAsset)
+    {
+        return FlowAsset != nullptr
+            ? UWorld::RemovePIEPrefix(FlowAsset->GetPathName())
+            : FString();
+    }
+
+    static bool AreEquivalentAssets(const UDreamFlowAsset* LeftAsset, const UDreamFlowAsset* RightAsset)
+    {
+        if (LeftAsset == RightAsset)
+        {
+            return true;
+        }
+
+        if (LeftAsset == nullptr || RightAsset == nullptr)
+        {
+            return false;
+        }
+
+        const FString LeftPath = BuildComparableAssetPath(LeftAsset);
+        const FString RightPath = BuildComparableAssetPath(RightAsset);
+        return !LeftPath.IsEmpty() && LeftPath == RightPath;
+    }
+}
 
 void UDreamFlowDebuggerSubsystem::RegisterExecutor(UDreamFlowExecutor* Executor)
 {
@@ -79,7 +107,8 @@ TArray<UDreamFlowExecutor*> UDreamFlowDebuggerSubsystem::GetExecutorsForAsset(co
     for (const TWeakObjectPtr<UDreamFlowExecutor>& WeakExecutor : ActiveExecutors)
     {
         UDreamFlowExecutor* Executor = WeakExecutor.Get();
-        if (Executor != nullptr && (FlowAsset == nullptr || Executor->GetFlowAsset() == FlowAsset))
+        if (Executor != nullptr
+            && (FlowAsset == nullptr || DreamFlowDebuggerSubsystemPrivate::AreEquivalentAssets(Executor->GetFlowAsset(), FlowAsset)))
         {
             Result.Add(Executor);
         }
@@ -98,7 +127,7 @@ bool UDreamFlowDebuggerSubsystem::IsNodeCurrentExecutionLocation(const UDreamFlo
     }
 
     const bool bMatches =
-        CurrentExecutionLocation.FlowAsset.Get() == FlowAsset
+        DreamFlowDebuggerSubsystemPrivate::AreEquivalentAssets(CurrentExecutionLocation.FlowAsset.Get(), FlowAsset)
         && CurrentExecutionLocation.NodeGuid == NodeGuid;
 
     if (bMatches)

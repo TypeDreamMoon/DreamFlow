@@ -7,6 +7,8 @@ class UDreamFlowAsset;
 class UDreamFlowExecutor;
 class ITableRow;
 class STableViewBase;
+template <typename ItemType>
+class SListView;
 
 namespace DreamFlowDebuggerView
 {
@@ -34,7 +36,14 @@ private:
     void RebuildSelectedExecutorDetails();
     void RefreshSelectedExecutorItems();
     TSharedRef<SWidget> BuildExecutorCard(UDreamFlowExecutor* Executor) const;
-    TSharedRef<SWidget> BuildSelectedExecutorInspector() const;
+    TSharedRef<SWidget> BuildSelectedExecutorInspector();
+    FText GetSelectedExecutorStateText() const;
+    FSlateColor GetSelectedExecutorStateColor() const;
+    FSlateColor GetSelectedExecutorStateBackgroundColor() const;
+    FText GetRuntimeVariablesTitleText() const;
+    FText GetModifiedVariableSummaryText() const;
+    int32 GetSelectedInspectorWidgetIndex() const;
+    int32 GetVariableContentWidgetIndex() const;
     TSharedRef<SWidget> BuildInfoRow(const FText& Label, const FText& Value) const;
     TSharedRef<SWidget> BuildVariableRow(const struct FDreamFlowVariableDefinition& VariableDefinition, const struct FDreamFlowValue& CurrentValue, bool bHasRuntimeValue) const;
     TSharedRef<ITableRow> GenerateSelectedInfoRow(TSharedPtr<DreamFlowDebuggerView::FDebuggerInfoItem> Item, const TSharedRef<STableViewBase>& OwnerTable) const;
@@ -72,5 +81,7 @@ private:
     FOnNodeGuidActivated OnNodeGuidActivated;
     TSharedPtr<class SBox> SelectedInspectorContainer;
     TSharedPtr<class SScrollBox> ExecutorContainer;
+    TSharedPtr<SListView<TSharedPtr<DreamFlowDebuggerView::FDebuggerInfoItem>>> SelectedInfoListView;
+    TSharedPtr<SListView<TSharedPtr<DreamFlowDebuggerView::FDebuggerVariableItem>>> SelectedVariableListView;
     TSharedPtr<class STextBlock> SummaryTextBlock;
 };

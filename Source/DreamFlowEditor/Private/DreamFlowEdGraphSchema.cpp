@@ -2,6 +2,7 @@
 
 #include "DreamFlowEdGraph.h"
 #include "DreamFlowEdGraphNode.h"
+#include "DreamFlowEdGraphRerouteNode.h"
 #include "DreamFlowAsset.h"
 #include "DreamFlowEditorUtils.h"
 #include "DreamFlowEntryNode.h"
@@ -13,7 +14,10 @@
 #include "Framework/Commands/GenericCommands.h"
 #include "Framework/Commands/UIAction.h"
 #include "GraphEditorActions.h"
+#include "GraphEditor.h"
+#include "EdGraphNode_Comment.h"
 #include "Kismet2/SClassPickerDialog.h"
+#include "ScopedTransaction.h"
 #include "ToolMenu.h"
 #include "ToolMenuSection.h"
 
@@ -21,6 +25,75 @@
 
 namespace DreamFlowSchema
 {
+    static FLinearColor GetFlowNodePinColor(const UEdGraphPin* Pin)
+    {
+        if (const UDreamFlowEdGraphNode* FlowGraphNode = Pin != nullptr ? Cast<UDreamFlowEdGraphNode>(Pin->GetOwningNode()) : nullptr)
+        {
+            const FLinearColor NodeColor = FlowGraphNode->GetNodeTitleColor();
+            const FLinearColor AccentBase = FLinearColor::LerpUsingHSV(FLinearColor(0.22f, 0.26f, 0.31f, 1.0f), NodeColor, 0.82f);
+            const float BrightnessBoost = Pin->Direction == EGPD_Output ? 1.14f : 1.0f;
+            return FLinearColor(
+                FMath::Clamp(AccentBase.R * BrightnessBoost, 0.0f, 1.0f),
+                FMath::Clamp(AccentBase.G * BrightnessBoost, 0.0f, 1.0f),
+                FMath::Clamp(AccentBase.B * BrightnessBoost, 0.0f, 1.0f),
+                1.0f);
+        }
+
+        return FLinearColor::Transparent;
+    }
+
+    static bool TryResolveFlowColorSourcePin(const UEdGraphPin* StartPin, const UEdGraphPin*& OutSourcePin)
+    {
+        if (StartPin == nullptr)
+        {
+            return false;
+        }
+
+        TArray<const UEdGraphPin*> PinsToVisit;
+        TSet<const UEdGraphPin*> VisitedPins;
+        PinsToVisit.Add(StartPin);
+
+        while (PinsToVisit.Num() > 0)
+        {
+            const UEdGraphPin* CurrentPin = PinsToVisit.Pop(EAllowShrinking::No);
+            if (CurrentPin == nullptr || VisitedPins.Contains(CurrentPin))
+            {
+                continue;
+            }
+
+            VisitedPins.Add(CurrentPin);
+
+            if (Cast<UDreamFlowEdGraphNode>(CurrentPin->GetOwningNode()) != nullptr)
+            {
+                OutSourcePin = CurrentPin;
+                return true;
+            }
+
+            const UDreamFlowEdGraphRerouteNode* RerouteNode = Cast<UDreamFlowEdGraphRerouteNode>(CurrentPin->GetOwningNode());
+            if (RerouteNode == nullptr)
+            {
+                continue;
+            }
+
+            for (const UEdGraphPin* LinkedPin : CurrentPin->LinkedTo)
+            {
+                PinsToVisit.Add(LinkedPin);
+            }
+
+            if (const UEdGraphPin* PassThroughPin = RerouteNode->GetPassThroughPin(CurrentPin))
+            {
+                PinsToVisit.Add(PassThroughPin);
+
+                for (const UEdGraphPin* LinkedPin : PassThroughPin->LinkedTo)
+                {
+                    PinsToVisit.Add(LinkedPin);
+                }
+            }
+        }
+
+        return false;
+    }
+
     static void SynchronizeGraphAsset(const UEdGraph* Graph)
     {
         if (UDreamFlowAsset* FlowAsset = FDreamFlowEditorUtils::GetFlowAssetFromGraph(Graph))
@@ -120,6 +193,66 @@ namespace DreamFlowSchema
     private:
         TWeakObjectPtr<UDreamFlowAsset> FlowAsset;
     };
+
+    class FDreamFlowSchemaAction_NewRerouteNode final : public FEdGraphSchemaAction
+    {
+    public:
+        FDreamFlowSchemaAction_NewRerouteNode()
+            : FEdGraphSchemaAction(
+                LOCTEXT("DreamFlowGraphCategory", "Graph"),
+                LOCTEXT("AddRerouteNodeAction", "Add Reroute Node"),
+                LOCTEXT("AddRerouteNodeActionTooltip", "Insert an editor-only reroute node to tidy wire layout."),
+                1)
+        {
+        }
+
+        virtual UEdGraphNode* PerformAction(UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2f& Location, bool bSelectNewNode) override
+        {
+            return FDreamFlowEditorUtils::CreateRerouteNodeInGraph(ParentGraph, Location, FromPin, bSelectNewNode);
+        }
+    };
+
+    class FDreamFlowSchemaAction_AddComment final : public FEdGraphSchemaAction
+    {
+    public:
+        FDreamFlowSchemaAction_AddComment()
+            : FEdGraphSchemaAction(
+                LOCTEXT("DreamFlowGraphCategory", "Graph"),
+                LOCTEXT("AddCommentAction", "Add Comment..."),
+                LOCTEXT("AddCommentActionTooltip", "Create a resizable comment box around selected nodes or at the cursor."),
+                2)
+        {
+        }
+
+        virtual UEdGraphNode* PerformAction(UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2f& Location, bool bSelectNewNode) override
+        {
+            (void)FromPin;
+
+            UEdGraphNode_Comment* CommentTemplate = NewObject<UEdGraphNode_Comment>();
+            FVector2f SpawnLocation = Location;
+            FSlateRect Bounds;
+
+            if (TSharedPtr<SGraphEditor> GraphEditor = SGraphEditor::FindGraphEditorForGraph(ParentGraph))
+            {
+                if (GraphEditor->GetBoundsForSelectedNodes(Bounds, 50.0f))
+                {
+                    CommentTemplate->SetBounds(Bounds);
+                    SpawnLocation.X = CommentTemplate->NodePosX;
+                    SpawnLocation.Y = CommentTemplate->NodePosY;
+                }
+                else
+                {
+                    SpawnLocation = GraphEditor->GetPasteLocation2f();
+                }
+            }
+
+            return FEdGraphSchemaAction_NewNode::SpawnNodeFromTemplate<UEdGraphNode_Comment>(
+                ParentGraph,
+                CommentTemplate,
+                SpawnLocation,
+                bSelectNewNode);
+        }
+    };
 }
 
 void UDreamFlowEdGraphSchema::GetGraphContextActions(FGraphContextMenuBuilder& ContextMenuBuilder) const
@@ -144,6 +277,13 @@ void UDreamFlowEdGraphSchema::GetGraphContextActions(FGraphContextMenuBuilder& C
     }
 
     ContextMenuBuilder.AddAction(MakeShared<DreamFlowSchema::FDreamFlowSchemaAction_PickNodeClass>(FlowAsset));
+    ContextMenuBuilder.AddAction(MakeShared<DreamFlowSchema::FDreamFlowSchemaAction_NewRerouteNode>());
+    ContextMenuBuilder.AddAction(MakeShared<DreamFlowSchema::FDreamFlowSchemaAction_AddComment>());
+}
+
+TSharedPtr<FEdGraphSchemaAction> UDreamFlowEdGraphSchema::GetCreateCommentAction() const
+{
+    return MakeShared<DreamFlowSchema::FDreamFlowSchemaAction_AddComment>();
 }
 
 void UDreamFlowEdGraphSchema::GetContextMenuActions(UToolMenu* Menu, UGraphNodeContextMenuContext* Context) const
@@ -219,15 +359,19 @@ const FPinConnectionResponse UDreamFlowEdGraphSchema::CanCreateConnection(const 
 
     const UDreamFlowEdGraphNode* SourceGraphNode = Cast<UDreamFlowEdGraphNode>(OutputPin->GetOwningNode());
     const UDreamFlowEdGraphNode* TargetGraphNode = Cast<UDreamFlowEdGraphNode>(InputPin->GetOwningNode());
+    const UDreamFlowEdGraphRerouteNode* SourceRerouteNode = Cast<UDreamFlowEdGraphRerouteNode>(OutputPin->GetOwningNode());
+    const UDreamFlowEdGraphRerouteNode* TargetRerouteNode = Cast<UDreamFlowEdGraphRerouteNode>(InputPin->GetOwningNode());
     const UDreamFlowNode* SourceNode = SourceGraphNode ? SourceGraphNode->GetRuntimeNode() : nullptr;
     const UDreamFlowNode* TargetNode = TargetGraphNode ? TargetGraphNode->GetRuntimeNode() : nullptr;
 
-    if (SourceNode == nullptr || TargetNode == nullptr)
+    const bool bSourceIsSupportedNode = SourceNode != nullptr || SourceRerouteNode != nullptr;
+    const bool bTargetIsSupportedNode = TargetNode != nullptr || TargetRerouteNode != nullptr;
+    if (!bSourceIsSupportedNode || !bTargetIsSupportedNode)
     {
         return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, LOCTEXT("MissingRuntimeNode", "Node data is missing."));
     }
 
-    if (!SourceNode->CanAcceptChild(TargetNode))
+    if (SourceNode != nullptr && TargetNode != nullptr && !SourceNode->CanAcceptChild(TargetNode))
     {
         return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, LOCTEXT("ConnectionRejected", "The source node rejected this connection."));
     }
@@ -235,9 +379,12 @@ const FPinConnectionResponse UDreamFlowEdGraphSchema::CanCreateConnection(const 
     const bool bBreakSourceLinks = SourceGraphNode != nullptr
         && !SourceGraphNode->DoesOutputPinAllowMultipleConnections(OutputPin)
         && OutputPin->LinkedTo.Num() > 0;
-    const bool bBreakTargetLinks = !TargetNode->SupportsMultipleParents() && InputPin->LinkedTo.Num() > 0;
+    const bool bBreakTargetLinks = TargetNode != nullptr && !TargetNode->SupportsMultipleParents() && InputPin->LinkedTo.Num() > 0;
+    const bool bBreakRerouteTargetLinks = TargetRerouteNode != nullptr && InputPin->LinkedTo.Num() > 0;
 
-    if (bBreakSourceLinks && bBreakTargetLinks)
+    const bool bShouldBreakTargetLinks = bBreakTargetLinks || bBreakRerouteTargetLinks;
+
+    if (bBreakSourceLinks && bShouldBreakTargetLinks)
     {
         return FPinConnectionResponse(CONNECT_RESPONSE_BREAK_OTHERS_AB, LOCTEXT("ReplaceBothConnections", "Replace existing source and target links."));
     }
@@ -247,7 +394,7 @@ const FPinConnectionResponse UDreamFlowEdGraphSchema::CanCreateConnection(const 
         return FPinConnectionResponse(OutputPin == PinA ? CONNECT_RESPONSE_BREAK_OTHERS_A : CONNECT_RESPONSE_BREAK_OTHERS_B, LOCTEXT("ReplaceSourceConnections", "Replace existing outgoing links."));
     }
 
-    if (bBreakTargetLinks)
+    if (bShouldBreakTargetLinks)
     {
         return FPinConnectionResponse(InputPin == PinA ? CONNECT_RESPONSE_BREAK_OTHERS_A : CONNECT_RESPONSE_BREAK_OTHERS_B, LOCTEXT("ReplaceTargetConnections", "Replace existing incoming links."));
     }
@@ -264,6 +411,65 @@ bool UDreamFlowEdGraphSchema::TryCreateConnection(UEdGraphPin* PinA, UEdGraphPin
     }
 
     return bModified;
+}
+
+void UDreamFlowEdGraphSchema::OnPinConnectionDoubleCicked(UEdGraphPin* PinA, UEdGraphPin* PinB, const FVector2f& GraphPosition) const
+{
+    if (PinA == nullptr || PinB == nullptr || PinA->GetOwningNode() == nullptr || PinB->GetOwningNode() == nullptr)
+    {
+        return;
+    }
+
+    UEdGraphPin* InputPin = nullptr;
+    UEdGraphPin* OutputPin = nullptr;
+    if (!CategorizePinsByDirection(PinA, PinB, InputPin, OutputPin))
+    {
+        return;
+    }
+
+    UEdGraph* ParentGraph = PinA->GetOwningNode()->GetGraph();
+    UDreamFlowEdGraph* FlowGraph = Cast<UDreamFlowEdGraph>(ParentGraph);
+    UDreamFlowAsset* FlowAsset = FlowGraph != nullptr ? FlowGraph->GetFlowAsset() : nullptr;
+    if (ParentGraph == nullptr || FlowAsset == nullptr)
+    {
+        return;
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("CreateDreamFlowRerouteNodeOnWire", "Create Dream Flow Reroute Node"));
+    FlowAsset->Modify();
+    ParentGraph->Modify();
+
+    // Match the stock knot offset so the reroute lands under the wire midpoint.
+    const FVector2f NodeSpacerSize(42.0f, 24.0f);
+    const FVector2f KnotTopLeft = GraphPosition - (NodeSpacerSize * 0.5f);
+
+    FGraphNodeCreator<UDreamFlowEdGraphRerouteNode> NodeCreator(*ParentGraph);
+    UDreamFlowEdGraphRerouteNode* RerouteNode = NodeCreator.CreateUserInvokedNode(true);
+    RerouteNode->NodePosX = FMath::RoundToInt(KnotTopLeft.X);
+    RerouteNode->NodePosY = FMath::RoundToInt(KnotTopLeft.Y);
+    NodeCreator.Finalize();
+
+    UEdGraphPin* RerouteInputPin = RerouteNode->GetInputPin();
+    UEdGraphPin* RerouteOutputPin = RerouteNode->GetOutputPin();
+    if (RerouteInputPin == nullptr || RerouteOutputPin == nullptr)
+    {
+        RerouteNode->DestroyNode();
+        return;
+    }
+
+    OutputPin->BreakLinkTo(InputPin);
+
+    const bool bConnectedToReroute = TryCreateConnection(OutputPin, RerouteInputPin);
+    const bool bConnectedFromReroute = TryCreateConnection(RerouteOutputPin, InputPin);
+    if (!bConnectedToReroute || !bConnectedFromReroute)
+    {
+        RerouteNode->DestroyNode();
+        TryCreateConnection(OutputPin, InputPin);
+        return;
+    }
+
+    DreamFlowSchema::SynchronizeGraphAsset(ParentGraph);
+    ParentGraph->NotifyGraphChanged();
 }
 
 void UDreamFlowEdGraphSchema::BreakNodeLinks(UEdGraphNode& TargetNode) const
@@ -310,19 +516,23 @@ FLinearColor UDreamFlowEdGraphSchema::GetPinTypeColor(const FEdGraphPinType& Pin
 
 FLinearColor UDreamFlowEdGraphSchema::GetPinColor(const UEdGraphPin* InPin) const
 {
-    if (const UDreamFlowEdGraphNode* FlowGraphNode = InPin != nullptr ? Cast<UDreamFlowEdGraphNode>(InPin->GetOwningNode()) : nullptr)
+    if (InPin == nullptr)
     {
-        const FLinearColor NodeColor = FlowGraphNode->GetNodeTitleColor();
-        const FLinearColor AccentBase = FLinearColor::LerpUsingHSV(FLinearColor(0.22f, 0.26f, 0.31f, 1.0f), NodeColor, 0.82f);
-        const float BrightnessBoost = InPin->Direction == EGPD_Output ? 1.14f : 1.0f;
-        return FLinearColor(
-            FMath::Clamp(AccentBase.R * BrightnessBoost, 0.0f, 1.0f),
-            FMath::Clamp(AccentBase.G * BrightnessBoost, 0.0f, 1.0f),
-            FMath::Clamp(AccentBase.B * BrightnessBoost, 0.0f, 1.0f),
-            1.0f);
+        return GetPinTypeColor(FEdGraphPinType());
     }
 
-    return GetPinTypeColor(InPin != nullptr ? InPin->PinType : FEdGraphPinType());
+    if (Cast<UDreamFlowEdGraphNode>(InPin->GetOwningNode()) != nullptr)
+    {
+        return DreamFlowSchema::GetFlowNodePinColor(InPin);
+    }
+
+    const UEdGraphPin* SourcePin = nullptr;
+    if (DreamFlowSchema::TryResolveFlowColorSourcePin(InPin, SourcePin))
+    {
+        return DreamFlowSchema::GetFlowNodePinColor(SourcePin);
+    }
+
+    return GetPinTypeColor(InPin->PinType);
 }
 
 #undef LOCTEXT_NAMESPACE

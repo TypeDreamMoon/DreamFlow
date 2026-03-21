@@ -5,6 +5,7 @@
 class UDreamFlowAsset;
 class UDreamFlowEdGraph;
 class UDreamFlowEdGraphNode;
+class UDreamFlowEdGraphRerouteNode;
 class UDreamFlowNode;
 class UEdGraph;
 class UEdGraphPin;
@@ -17,6 +18,11 @@ public:
     static UDreamFlowEdGraphNode* CreateNodeInGraph(
         UEdGraph* Graph,
         TSubclassOf<UDreamFlowNode> NodeClass,
+        const FVector2f& Location,
+        UEdGraphPin* FromPin = nullptr,
+        bool bSelectNewNode = true);
+    static UDreamFlowEdGraphRerouteNode* CreateRerouteNodeInGraph(
+        UEdGraph* Graph,
         const FVector2f& Location,
         UEdGraphPin* FromPin = nullptr,
         bool bSelectNewNode = true);

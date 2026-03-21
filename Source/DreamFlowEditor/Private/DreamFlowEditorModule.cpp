@@ -21,8 +21,39 @@
 #include "IAssetTools.h"
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
+#include "UObject/UObjectGlobals.h"
+#include "Engine/World.h"
 
 #define LOCTEXT_NAMESPACE "DreamFlowEditorModule"
+
+namespace DreamFlowEditorModule
+{
+    static UDreamFlowAsset* ResolveEditorFlowAsset(UDreamFlowAsset* FlowAsset)
+    {
+        if (FlowAsset == nullptr)
+        {
+            return nullptr;
+        }
+
+        const FString StrippedPath = UWorld::RemovePIEPrefix(FlowAsset->GetPathName());
+        if (StrippedPath.IsEmpty() || StrippedPath == FlowAsset->GetPathName())
+        {
+            return FlowAsset;
+        }
+
+        if (UDreamFlowAsset* ExistingAsset = FindObject<UDreamFlowAsset>(nullptr, *StrippedPath))
+        {
+            return ExistingAsset;
+        }
+
+        if (UDreamFlowAsset* LoadedAsset = LoadObject<UDreamFlowAsset>(nullptr, *StrippedPath))
+        {
+            return LoadedAsset;
+        }
+
+        return FlowAsset;
+    }
+}
 
 FDreamFlowEditorModule& FDreamFlowEditorModule::Get()
 {
@@ -288,7 +319,9 @@ bool FDreamFlowEditorModule::FocusBreakpointLocation(const FDreamFlowExecutionLo
         return false;
     }
 
-    return FDreamFlowEditorToolkit::OpenAssetAndFocusNode(BreakpointLocation.FlowAsset.Get(), BreakpointLocation.NodeGuid);
+    return FDreamFlowEditorToolkit::OpenAssetAndFocusNode(
+        DreamFlowEditorModule::ResolveEditorFlowAsset(BreakpointLocation.FlowAsset.Get()),
+        BreakpointLocation.NodeGuid);
 }
 
 IMPLEMENT_MODULE(FDreamFlowEditorModule, DreamFlowEditor)
