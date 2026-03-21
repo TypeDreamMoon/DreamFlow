@@ -295,12 +295,9 @@ bool FDreamFlowEditorToolkit::GetValidationMessagesForGraphNode(UEdGraph* Graph,
         return false;
     }
 
-    for (const FDreamFlowValidationMessage& Message : Toolkit->ValidationMessages)
+    if (const TArray<FDreamFlowValidationMessage>* CachedMessages = Toolkit->ValidationMessagesByNodeGuid.Find(NodeGuid))
     {
-        if (Message.NodeGuid == NodeGuid)
-        {
-            OutMessages.Add(Message);
-        }
+        OutMessages = *CachedMessages;
     }
 
     return OutMessages.Num() > 0;
@@ -653,6 +650,11 @@ void FDreamFlowEditorToolkit::HandleSelectedNodesChanged(const TSet<UObject*>& N
         {
             return;
         }
+    }
+
+    if (NewSelection.Num() > 1)
+    {
+        return;
     }
 
     if (NewSelection.Num() == 0
@@ -1422,12 +1424,21 @@ void FDreamFlowEditorToolkit::RunValidation()
     if (FlowAsset == nullptr)
     {
         ValidationMessages.Reset();
+        ValidationMessagesByNodeGuid.Reset();
         bHasValidationRun = false;
         bValidationDirty = true;
     }
     else
     {
         FlowAsset->ValidateFlow(ValidationMessages);
+        ValidationMessagesByNodeGuid.Reset();
+        for (const FDreamFlowValidationMessage& Message : ValidationMessages)
+        {
+            if (Message.NodeGuid.IsValid())
+            {
+                ValidationMessagesByNodeGuid.FindOrAdd(Message.NodeGuid).Add(Message);
+            }
+        }
         bHasValidationRun = true;
         bValidationDirty = false;
     }

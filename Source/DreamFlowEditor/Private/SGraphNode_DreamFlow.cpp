@@ -615,6 +615,8 @@ void SGraphNode_DreamFlow::GetOverlayBrushes(bool bSelected, const FVector2f& Wi
 void SGraphNode_DreamFlow::RefreshInlinePropertyRows()
 {
     InlinePropertyRowGenerator.Reset();
+    CachedInlinePropertyNodes.Reset();
+    bHasInlinePropertyNodes = false;
 
     const UDreamFlowEdGraphNode* FlowNode = GetFlowNode();
     UDreamFlowNode* RuntimeNode = FlowNode != nullptr ? FlowNode->GetRuntimeNode() : nullptr;
@@ -646,6 +648,32 @@ void SGraphNode_DreamFlow::RefreshInlinePropertyRows()
 
     InlinePropertyRowGenerator->SetPropertyGenerationAllowListPaths(AllowedPropertyPaths);
     InlinePropertyRowGenerator->SetObjects({ RuntimeNode });
+
+    TMap<FName, TSharedRef<IDetailTreeNode>> NodesByName;
+    CollectDetailNodesRecursive(InlinePropertyRowGenerator->GetRootTreeNodes(), NodesByName);
+
+    TArray<FName> SortedPropertyNames = InlinePropertyNames;
+    SortedPropertyNames.RemoveAll([](const FName PropertyName)
+    {
+        return PropertyName.IsNone();
+    });
+
+    SortedPropertyNames.Sort([RuntimeNode](const FName& A, const FName& B)
+    {
+        const int32 PriorityA = DreamFlowNodeWidget::GetInlinePropertyPriority(RuntimeNode, A);
+        const int32 PriorityB = DreamFlowNodeWidget::GetInlinePropertyPriority(RuntimeNode, B);
+        return PriorityA == PriorityB ? A.LexicalLess(B) : PriorityA < PriorityB;
+    });
+
+    for (const FName PropertyName : SortedPropertyNames)
+    {
+        if (const TSharedRef<IDetailTreeNode>* FoundNode = NodesByName.Find(PropertyName))
+        {
+            CachedInlinePropertyNodes.Add(*FoundNode);
+        }
+    }
+
+    bHasInlinePropertyNodes = CachedInlinePropertyNodes.Num() > 0;
 }
 
 void SGraphNode_DreamFlow::CollectDetailNodesRecursive(const TArray<TSharedRef<IDetailTreeNode>>& Nodes, TMap<FName, TSharedRef<IDetailTreeNode>>& OutNodes) const
@@ -671,40 +699,7 @@ void SGraphNode_DreamFlow::CollectDetailNodesRecursive(const TArray<TSharedRef<I
 
 TArray<TSharedRef<IDetailTreeNode>> SGraphNode_DreamFlow::GetInlinePropertyNodes() const
 {
-    TArray<TSharedRef<IDetailTreeNode>> Result;
-
-    const UDreamFlowEdGraphNode* FlowNode = GetFlowNode();
-    const UDreamFlowNode* RuntimeNode = FlowNode != nullptr ? FlowNode->GetRuntimeNode() : nullptr;
-    if (RuntimeNode == nullptr || !InlinePropertyRowGenerator.IsValid())
-    {
-        return Result;
-    }
-
-    TMap<FName, TSharedRef<IDetailTreeNode>> NodesByName;
-    CollectDetailNodesRecursive(InlinePropertyRowGenerator->GetRootTreeNodes(), NodesByName);
-
-    TArray<FName> PropertyNames = RuntimeNode->GetInlineEditablePropertyNames();
-    PropertyNames.RemoveAll([](const FName PropertyName)
-    {
-        return PropertyName.IsNone();
-    });
-
-    PropertyNames.Sort([RuntimeNode](const FName& A, const FName& B)
-    {
-        const int32 PriorityA = DreamFlowNodeWidget::GetInlinePropertyPriority(RuntimeNode, A);
-        const int32 PriorityB = DreamFlowNodeWidget::GetInlinePropertyPriority(RuntimeNode, B);
-        return PriorityA == PriorityB ? A.LexicalLess(B) : PriorityA < PriorityB;
-    });
-
-    for (const FName PropertyName : PropertyNames)
-    {
-        if (const TSharedRef<IDetailTreeNode>* FoundNode = NodesByName.Find(PropertyName))
-        {
-            Result.Add(*FoundNode);
-        }
-    }
-
-    return Result;
+    return CachedInlinePropertyNodes;
 }
 
 TSharedRef<SWidget> SGraphNode_DreamFlow::BuildInlineEditorArea()
@@ -1335,7 +1330,7 @@ EVisibility SGraphNode_DreamFlow::GetIconVisibility() const
 
 EVisibility SGraphNode_DreamFlow::GetInlineEditorVisibility() const
 {
-    return GetInlinePropertyNodes().Num() > 0
+    return bHasInlinePropertyNodes
         ? EVisibility::Visible
         : EVisibility::Collapsed;
 }

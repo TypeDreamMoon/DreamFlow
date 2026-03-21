@@ -122,6 +122,7 @@ private:
     TObjectPtr<UEdGraph> EditingGraph = nullptr;
     TWeakObjectPtr<UObject> CurrentDetailsObject;
     TArray<FDreamFlowValidationMessage> ValidationMessages;
+    TMap<FGuid, TArray<FDreamFlowValidationMessage>> ValidationMessagesByNodeGuid;
     TSharedPtr<SDreamFlowNodePalette> PaletteWidget;
     TSharedPtr<SGraphEditor> GraphEditorWidget;
     TSharedPtr<IDetailsView> DetailsView;

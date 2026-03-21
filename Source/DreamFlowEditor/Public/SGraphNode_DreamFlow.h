@@ -71,7 +71,9 @@ private:
 
 private:
     TSharedPtr<IPropertyRowGenerator> InlinePropertyRowGenerator;
+    TArray<TSharedRef<IDetailTreeNode>> CachedInlinePropertyNodes;
     TArray<TSharedPtr<FSlateBrush>> PreviewImageBrushes;
     mutable TSharedPtr<FSlateBrush> NodeIconBrush;
     mutable bool bPendingAssetSynchronization = false;
+    bool bHasInlinePropertyNodes = false;
 };
