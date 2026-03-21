@@ -3,21 +3,74 @@
 #include "DreamFlowEdGraphNode.h"
 #include "DreamFlowEdGraphRerouteNode.h"
 #include "DreamFlowEdGraphSchema.h"
+#include "Containers/Set.h"
 #include "EdGraph/EdGraphPin.h"
 #include "SGraphPin.h"
 #include "Styling/StyleColors.h"
 
 namespace DreamFlowConnectionDrawing
 {
-    static FLinearColor GetNodeWireColor(const UEdGraphPin* Pin)
+    static bool TryResolveFlowNodeTint(const UEdGraphPin* StartPin, FLinearColor& OutNodeTint)
     {
-        if (const UDreamFlowEdGraphNode* FlowNode = Pin != nullptr ? Cast<UDreamFlowEdGraphNode>(Pin->GetOwningNode()) : nullptr)
+        if (StartPin == nullptr)
         {
-            const FLinearColor NodeTint = FlowNode->GetNodeTitleColor();
-            return FLinearColor::LerpUsingHSV(FStyleColors::Foreground.GetSpecifiedColor(), NodeTint, 0.72f).CopyWithNewOpacity(0.94f);
+            return false;
         }
 
-        return FStyleColors::Foreground.GetSpecifiedColor().CopyWithNewOpacity(0.86f);
+        TArray<const UEdGraphPin*> PinsToVisit;
+        TSet<const UEdGraphPin*> VisitedPins;
+        PinsToVisit.Add(StartPin);
+
+        while (PinsToVisit.Num() > 0)
+        {
+            const UEdGraphPin* CurrentPin = PinsToVisit.Pop(EAllowShrinking::No);
+            if (CurrentPin == nullptr || VisitedPins.Contains(CurrentPin))
+            {
+                continue;
+            }
+
+            VisitedPins.Add(CurrentPin);
+
+            if (const UDreamFlowEdGraphNode* FlowNode = Cast<UDreamFlowEdGraphNode>(CurrentPin->GetOwningNode()))
+            {
+                OutNodeTint = FlowNode->GetNodeTitleColor();
+                return true;
+            }
+
+            const UDreamFlowEdGraphRerouteNode* RerouteNode = Cast<UDreamFlowEdGraphRerouteNode>(CurrentPin->GetOwningNode());
+            if (RerouteNode == nullptr)
+            {
+                continue;
+            }
+
+            for (const UEdGraphPin* LinkedPin : CurrentPin->LinkedTo)
+            {
+                PinsToVisit.Add(LinkedPin);
+            }
+
+            if (const UEdGraphPin* PassThroughPin = RerouteNode->GetPassThroughPin(CurrentPin))
+            {
+                PinsToVisit.Add(PassThroughPin);
+
+                for (const UEdGraphPin* LinkedPin : PassThroughPin->LinkedTo)
+                {
+                    PinsToVisit.Add(LinkedPin);
+                }
+            }
+        }
+
+        return false;
+    }
+
+    static FLinearColor GetNodeWireColor(const UEdGraphPin* PreferredPin, const UEdGraphPin* FallbackPin)
+    {
+        FLinearColor NodeTint = FStyleColors::Foreground.GetSpecifiedColor();
+        if (TryResolveFlowNodeTint(PreferredPin, NodeTint) || TryResolveFlowNodeTint(FallbackPin, NodeTint))
+        {
+            return NodeTint.CopyWithNewOpacity(0.94f);
+        }
+
+        return NodeTint.CopyWithNewOpacity(0.86f);
     }
 }
 
@@ -56,12 +109,8 @@ void FDreamFlowConnectionDrawingPolicy::DetermineWiringStyle(UEdGraphPin* Output
         }
     }
 
-    const FLinearColor OutputColor = DreamFlowConnectionDrawing::GetNodeWireColor(OutputPin);
-    const FLinearColor InputColor = DreamFlowConnectionDrawing::GetNodeWireColor(InputPin);
-    const FLinearColor MixedColor = FLinearColor::LerpUsingHSV(OutputColor, InputColor, 0.35f);
-
     Params.WireThickness = FMath::Max(Params.WireThickness, 4.5f);
-    Params.WireColor = MixedColor.CopyWithNewOpacity(0.94f);
+    Params.WireColor = DreamFlowConnectionDrawing::GetNodeWireColor(OutputPin, InputPin);
     Params.bDrawBubbles = false;
 
     if ((OutputPin != nullptr && OutputPin->bOrphanedPin) || (InputPin != nullptr && InputPin->bOrphanedPin))

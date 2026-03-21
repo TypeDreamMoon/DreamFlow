@@ -29,14 +29,7 @@ namespace DreamFlowSchema
     {
         if (const UDreamFlowEdGraphNode* FlowGraphNode = Pin != nullptr ? Cast<UDreamFlowEdGraphNode>(Pin->GetOwningNode()) : nullptr)
         {
-            const FLinearColor NodeColor = FlowGraphNode->GetNodeTitleColor();
-            const FLinearColor AccentBase = FLinearColor::LerpUsingHSV(FLinearColor(0.22f, 0.26f, 0.31f, 1.0f), NodeColor, 0.82f);
-            const float BrightnessBoost = Pin->Direction == EGPD_Output ? 1.14f : 1.0f;
-            return FLinearColor(
-                FMath::Clamp(AccentBase.R * BrightnessBoost, 0.0f, 1.0f),
-                FMath::Clamp(AccentBase.G * BrightnessBoost, 0.0f, 1.0f),
-                FMath::Clamp(AccentBase.B * BrightnessBoost, 0.0f, 1.0f),
-                1.0f);
+            return FlowGraphNode->GetNodeTitleColor().CopyWithNewOpacity(1.0f);
         }
 
         return FLinearColor::Transparent;
