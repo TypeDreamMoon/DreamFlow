@@ -27,7 +27,10 @@ private:
     FText GetBindingSummary() const;
     FText GetSourceTypeLabel() const;
     FText GetVariablePickerLabel() const;
+    TSharedRef<SWidget> BuildCompactBindingEditor() const;
+    TSharedRef<SWidget> BuildCompactLiteralEditor() const;
     void EnsureLiteralValueMatchesExpectedType() const;
+    TSharedPtr<IPropertyHandle> GetActiveLiteralValueHandle() const;
     void SetSourceType(EDreamFlowValueSourceType NewSourceType) const;
     void SetVariableName(FName NewVariableName) const;
     TSharedRef<SWidget> BuildSourceTypeMenu() const;

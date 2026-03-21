@@ -71,7 +71,7 @@ class DREAMFLOW_API UDreamFlowSetVariableNode : public UDreamFlowCoreNode
 public:
     UDreamFlowSetVariableNode();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Variables", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "20"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Variables", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "20", DreamFlowVariablePicker))
     FName TargetVariable;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Variables", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "30"))

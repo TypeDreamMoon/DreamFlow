@@ -12,4 +12,5 @@ public:
 
 public:
     TSharedPtr<FUICommandInfo> ToggleBreakpoint;
+    TSharedPtr<FUICommandInfo> ValidateFlow;
 };

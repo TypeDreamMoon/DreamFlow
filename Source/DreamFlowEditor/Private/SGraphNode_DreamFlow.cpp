@@ -725,7 +725,7 @@ TSharedRef<SWidget> SGraphNode_DreamFlow::BuildInlinePropertyWidget(const TShare
         [
             SNew(SHorizontalBox)
             + SHorizontalBox::Slot()
-            .FillWidth(0.42f)
+            .FillWidth(0.34f)
             .VAlign(VAlign_Center)
             [
                 NodeWidgets.NameWidget.IsValid()
@@ -733,7 +733,7 @@ TSharedRef<SWidget> SGraphNode_DreamFlow::BuildInlinePropertyWidget(const TShare
                     : SNullWidget::NullWidget
             ]
             + SHorizontalBox::Slot()
-            .FillWidth(0.58f)
+            .FillWidth(0.66f)
             .Padding(8.0f, 0.0f, 0.0f, 0.0f)
             .VAlign(VAlign_Center)
             [

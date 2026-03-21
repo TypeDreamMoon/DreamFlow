@@ -11,6 +11,7 @@
 void SDreamFlowValidationView::Construct(const FArguments& InArgs)
 {
     OnMessageActivated = InArgs._OnMessageActivated;
+    OnValidateRequested = InArgs._OnValidateRequested;
 
     ChildSlot
     [
@@ -33,10 +34,29 @@ void SDreamFlowValidationView::Construct(const FArguments& InArgs)
                     + SVerticalBox::Slot()
                     .AutoHeight()
                     [
-                        SNew(STextBlock)
-                        .Text(FText::FromString(TEXT("Validation")))
-                        .TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
-                        .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                        SNew(SHorizontalBox)
+                        + SHorizontalBox::Slot()
+                        .FillWidth(1.0f)
+                        .VAlign(VAlign_Center)
+                        [
+                            SNew(STextBlock)
+                            .Text(FText::FromString(TEXT("Validation")))
+                            .TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
+                            .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                        ]
+                        + SHorizontalBox::Slot()
+                        .AutoWidth()
+                        .VAlign(VAlign_Center)
+                        [
+                            SNew(SButton)
+                            .ButtonStyle(FAppStyle::Get(), "PrimaryButton")
+                            .OnClicked(this, &SDreamFlowValidationView::HandleValidateClicked)
+                            [
+                                SNew(STextBlock)
+                                .Text(this, &SDreamFlowValidationView::GetValidateButtonText)
+                                .TextStyle(FAppStyle::Get(), "SmallText")
+                            ]
+                        ]
                     ]
 
                     + SVerticalBox::Slot()
@@ -47,6 +67,18 @@ void SDreamFlowValidationView::Construct(const FArguments& InArgs)
                         .Text(this, &SDreamFlowValidationView::GetSummaryText)
                         .TextStyle(FAppStyle::Get(), "SmallText")
                         .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                        .WrapTextAt(320.0f)
+                    ]
+
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(0.0f, 8.0f, 0.0f, 0.0f)
+                    [
+                        SAssignNew(StatusTextBlock, STextBlock)
+                        .Visibility(this, &SDreamFlowValidationView::GetStatusVisibility)
+                        .Text(this, &SDreamFlowValidationView::GetStatusText)
+                        .TextStyle(FAppStyle::Get(), "SmallText")
+                        .ColorAndOpacity(this, &SDreamFlowValidationView::GetStatusColor)
                         .WrapTextAt(320.0f)
                     ]
                 ]
@@ -64,9 +96,11 @@ void SDreamFlowValidationView::Construct(const FArguments& InArgs)
     RebuildMessages();
 }
 
-void SDreamFlowValidationView::SetMessages(const TArray<FDreamFlowValidationMessage>& InMessages)
+void SDreamFlowValidationView::SetValidationState(const TArray<FDreamFlowValidationMessage>& InMessages, bool bInHasValidationRun, bool bInValidationDirty)
 {
     Messages = InMessages;
+    bHasValidationRun = bInHasValidationRun;
+    bValidationDirty = bInValidationDirty;
     RebuildMessages();
 }
 
@@ -82,6 +116,49 @@ void SDreamFlowValidationView::RebuildMessages()
     if (SummaryTextBlock.IsValid())
     {
         SummaryTextBlock->SetText(GetSummaryText());
+    }
+
+    if (StatusTextBlock.IsValid())
+    {
+        StatusTextBlock->SetText(GetStatusText());
+    }
+
+    if (!bHasValidationRun)
+    {
+        MessageContainer->AddSlot()
+        [
+            SNew(SBorder)
+            .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+            .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
+            .Padding(FMargin(12.0f, 10.0f))
+            [
+                SNew(STextBlock)
+                .Text(FText::FromString(TEXT("Validation has not been run yet. Click Validate to analyze this flow and populate node issues.")))
+                .TextStyle(FAppStyle::Get(), "NormalText")
+                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                .WrapTextAt(320.0f)
+            ]
+        ];
+        return;
+    }
+
+    if (bValidationDirty)
+    {
+        MessageContainer->AddSlot()
+        [
+            SNew(SBorder)
+            .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+            .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
+            .Padding(FMargin(12.0f, 10.0f))
+            [
+                SNew(STextBlock)
+                .Text(FText::FromString(TEXT("Validation results are out of date because the flow changed after the last run. Click Validate to refresh the issue list.")))
+                .TextStyle(FAppStyle::Get(), "NormalText")
+                .ColorAndOpacity(FSlateColor(EStyleColor::Warning))
+                .WrapTextAt(320.0f)
+            ]
+        ];
+        return;
     }
 
     if (Messages.Num() == 0)
@@ -185,6 +262,16 @@ void SDreamFlowValidationView::RebuildMessages()
     }
 }
 
+FReply SDreamFlowValidationView::HandleValidateClicked() const
+{
+    if (OnValidateRequested.IsBound())
+    {
+        OnValidateRequested.Execute();
+    }
+
+    return FReply::Handled();
+}
+
 FReply SDreamFlowValidationView::HandleMessageClicked(FGuid NodeGuid) const
 {
     if (NodeGuid.IsValid() && OnMessageActivated.IsBound())
@@ -213,6 +300,16 @@ FSlateColor SDreamFlowValidationView::GetSeverityColor(EDreamFlowValidationSever
 
 FText SDreamFlowValidationView::GetSummaryText() const
 {
+    if (!bHasValidationRun)
+    {
+        return FText::FromString(TEXT("Validation is manual. Run it when you want a fresh issue pass for this asset."));
+    }
+
+    if (bValidationDirty)
+    {
+        return FText::FromString(TEXT("The flow changed after the last validation run. Existing issue badges are hidden until you validate again."));
+    }
+
     int32 ErrorCount = 0;
     int32 WarningCount = 0;
     int32 InfoCount = 0;
@@ -243,6 +340,11 @@ FText SDreamFlowValidationView::GetSummaryText() const
         InfoCount);
 }
 
+FText SDreamFlowValidationView::GetValidateButtonText() const
+{
+    return bHasValidationRun ? FText::FromString(TEXT("Validate Again")) : FText::FromString(TEXT("Validate"));
+}
+
 FText SDreamFlowValidationView::GetSeverityText(EDreamFlowValidationSeverity Severity) const
 {
     switch (Severity)
@@ -257,4 +359,39 @@ FText SDreamFlowValidationView::GetSeverityText(EDreamFlowValidationSeverity Sev
     default:
         return FText::FromString(TEXT("Error"));
     }
+}
+
+FText SDreamFlowValidationView::GetStatusText() const
+{
+    if (!bHasValidationRun)
+    {
+        return FText::FromString(TEXT("Status: Not run"));
+    }
+
+    if (bValidationDirty)
+    {
+        return FText::FromString(TEXT("Status: Out of date"));
+    }
+
+    return FText::FromString(TEXT("Status: Current"));
+}
+
+EVisibility SDreamFlowValidationView::GetStatusVisibility() const
+{
+    return EVisibility::Visible;
+}
+
+FSlateColor SDreamFlowValidationView::GetStatusColor() const
+{
+    if (!bHasValidationRun)
+    {
+        return FSlateColor(EStyleColor::ForegroundHeader);
+    }
+
+    if (bValidationDirty)
+    {
+        return FSlateColor(EStyleColor::Warning);
+    }
+
+    return FSlateColor(EStyleColor::Success);
 }

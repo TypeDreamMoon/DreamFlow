@@ -17,6 +17,13 @@ FDreamFlowEditorCommands::FDreamFlowEditorCommands()
 void FDreamFlowEditorCommands::RegisterCommands()
 {
     UI_COMMAND(
+        ValidateFlow,
+        "Validate",
+        "Run DreamFlow validation for the current asset.",
+        EUserInterfaceActionType::Button,
+        FInputChord());
+
+    UI_COMMAND(
         ToggleBreakpoint,
         "Toggle Breakpoint",
         "Enable or disable a breakpoint on the selected DreamFlow node.",

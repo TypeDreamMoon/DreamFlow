@@ -8,6 +8,8 @@
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "IDetailChildrenBuilder.h"
 #include "IPropertyUtilities.h"
+#include "Widgets/SNullWidget.h"
+#include "Widgets/SBoxPanel.h"
 #include "Widgets/Input/SComboButton.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -48,11 +50,9 @@ void FDreamFlowValueBindingCustomization::CustomizeHeader(TSharedRef<IPropertyHa
             StructPropertyHandle->CreatePropertyNameWidget()
         ]
         .ValueContent()
-        .MinDesiredWidth(360.0f)
+        .MinDesiredWidth(420.0f)
         [
-            SNew(STextBlock)
-            .Text(this, &FDreamFlowValueBindingCustomization::GetBindingSummary)
-            .ToolTipText(this, &FDreamFlowValueBindingCustomization::GetBindingSummary)
+            BuildCompactBindingEditor()
         ];
 }
 
@@ -334,6 +334,60 @@ FText FDreamFlowValueBindingCustomization::GetVariablePickerLabel() const
     return FText::FromName(VariableName);
 }
 
+TSharedRef<SWidget> FDreamFlowValueBindingCustomization::BuildCompactBindingEditor() const
+{
+    const TSharedRef<SWidget> ValueEditor = GetCurrentSourceType() == EDreamFlowValueSourceType::FlowVariable
+        ? StaticCastSharedRef<SWidget>(
+            SNew(SComboButton)
+            .OnGetMenuContent(this, &FDreamFlowValueBindingCustomization::BuildVariableMenu)
+            .ButtonContent()
+            [
+                SNew(STextBlock)
+                .Text(this, &FDreamFlowValueBindingCustomization::GetVariablePickerLabel)
+                .Font(IDetailLayoutBuilder::GetDetailFont())
+            ])
+        : BuildCompactLiteralEditor();
+
+    return SNew(SHorizontalBox)
+        .ToolTipText(this, &FDreamFlowValueBindingCustomization::GetBindingSummary)
+
+        + SHorizontalBox::Slot()
+        .AutoWidth()
+        .VAlign(VAlign_Center)
+        [
+            SNew(SComboButton)
+            .OnGetMenuContent(this, &FDreamFlowValueBindingCustomization::BuildSourceTypeMenu)
+            .ButtonContent()
+            [
+                SNew(STextBlock)
+                .Text(this, &FDreamFlowValueBindingCustomization::GetSourceTypeLabel)
+                .Font(IDetailLayoutBuilder::GetDetailFont())
+            ]
+        ]
+
+        + SHorizontalBox::Slot()
+        .FillWidth(1.0f)
+        .Padding(8.0f, 0.0f, 0.0f, 0.0f)
+        .VAlign(VAlign_Center)
+        [
+            ValueEditor
+        ];
+}
+
+TSharedRef<SWidget> FDreamFlowValueBindingCustomization::BuildCompactLiteralEditor() const
+{
+    EnsureLiteralValueMatchesExpectedType();
+
+    if (const TSharedPtr<IPropertyHandle> ActiveLiteralValueHandle = GetActiveLiteralValueHandle())
+    {
+        return ActiveLiteralValueHandle->CreatePropertyValueWidget();
+    }
+
+    return LiteralValueHandle.IsValid()
+        ? LiteralValueHandle->CreatePropertyValueWidget()
+        : StaticCastSharedRef<SWidget>(SNullWidget::NullWidget);
+}
+
 void FDreamFlowValueBindingCustomization::EnsureLiteralValueMatchesExpectedType() const
 {
     if (!LiteralValueHandle.IsValid())
@@ -359,6 +413,44 @@ void FDreamFlowValueBindingCustomization::EnsureLiteralValueMatchesExpectedType(
     {
         TypeHandle->SetValue(static_cast<uint8>(ExpectedValueType.GetValue()));
     }
+}
+
+TSharedPtr<IPropertyHandle> FDreamFlowValueBindingCustomization::GetActiveLiteralValueHandle() const
+{
+    if (!LiteralValueHandle.IsValid())
+    {
+        return nullptr;
+    }
+
+    const TOptional<EDreamFlowValueType> ExpectedValueType = ResolveExpectedValueType();
+    if (!ExpectedValueType.IsSet())
+    {
+        return nullptr;
+    }
+
+    switch (ExpectedValueType.GetValue())
+    {
+    case EDreamFlowValueType::Bool:
+        return LiteralValueHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValue, BoolValue));
+    case EDreamFlowValueType::Int:
+        return LiteralValueHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValue, IntValue));
+    case EDreamFlowValueType::Float:
+        return LiteralValueHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValue, FloatValue));
+    case EDreamFlowValueType::Name:
+        return LiteralValueHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValue, NameValue));
+    case EDreamFlowValueType::String:
+        return LiteralValueHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValue, StringValue));
+    case EDreamFlowValueType::Text:
+        return LiteralValueHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValue, TextValue));
+    case EDreamFlowValueType::GameplayTag:
+        return LiteralValueHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValue, GameplayTagValue));
+    case EDreamFlowValueType::Object:
+        return LiteralValueHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValue, ObjectValue));
+    default:
+        break;
+    }
+
+    return nullptr;
 }
 
 void FDreamFlowValueBindingCustomization::SetSourceType(EDreamFlowValueSourceType NewSourceType) const

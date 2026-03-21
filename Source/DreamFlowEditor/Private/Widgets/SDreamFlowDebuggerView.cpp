@@ -6,6 +6,7 @@
 #include "DreamFlowVariableTypes.h"
 #include "Execution/DreamFlowDebuggerSubsystem.h"
 #include "Execution/DreamFlowExecutor.h"
+#include "Algo/Count.h"
 #include "Engine/Engine.h"
 #include "HAL/PlatformApplicationMisc.h"
 #include "Styling/AppStyle.h"
@@ -13,14 +14,30 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
-#include "Widgets/Layout/SGridPanel.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSeparator.h"
+#include "Widgets/Layout/SSplitter.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
+#include "Widgets/Views/SListView.h"
+#include "Widgets/Views/STableRow.h"
 
 namespace DreamFlowDebuggerView
 {
+    struct FDebuggerInfoItem
+    {
+        FText Label;
+        FText Value;
+    };
+
+    struct FDebuggerVariableItem
+    {
+        FDreamFlowVariableDefinition Definition;
+        FDreamFlowValue CurrentValue;
+        bool bHasRuntimeValue = false;
+        bool bIsModified = false;
+    };
+
     static FText GetDebugStateLabel(EDreamFlowExecutorDebugState DebugState)
     {
         switch (DebugState)
@@ -345,28 +362,44 @@ void SDreamFlowDebuggerView::Construct(const FArguments& InArgs)
                 ]
             ]
 
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(12.0f, 10.0f, 12.0f, 0.0f)
-            [
-                SAssignNew(SelectedInspectorContainer, SVerticalBox)
-            ]
-
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(12.0f, 12.0f, 12.0f, 6.0f)
-            [
-                SNew(STextBlock)
-                .Text(FText::FromString(TEXT("Active Sessions")))
-                .TextStyle(FAppStyle::Get(), "SmallText")
-                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
-            ]
-
-            + SVerticalBox::Slot()
             .FillHeight(1.0f)
-            .Padding(12.0f, 0.0f, 12.0f, 12.0f)
+            .Padding(12.0f, 10.0f, 12.0f, 12.0f)
             [
-                SAssignNew(ExecutorContainer, SScrollBox)
+                SNew(SSplitter)
+                .Orientation(Orient_Vertical)
+
+                + SSplitter::Slot()
+                .Value(0.64f)
+                [
+                    SAssignNew(SelectedInspectorContainer, SBox)
+                ]
+
+                + SSplitter::Slot()
+                .Value(0.36f)
+                [
+                    SNew(SBorder)
+                    .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+                    .Padding(10.0f)
+                    [
+                        SNew(SVerticalBox)
+
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+                        [
+                            SNew(STextBlock)
+                            .Text(FText::FromString(TEXT("Active Sessions")))
+                            .TextStyle(FAppStyle::Get(), "SmallText")
+                            .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                        ]
+
+                        + SVerticalBox::Slot()
+                        .FillHeight(1.0f)
+                        [
+                            SAssignNew(ExecutorContainer, SScrollBox)
+                        ]
+                    ]
+                ]
             ]
         ]
     ];
@@ -501,12 +534,78 @@ void SDreamFlowDebuggerView::RebuildSelectedExecutorDetails()
         return;
     }
 
-    SelectedInspectorContainer->ClearChildren();
-    SelectedInspectorContainer->AddSlot()
-    .AutoHeight()
-    [
-        BuildSelectedExecutorInspector()
-    ];
+    RefreshSelectedExecutorItems();
+
+    SelectedInspectorContainer->SetContent(BuildSelectedExecutorInspector());
+}
+
+void SDreamFlowDebuggerView::RefreshSelectedExecutorItems()
+{
+    SelectedInfoItems.Reset();
+    SelectedVariableItems.Reset();
+
+    const UDreamFlowExecutor* Executor = GetSelectedExecutor();
+    if (Executor == nullptr)
+    {
+        return;
+    }
+
+    const UDreamFlowAsset* Asset = Executor->GetFlowAsset();
+    const UDreamFlowNode* CurrentNode = Executor->GetCurrentNode();
+    const UObject* ExecutionContext = Executor->GetExecutionContext();
+    const FText ExecutionContextText = ExecutionContext != nullptr
+        ? FText::Format(
+            FText::FromString(TEXT("{0} ({1})")),
+            ExecutionContext->GetClass()->GetDisplayNameText(),
+            FText::FromString(GetNameSafe(ExecutionContext)))
+        : FText::FromString(TEXT("None"));
+
+    bool bIsCurrentBreakpoint = false;
+    if (GEngine != nullptr && Asset != nullptr && CurrentNode != nullptr)
+    {
+        if (UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>())
+        {
+            DebuggerSubsystem->IsNodeCurrentExecutionLocation(Asset, CurrentNode->NodeGuid, bIsCurrentBreakpoint);
+        }
+    }
+
+    const auto AddInfoItem = [this](const FText& Label, const FText& Value)
+    {
+        TSharedPtr<DreamFlowDebuggerView::FDebuggerInfoItem> Item = MakeShared<DreamFlowDebuggerView::FDebuggerInfoItem>();
+        Item->Label = Label;
+        Item->Value = Value;
+        SelectedInfoItems.Add(Item);
+    };
+
+    AddInfoItem(FText::FromString(TEXT("Name")), FText::FromString(GetNameSafe(Executor)));
+    AddInfoItem(FText::FromString(TEXT("Flow")), FText::FromString(GetNameSafe(Asset)));
+    AddInfoItem(
+        FText::FromString(TEXT("Current Node")),
+        CurrentNode != nullptr ? CurrentNode->GetNodeDisplayName() : FText::FromString(TEXT("None")));
+    AddInfoItem(FText::FromString(TEXT("Execution Context")), ExecutionContextText);
+    AddInfoItem(FText::FromString(TEXT("Visited Nodes")), FText::AsNumber(Executor->GetVisitedNodes().Num()));
+    AddInfoItem(FText::FromString(TEXT("Available Children")), FText::AsNumber(Executor->GetAvailableChildren().Num()));
+    AddInfoItem(
+        FText::FromString(TEXT("Pause On Breakpoints")),
+        Executor->GetPauseOnBreakpoints() ? FText::FromString(TEXT("Enabled")) : FText::FromString(TEXT("Disabled")));
+    AddInfoItem(
+        FText::FromString(TEXT("Breakpoint Focus")),
+        bIsCurrentBreakpoint ? FText::FromString(TEXT("Hit Breakpoint")) : FText::FromString(TEXT("No Breakpoint")));
+
+    if (Asset == nullptr)
+    {
+        return;
+    }
+
+    for (const FDreamFlowVariableDefinition& VariableDefinition : Asset->Variables)
+    {
+        TSharedPtr<DreamFlowDebuggerView::FDebuggerVariableItem> Item = MakeShared<DreamFlowDebuggerView::FDebuggerVariableItem>();
+        Item->Definition = VariableDefinition;
+        Item->CurrentValue = VariableDefinition.DefaultValue;
+        Item->bHasRuntimeValue = Executor->GetVariableValue(VariableDefinition.Name, Item->CurrentValue);
+        Item->bIsModified = Item->bHasRuntimeValue && !DreamFlowDebuggerView::AreValuesEqual(Item->CurrentValue, VariableDefinition.DefaultValue);
+        SelectedVariableItems.Add(Item);
+    }
 }
 
 TSharedRef<SWidget> SDreamFlowDebuggerView::BuildExecutorCard(UDreamFlowExecutor* Executor) const
@@ -637,53 +736,31 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildSelectedExecutorInspector() con
     }
 
     const UDreamFlowAsset* Asset = Executor->GetFlowAsset();
-    const UDreamFlowNode* CurrentNode = Executor->GetCurrentNode();
-    const UObject* ExecutionContext = Executor->GetExecutionContext();
-    const FText ExecutionContextText = ExecutionContext != nullptr
-        ? FText::Format(
-            FText::FromString(TEXT("{0} ({1})")),
-            ExecutionContext->GetClass()->GetDisplayNameText(),
-            FText::FromString(GetNameSafe(ExecutionContext)))
-        : FText::FromString(TEXT("None"));
-
-    bool bIsCurrentBreakpoint = false;
-    int32 ModifiedVariableCount = 0;
-    if (GEngine != nullptr && Asset != nullptr && CurrentNode != nullptr)
+    const int32 ModifiedVariableCount = Algo::CountIf(SelectedVariableItems, [](const TSharedPtr<DreamFlowDebuggerView::FDebuggerVariableItem>& Item)
     {
-        if (UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>())
-        {
-            DebuggerSubsystem->IsNodeCurrentExecutionLocation(Asset, CurrentNode->NodeGuid, bIsCurrentBreakpoint);
-        }
-    }
-
-    TSharedRef<SVerticalBox> VariableRows = SNew(SVerticalBox);
-    if (Asset == nullptr || Asset->Variables.Num() == 0)
-    {
-        VariableRows->AddSlot()
-        .AutoHeight()
-        [
-            SNew(STextBlock)
-            .Text(FText::FromString(TEXT("This flow asset does not define any environment variables.")))
-            .TextStyle(FAppStyle::Get(), "SmallText")
-            .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
-        ];
-    }
-    else
-    {
-        for (const FDreamFlowVariableDefinition& VariableDefinition : Asset->Variables)
-        {
-            FDreamFlowValue CurrentValue = VariableDefinition.DefaultValue;
-            const bool bHasRuntimeValue = Executor->GetVariableValue(VariableDefinition.Name, CurrentValue);
-            ModifiedVariableCount += bHasRuntimeValue && !DreamFlowDebuggerView::AreValuesEqual(CurrentValue, VariableDefinition.DefaultValue) ? 1 : 0;
-
-            VariableRows->AddSlot()
-            .AutoHeight()
-            .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+        return Item.IsValid() && Item->bIsModified;
+    });
+    const TSharedRef<SWidget> VariableContent = SelectedVariableItems.Num() == 0
+        ? StaticCastSharedRef<SWidget>(
+            SNew(SBorder)
+            .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+            .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
+            .Padding(FMargin(10.0f, 12.0f))
             [
-                BuildVariableRow(VariableDefinition, CurrentValue, bHasRuntimeValue)
-            ];
-        }
-    }
+                SNew(STextBlock)
+                .Text(FText::FromString(TEXT("This flow asset does not define any environment variables.")))
+                .TextStyle(FAppStyle::Get(), "SmallText")
+                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                .WrapTextAt(420.0f)
+            ])
+        : StaticCastSharedRef<SWidget>(
+            SNew(SListView<TSharedPtr<DreamFlowDebuggerView::FDebuggerVariableItem>>)
+            .ListItemsSource(&SelectedVariableItems)
+            .SelectionMode(ESelectionMode::None)
+            .OnGenerateRow(this, &SDreamFlowDebuggerView::GenerateSelectedVariableRow)
+            .AllowOverscroll(EAllowOverscroll::No)
+            .ConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible)
+            .ScrollbarVisibility(EVisibility::Visible));
 
     return SNew(SBorder)
         .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
@@ -723,62 +800,16 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildSelectedExecutorInspector() con
             .AutoHeight()
             .Padding(0.0f, 10.0f, 0.0f, 0.0f)
             [
-                SNew(SGridPanel)
-                .FillColumn(0, 1.0f)
-                .FillColumn(1, 1.0f)
-
-                + SGridPanel::Slot(0, 0)
-                .Padding(0.0f, 0.0f, 6.0f, 8.0f)
+                SNew(SBox)
+                .HeightOverride(220.0f)
                 [
-                    BuildInfoRow(FText::FromString(TEXT("Name")), FText::FromString(GetNameSafe(Executor)))
-                ]
-
-                + SGridPanel::Slot(1, 0)
-                .Padding(6.0f, 0.0f, 0.0f, 8.0f)
-                [
-                    BuildInfoRow(FText::FromString(TEXT("Flow")), FText::FromString(GetNameSafe(Asset)))
-                ]
-
-                + SGridPanel::Slot(0, 1)
-                .Padding(0.0f, 0.0f, 6.0f, 8.0f)
-                [
-                    BuildInfoRow(
-                        FText::FromString(TEXT("Current Node")),
-                        CurrentNode != nullptr ? CurrentNode->GetNodeDisplayName() : FText::FromString(TEXT("None")))
-                ]
-
-                + SGridPanel::Slot(1, 1)
-                .Padding(6.0f, 0.0f, 0.0f, 8.0f)
-                [
-                    BuildInfoRow(FText::FromString(TEXT("Execution Context")), ExecutionContextText)
-                ]
-
-                + SGridPanel::Slot(0, 2)
-                .Padding(0.0f, 0.0f, 6.0f, 8.0f)
-                [
-                    BuildInfoRow(FText::FromString(TEXT("Visited Nodes")), FText::AsNumber(Executor->GetVisitedNodes().Num()))
-                ]
-
-                + SGridPanel::Slot(1, 2)
-                .Padding(6.0f, 0.0f, 0.0f, 8.0f)
-                [
-                    BuildInfoRow(FText::FromString(TEXT("Available Children")), FText::AsNumber(Executor->GetAvailableChildren().Num()))
-                ]
-
-                + SGridPanel::Slot(0, 3)
-                .Padding(0.0f, 0.0f, 6.0f, 0.0f)
-                [
-                    BuildInfoRow(
-                        FText::FromString(TEXT("Pause On Breakpoints")),
-                        Executor->GetPauseOnBreakpoints() ? FText::FromString(TEXT("Enabled")) : FText::FromString(TEXT("Disabled")))
-                ]
-
-                + SGridPanel::Slot(1, 3)
-                .Padding(6.0f, 0.0f, 0.0f, 0.0f)
-                [
-                    BuildInfoRow(
-                        FText::FromString(TEXT("Breakpoint Focus")),
-                        bIsCurrentBreakpoint ? FText::FromString(TEXT("Hit Breakpoint")) : FText::FromString(TEXT("No Breakpoint")))
+                    SNew(SListView<TSharedPtr<DreamFlowDebuggerView::FDebuggerInfoItem>>)
+                    .ListItemsSource(&SelectedInfoItems)
+                    .SelectionMode(ESelectionMode::None)
+                    .OnGenerateRow(this, &SDreamFlowDebuggerView::GenerateSelectedInfoRow)
+                    .AllowOverscroll(EAllowOverscroll::No)
+                    .ConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible)
+                    .ScrollbarVisibility(EVisibility::Collapsed)
                 ]
             ]
 
@@ -868,16 +899,13 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildSelectedExecutorInspector() con
             ]
 
             + SVerticalBox::Slot()
-            .AutoHeight()
+            .FillHeight(1.0f)
+            .Padding(0.0f, 0.0f, 0.0f, 2.0f)
             [
                 SNew(SBox)
-                .MaxDesiredHeight(300.0f)
+                .MinDesiredHeight(220.0f)
                 [
-                    SNew(SScrollBox)
-                    + SScrollBox::Slot()
-                    [
-                        VariableRows
-                    ]
+                    VariableContent
                 ]
             ]
         ];
@@ -1010,6 +1038,63 @@ TSharedRef<SWidget> SDreamFlowDebuggerView::BuildVariableRow(const FDreamFlowVar
                     ]
                 ]
             ]
+        ];
+}
+
+TSharedRef<ITableRow> SDreamFlowDebuggerView::GenerateSelectedInfoRow(TSharedPtr<DreamFlowDebuggerView::FDebuggerInfoItem> Item, const TSharedRef<STableViewBase>& OwnerTable) const
+{
+    const FText LabelText = Item.IsValid() ? Item->Label : FText::GetEmpty();
+    const FText ValueText = Item.IsValid() ? Item->Value : FText::GetEmpty();
+
+    return SNew(STableRow<TSharedPtr<DreamFlowDebuggerView::FDebuggerInfoItem>>, OwnerTable)
+        .Padding(FMargin(0.0f, 0.0f, 0.0f, 6.0f))
+        .ShowSelection(false)
+        [
+            SNew(SBorder)
+            .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+            .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
+            .Padding(FMargin(10.0f, 8.0f))
+            [
+                SNew(SHorizontalBox)
+
+                + SHorizontalBox::Slot()
+                .FillWidth(0.32f)
+                .VAlign(VAlign_Center)
+                .Padding(0.0f, 0.0f, 12.0f, 0.0f)
+                [
+                    SNew(STextBlock)
+                    .Text(LabelText)
+                    .TextStyle(FAppStyle::Get(), "SmallText")
+                    .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                ]
+
+                + SHorizontalBox::Slot()
+                .FillWidth(0.68f)
+                .VAlign(VAlign_Center)
+                [
+                    SNew(STextBlock)
+                    .Text(ValueText)
+                    .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+                    .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                    .AutoWrapText(true)
+                ]
+            ]
+        ];
+}
+
+TSharedRef<ITableRow> SDreamFlowDebuggerView::GenerateSelectedVariableRow(TSharedPtr<DreamFlowDebuggerView::FDebuggerVariableItem> Item, const TSharedRef<STableViewBase>& OwnerTable) const
+{
+    const FDreamFlowVariableDefinition EmptyDefinition;
+    const FDreamFlowValue EmptyValue;
+    const FDreamFlowVariableDefinition& VariableDefinition = Item.IsValid() ? Item->Definition : EmptyDefinition;
+    const FDreamFlowValue& CurrentValue = Item.IsValid() ? Item->CurrentValue : EmptyValue;
+    const bool bHasRuntimeValue = Item.IsValid() && Item->bHasRuntimeValue;
+
+    return SNew(STableRow<TSharedPtr<DreamFlowDebuggerView::FDebuggerVariableItem>>, OwnerTable)
+        .Padding(FMargin(0.0f, 0.0f, 0.0f, 6.0f))
+        .ShowSelection(false)
+        [
+            BuildVariableRow(VariableDefinition, CurrentValue, bHasRuntimeValue)
         ];
 }
 

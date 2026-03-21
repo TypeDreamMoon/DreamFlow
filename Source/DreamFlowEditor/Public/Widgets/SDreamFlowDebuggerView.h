@@ -5,6 +5,14 @@
 
 class UDreamFlowAsset;
 class UDreamFlowExecutor;
+class ITableRow;
+class STableViewBase;
+
+namespace DreamFlowDebuggerView
+{
+    struct FDebuggerInfoItem;
+    struct FDebuggerVariableItem;
+}
 
 class DREAMFLOWEDITOR_API SDreamFlowDebuggerView : public SCompoundWidget
 {
@@ -24,10 +32,13 @@ private:
     void RefreshExecutors();
     void RebuildExecutorList();
     void RebuildSelectedExecutorDetails();
+    void RefreshSelectedExecutorItems();
     TSharedRef<SWidget> BuildExecutorCard(UDreamFlowExecutor* Executor) const;
     TSharedRef<SWidget> BuildSelectedExecutorInspector() const;
     TSharedRef<SWidget> BuildInfoRow(const FText& Label, const FText& Value) const;
     TSharedRef<SWidget> BuildVariableRow(const struct FDreamFlowVariableDefinition& VariableDefinition, const struct FDreamFlowValue& CurrentValue, bool bHasRuntimeValue) const;
+    TSharedRef<ITableRow> GenerateSelectedInfoRow(TSharedPtr<DreamFlowDebuggerView::FDebuggerInfoItem> Item, const TSharedRef<STableViewBase>& OwnerTable) const;
+    TSharedRef<ITableRow> GenerateSelectedVariableRow(TSharedPtr<DreamFlowDebuggerView::FDebuggerVariableItem> Item, const TSharedRef<STableViewBase>& OwnerTable) const;
     void SelectExecutor(UDreamFlowExecutor* Executor);
     FReply HandleSelectExecutor(TWeakObjectPtr<UDreamFlowExecutor> Executor) const;
     FReply HandleContinueClicked() const;
@@ -56,8 +67,10 @@ private:
     TWeakObjectPtr<UDreamFlowAsset> FlowAsset;
     TWeakObjectPtr<UDreamFlowExecutor> SelectedExecutor;
     TArray<TWeakObjectPtr<UDreamFlowExecutor>> CachedExecutors;
+    TArray<TSharedPtr<DreamFlowDebuggerView::FDebuggerInfoItem>> SelectedInfoItems;
+    TArray<TSharedPtr<DreamFlowDebuggerView::FDebuggerVariableItem>> SelectedVariableItems;
     FOnNodeGuidActivated OnNodeGuidActivated;
-    TSharedPtr<class SVerticalBox> SelectedInspectorContainer;
+    TSharedPtr<class SBox> SelectedInspectorContainer;
     TSharedPtr<class SScrollBox> ExecutorContainer;
     TSharedPtr<class STextBlock> SummaryTextBlock;
 };

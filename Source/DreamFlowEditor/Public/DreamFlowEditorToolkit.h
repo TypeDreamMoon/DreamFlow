@@ -16,6 +16,8 @@ class UDreamFlowAsset;
 class UDreamFlowVariablesEditorData;
 class UEdGraph;
 class UDreamFlowNode;
+class FExtender;
+class FToolBarBuilder;
 struct FPropertyChangedEvent;
 struct FEdGraphEditAction;
 
@@ -26,6 +28,7 @@ public:
     static void OpenNodeEditorForGraph(UEdGraph* Graph, UObject* ObjectToEdit);
     static bool OpenAssetAndFocusNode(UDreamFlowAsset* InFlowAsset, const FGuid& NodeGuid);
     static bool GetValidationMessagesForGraphNode(UEdGraph* Graph, const FGuid& NodeGuid, TArray<FDreamFlowValidationMessage>& OutMessages);
+    static bool HasCurrentValidationResults(UEdGraph* Graph);
 
     virtual FName GetToolkitFName() const override;
     virtual FText GetBaseToolkitName() const override;
@@ -52,6 +55,8 @@ private:
     TSharedRef<class SDockTab> SpawnValidationTab(const class FSpawnTabArgs& Args);
     void CreateWidgets();
     void BindCommands();
+    void ExtendToolbar();
+    void FillToolbar(FToolBarBuilder& ToolbarBuilder);
     void HandleSelectedNodesChanged(const TSet<UObject*>& NewSelection);
     void HandleObjectPropertyChanged(UObject* ObjectBeingModified, FPropertyChangedEvent& PropertyChangedEvent);
     void HandleGraphChanged(const FEdGraphEditAction& Action);
@@ -78,8 +83,12 @@ private:
     void HandleNodeGuidActivated(const FGuid& NodeGuid);
     bool JumpToNodeGuid(const FGuid& NodeGuid);
     void OpenNodeEditor(UObject* ObjectToEdit);
+    void SetDetailsObject(UObject* ObjectToEdit);
     void SyncVariableEditorDataFromAsset();
     void SyncVariablesFromEditorData();
+    void MarkValidationDirty();
+    void RunValidation();
+    bool CanRunValidation() const;
     void RefreshValidation();
 
 private:
@@ -94,6 +103,7 @@ private:
     TObjectPtr<UDreamFlowAsset> FlowAsset = nullptr;
     TObjectPtr<UDreamFlowVariablesEditorData> VariablesEditorData = nullptr;
     TObjectPtr<UEdGraph> EditingGraph = nullptr;
+    TWeakObjectPtr<UObject> CurrentDetailsObject;
     TArray<FDreamFlowValidationMessage> ValidationMessages;
     TSharedPtr<SDreamFlowNodePalette> PaletteWidget;
     TSharedPtr<SGraphEditor> GraphEditorWidget;
@@ -102,7 +112,11 @@ private:
     TSharedPtr<SDreamFlowDebuggerView> DebuggerWidget;
     TSharedPtr<SDreamFlowValidationView> ValidationWidget;
     TSharedPtr<FUICommandList> GraphEditorCommands;
+    TSharedPtr<FExtender> ToolbarExtender;
     FDelegateHandle GraphChangedHandle;
     FDelegateHandle ObjectPropertyChangedHandle;
     bool bIsSynchronizingVariableEditorData = false;
+    bool bIsRefreshingValidationGraph = false;
+    bool bHasValidationRun = false;
+    bool bValidationDirty = true;
 };

@@ -15,6 +15,7 @@
 #include "EdGraph/EdGraph.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Commands/GenericCommands.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "GraphEditor.h"
 #include "HAL/PlatformApplicationMisc.h"
 #include "Modules/ModuleManager.h"
@@ -219,15 +220,16 @@ void FDreamFlowEditorToolkit::InitEditor(const EToolkitMode::Type Mode, const TS
         bCreateDefaultToolbar,
         ObjectsToEdit);
 
+    ExtendToolbar();
     RegenerateMenusAndToolbars();
 
     if (DetailsView.IsValid())
     {
-        DetailsView->SetObject(FlowAsset);
+        SetDetailsObject(FlowAsset);
     }
 
     SyncVariableEditorDataFromAsset();
-    RefreshValidation();
+    MarkValidationDirty();
 }
 
 void FDreamFlowEditorToolkit::OpenNodeEditorForGraph(UEdGraph* Graph, UObject* ObjectToEdit)
@@ -277,7 +279,7 @@ bool FDreamFlowEditorToolkit::GetValidationMessagesForGraphNode(UEdGraph* Graph,
 
     UDreamFlowAsset* Asset = FDreamFlowEditorUtils::GetFlowAssetFromGraph(Graph);
     FDreamFlowEditorToolkit* Toolkit = Asset != nullptr ? ActiveEditors.FindRef(Asset) : nullptr;
-    if (Toolkit == nullptr)
+    if (Toolkit == nullptr || !Toolkit->bHasValidationRun || Toolkit->bValidationDirty)
     {
         return false;
     }
@@ -291,6 +293,18 @@ bool FDreamFlowEditorToolkit::GetValidationMessagesForGraphNode(UEdGraph* Graph,
     }
 
     return OutMessages.Num() > 0;
+}
+
+bool FDreamFlowEditorToolkit::HasCurrentValidationResults(UEdGraph* Graph)
+{
+    if (Graph == nullptr)
+    {
+        return false;
+    }
+
+    UDreamFlowAsset* Asset = FDreamFlowEditorUtils::GetFlowAssetFromGraph(Graph);
+    FDreamFlowEditorToolkit* Toolkit = Asset != nullptr ? ActiveEditors.FindRef(Asset) : nullptr;
+    return Toolkit != nullptr && Toolkit->bHasValidationRun && !Toolkit->bValidationDirty;
 }
 
 FName FDreamFlowEditorToolkit::GetToolkitFName() const
@@ -382,7 +396,7 @@ void FDreamFlowEditorToolkit::PostUndo(bool bSuccess)
     GraphEditorWidget->ClearSelectionSet();
     GraphEditorWidget->NotifyGraphChanged();
     SyncVariableEditorDataFromAsset();
-    RefreshValidation();
+    MarkValidationDirty();
     FSlateApplication::Get().DismissAllMenus();
 }
 
@@ -492,7 +506,8 @@ void FDreamFlowEditorToolkit::CreateWidgets()
         .OnNodeGuidActivated(SDreamFlowDebuggerView::FOnNodeGuidActivated::CreateSP(this, &FDreamFlowEditorToolkit::HandleNodeGuidActivated));
 
     ValidationWidget = SNew(SDreamFlowValidationView)
-        .OnMessageActivated(SDreamFlowValidationView::FOnMessageActivated::CreateSP(this, &FDreamFlowEditorToolkit::HandleNodeGuidActivated));
+        .OnMessageActivated(SDreamFlowValidationView::FOnMessageActivated::CreateSP(this, &FDreamFlowEditorToolkit::HandleNodeGuidActivated))
+        .OnValidateRequested(SDreamFlowValidationView::FOnValidateRequested::CreateSP(this, &FDreamFlowEditorToolkit::RunValidation));
 
     FGraphAppearanceInfo AppearanceInfo;
     AppearanceInfo.CornerText = LOCTEXT("GraphCornerText", "DREAM FLOW");
@@ -511,6 +526,11 @@ void FDreamFlowEditorToolkit::CreateWidgets()
 void FDreamFlowEditorToolkit::BindCommands()
 {
     GraphEditorCommands = MakeShared<FUICommandList>();
+
+    GraphEditorCommands->MapAction(
+        FDreamFlowEditorCommands::Get().ValidateFlow,
+        FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::RunValidation),
+        FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanRunValidation));
 
     GraphEditorCommands->MapAction(
         FGenericCommands::Get().Delete,
@@ -556,6 +576,32 @@ void FDreamFlowEditorToolkit::BindCommands()
         FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanToggleBreakpointsOnSelectedNodes));
 }
 
+void FDreamFlowEditorToolkit::ExtendToolbar()
+{
+    ToolbarExtender = MakeShared<FExtender>();
+    ToolbarExtender->AddToolBarExtension(
+        "Asset",
+        EExtensionHook::After,
+        GraphEditorCommands,
+        FToolBarExtensionDelegate::CreateSP(this, &FDreamFlowEditorToolkit::FillToolbar));
+
+    AddToolbarExtender(ToolbarExtender);
+}
+
+void FDreamFlowEditorToolkit::FillToolbar(FToolBarBuilder& ToolbarBuilder)
+{
+    ToolbarBuilder.BeginSection("DreamFlowValidation");
+    {
+        ToolbarBuilder.AddToolBarButton(
+            FDreamFlowEditorCommands::Get().ValidateFlow,
+            NAME_None,
+            LOCTEXT("ValidateToolbarLabel", "Validate"),
+            LOCTEXT("ValidateToolbarTooltip", "Run DreamFlow validation for the current asset."),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "Kismet.Tabs.CompilerResults"));
+    }
+    ToolbarBuilder.EndSection();
+}
+
 void FDreamFlowEditorToolkit::HandleSelectedNodesChanged(const TSet<UObject*>& NewSelection)
 {
     if (!DetailsView.IsValid())
@@ -573,7 +619,15 @@ void FDreamFlowEditorToolkit::HandleSelectedNodesChanged(const TSet<UObject*>& N
         }
     }
 
-    DetailsView->SetObject(FlowAsset);
+    if (NewSelection.Num() == 0
+        && CurrentDetailsObject.IsValid()
+        && CurrentDetailsObject.Get() != FlowAsset
+        && CurrentDetailsObject->IsIn(FlowAsset))
+    {
+        return;
+    }
+
+    SetDetailsObject(FlowAsset);
 }
 
 void FDreamFlowEditorToolkit::HandleObjectPropertyChanged(UObject* ObjectBeingModified, FPropertyChangedEvent& PropertyChangedEvent)
@@ -603,14 +657,20 @@ void FDreamFlowEditorToolkit::HandleObjectPropertyChanged(UObject* ObjectBeingMo
     }
 
     EditingGraph->NotifyGraphChanged();
-    RefreshValidation();
+    MarkValidationDirty();
 }
 
 void FDreamFlowEditorToolkit::HandleGraphChanged(const FEdGraphEditAction& Action)
 {
     (void)Action;
+
+    if (bIsRefreshingValidationGraph)
+    {
+        return;
+    }
+
     FDreamFlowEditorUtils::SynchronizeAssetFromGraph(FlowAsset);
-    RefreshValidation();
+    MarkValidationDirty();
 }
 
 void FDreamFlowEditorToolkit::DeleteSelectedNodes()
@@ -706,7 +766,7 @@ void FDreamFlowEditorToolkit::DeleteSelectedDuplicatableNodes()
     }
 
     FDreamFlowEditorUtils::SynchronizeAssetFromGraph(FlowAsset);
-    RefreshValidation();
+    MarkValidationDirty();
 }
 
 bool FDreamFlowEditorToolkit::CanSelectAllNodes() const
@@ -862,7 +922,7 @@ void FDreamFlowEditorToolkit::PasteNodesHere(const FVector2D& Location)
 
     FDreamFlowEditorUtils::SynchronizeAssetFromGraph(FlowAsset);
     GraphEditorWidget->NotifyGraphChanged();
-    RefreshValidation();
+    MarkValidationDirty();
 }
 
 bool FDreamFlowEditorToolkit::CanPasteNodes() const
@@ -928,7 +988,7 @@ void FDreamFlowEditorToolkit::ToggleBreakpointsOnSelectedNodes()
 
     if (bToggledAnyBreakpoint)
     {
-        RefreshValidation();
+        GraphEditorWidget->NotifyGraphChanged();
     }
 }
 
@@ -983,7 +1043,7 @@ void FDreamFlowEditorToolkit::CreateNodeFromPaletteAtPosition(TSubclassOf<UDream
         GraphEditorWidget->ClearSelectionSet();
         GraphEditorWidget->SetNodeSelection(NewNode, true);
         GraphEditorWidget->JumpToNode(NewNode, false);
-        RefreshValidation();
+        MarkValidationDirty();
     }
 }
 
@@ -1031,15 +1091,28 @@ bool FDreamFlowEditorToolkit::JumpToNodeGuid(const FGuid& NodeGuid)
 
 void FDreamFlowEditorToolkit::OpenNodeEditor(UObject* ObjectToEdit)
 {
-    if (DetailsView.IsValid() && ObjectToEdit != nullptr)
-    {
-        DetailsView->SetObject(ObjectToEdit);
-    }
+    SetDetailsObject(ObjectToEdit);
 
     if (TSharedPtr<FTabManager> ToolkitTabManager = GetTabManager())
     {
         ToolkitTabManager->TryInvokeTab(DetailsTabId);
     }
+}
+
+void FDreamFlowEditorToolkit::SetDetailsObject(UObject* ObjectToEdit)
+{
+    if (!DetailsView.IsValid() || ObjectToEdit == nullptr)
+    {
+        return;
+    }
+
+    if (CurrentDetailsObject.Get() == ObjectToEdit)
+    {
+        return;
+    }
+
+    CurrentDetailsObject = ObjectToEdit;
+    DetailsView->SetObject(ObjectToEdit);
 }
 
 void FDreamFlowEditorToolkit::SyncVariableEditorDataFromAsset()
@@ -1075,23 +1148,55 @@ void FDreamFlowEditorToolkit::SyncVariablesFromEditorData()
     }
 
     EditingGraph->NotifyGraphChanged();
-    RefreshValidation();
+    MarkValidationDirty();
 }
 
-void FDreamFlowEditorToolkit::RefreshValidation()
+void FDreamFlowEditorToolkit::MarkValidationDirty()
+{
+    bValidationDirty = true;
+    RefreshValidation();
+
+    if (GraphEditorWidget.IsValid())
+    {
+        TGuardValue<bool> RefreshGuard(bIsRefreshingValidationGraph, true);
+        GraphEditorWidget->NotifyGraphChanged();
+    }
+}
+
+void FDreamFlowEditorToolkit::RunValidation()
 {
     if (FlowAsset == nullptr)
     {
         ValidationMessages.Reset();
+        bHasValidationRun = false;
+        bValidationDirty = true;
     }
     else
     {
         FlowAsset->ValidateFlow(ValidationMessages);
+        bHasValidationRun = true;
+        bValidationDirty = false;
     }
 
+    RefreshValidation();
+
+    if (GraphEditorWidget.IsValid())
+    {
+        TGuardValue<bool> RefreshGuard(bIsRefreshingValidationGraph, true);
+        GraphEditorWidget->NotifyGraphChanged();
+    }
+}
+
+bool FDreamFlowEditorToolkit::CanRunValidation() const
+{
+    return FlowAsset != nullptr;
+}
+
+void FDreamFlowEditorToolkit::RefreshValidation()
+{
     if (ValidationWidget.IsValid())
     {
-        ValidationWidget->SetMessages(ValidationMessages);
+        ValidationWidget->SetValidationState(ValidationMessages, bHasValidationRun, bValidationDirty);
     }
 }
 
