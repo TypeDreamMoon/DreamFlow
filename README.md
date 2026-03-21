@@ -1,84 +1,98 @@
 # DreamFlow
 
-DreamFlow is a lightweight Unreal flow graph framework designed as a reusable base for:
+DreamFlow is the core Unreal flow graph plugin in the Dream plugin stack.
 
-- Quest/task graphs
-- Dialogue graphs
-- State and progression editors
-- Custom designer-facing logic graphs
+It provides a reusable runtime executor, a node-based editor, flow-scoped variables, Blueprint/C++ extensibility, debugging tools, and replication support for game-facing logic graphs.
 
-## What it includes
+The `DreamFlow` plugin is the foundation layer. Domain packs such as quest, dialogue, story, or encounter flows now live outside the core plugin.
 
-- `UDreamFlowAsset`: graph asset that stores runtime node data
-- `UDreamQuestFlowAsset`: quest-specialized flow asset
-- `UDreamDialogueFlowAsset`: dialogue-specialized flow asset
+## Modules
+
+- `DreamFlow`: runtime graph asset, node, executor, variables, bindings, and networking support
+- `DreamFlowEditor`: asset factory, asset editor toolkit, graph schema, debugger, validation panel, and custom Slate graph UI
+
+## Core features
+
+- `UDreamFlowAsset`: reusable flow graph asset
 - `UDreamFlowNode`: extensible runtime node base class
 - `UDreamFlowAsyncNode`: async-ready node base for Blueprint and C++ latent workflows
 - `UDreamFlowEntryNode`: built-in entry node
 - `UDreamFlowExecutor`: runtime flow runner with Blueprint events
-- `UDreamFlowAsyncContext`: completion handle passed into async nodes
-- `UDreamFlowExecutorComponent`: Actor component wrapper for gameplay use
-- Per-flow variable definitions with typed runtime values and bindings
-- Per-flow startup option to choose whether `StartFlow` auto-executes past the entry node
-- Built-in generic core nodes such as `Branch`, `Compare`, and `Set Variable`
-- Built-in async `Delay` node for time-based flow waits
-- Multi-output node pins with named branches such as `True` and `False`
-- Node preview content area with text, color, and image display items
-- Breakpoint-aware DreamFlow debugger tab for active executors
-- Graph validation helpers and validation message structs
-- `DreamFlowQuest`: quest/task focused node module
-- `DreamFlowDialogue`: dialogue focused node module
-- `DreamFlowEditor`: asset factory, asset editor toolkit, graph schema, and custom node Slate UI
-- Blueprint helpers in `UDreamFlowBlueprintLibrary`
-- `UDreamFlowSettings`: Developer Settings entry for logging and diagnostics
-- `LogDreamFlow`: settings-driven runtime log category
-- Automation tests for execution, validation, replication snapshot, and log filtering
+- `UDreamFlowAsyncContext`: async completion handle passed into async nodes
+- `UDreamFlowExecutorComponent`: Actor component wrapper with replication support
+- Per-flow typed variables with defaults and runtime values
+- Value binding support for literal-or-variable driven node inputs
+- Multi-output pins with named branches such as `True`, `False`, or `Completed`
+- Inline node preview items for text, color, and image display
+- Breakpoint-aware debugger tab for active executors
+- Validation helpers and automation coverage for runtime/editor behavior
+- Blueprint helper functions in `UDreamFlowBlueprintLibrary`
+- Settings-driven logging through `UDreamFlowSettings` and `LogDreamFlow`
 
-## How to use
+## What ships in the core plugin
+
+The core plugin intentionally stays generic.
+
+It includes:
+
+- the `Dream Flow` asset type
+- the standard DreamFlow editor
+- generic flow execution/runtime systems
+- generic core nodes such as `Branch`, `Compare`, `Set Variable`, `Delay`, and `Finish Flow`
+
+It does not include domain-specific packs such as Quest or Dialogue anymore. Those have moved into separate plugins.
+
+## Editor workflow
 
 1. Enable the `DreamFlow` plugin.
-2. In Content Browser create the asset type that matches your domain:
-   `Dream Flow`, `Dream Quest Flow`, or `Dream Dialogue Flow`.
+2. In the Content Browser create a `Dream Flow` asset.
 3. Open the asset to edit the graph.
 4. Right click in the graph to add nodes.
-5. Use `Choose Node Class...` to add Blueprint-derived node types.
-6. Use the left `Node Palette` tab to quickly place common node classes.
-7. Select a node to open its runtime object in the right `Node Editor` tab.
-8. Use the right `Validation` tab to inspect broken links, unreachable nodes, duplicate GUIDs, and other structural issues.
-9. Open the `Debugger` tab to inspect live executors while running in PIE or game.
-10. Use the `Variables` tab to edit flow-scoped environment variables in one dedicated panel.
+5. Use `Choose Node Class...` to place Blueprint-derived DreamFlow node classes into the graph.
+6. Use the left `Palette` tab to place common compatible node classes quickly.
+7. Select a node to edit its runtime object in the right `Node Editor` tab.
+8. Use the `Variables` tab to manage flow-scoped variables and defaults.
+9. Use the `Validation` tab to inspect structural problems.
+10. Use the `Debugger` tab during PIE/gameplay to inspect active executors, pause, continue, step, and stop.
 11. Right click a node and choose `Add Breakpoint` to pause before that node executes.
-12. The graph editor supports undo/redo, copy, cut, paste, and duplicate for normal nodes.
-13. If you want `StartFlow` to stop on the entry node instead of immediately running the first gameplay node, disable `Auto Execute Entry Node On Start` on the flow asset.
+12. The graph editor supports undo/redo, copy, cut, paste, duplicate, comments, and normal node selection workflows.
+
+## Create Node Class
+
+DreamFlow includes a fast way to create Blueprint node implementations.
+
+You can create a new node class from either:
+
+- Content Browser `Add New` -> `DreamFlow` -> `Create Node Class...`
+- the DreamFlow editor toolbar button `Create Node Class` beside `Validate`
+
+This opens a class picker for `UDreamFlowNode`-derived parent classes and creates a Blueprint asset in the current Content Browser path.
 
 ## Flow variables
 
-Every `UDreamFlowAsset` now owns a `Variables` array, so each flow asset can define its own environment-style data without pushing everything into one global runtime object.
+Every `UDreamFlowAsset` owns a `Variables` array, so each flow can define its own environment-style data without relying on one global runtime object.
 
-- Variable definitions are now surfaced in a dedicated `Variables` editor tab.
-- The variables tab supports type-first creation, so designers can add `Bool`, `Int`, `Float`, `Name`, `String`, `Text`, `GameplayTag`, and `Object` variables directly from the header menu.
-- Each variable has a `Name`, `Description`, and typed `DefaultValue`.
-- Supported value types are `Bool`, `Int`, `Float`, `Name`, `String`, `Text`, `GameplayTag`, and `Object`.
+- Variable definitions are edited in the dedicated `Variables` tab.
+- The variables tab supports type-first creation for `Bool`, `Int`, `Float`, `Name`, `String`, `Text`, `GameplayTag`, and `Object`.
+- Each variable stores a `Name`, `Description`, and typed `DefaultValue`.
 - When a `UDreamFlowExecutor` initializes, it copies those defaults into its runtime variable map.
 - Each flow asset can choose whether `StartFlow` should immediately execute past the entry node through `bAutoExecuteEntryNodeOnStart`.
 
-This makes the variable model feel closer to Blueprint variables, but still scoped per DreamFlow asset.
-
 ## Variable bindings
 
-DreamFlow now includes a lightweight binding struct, `FDreamFlowValueBinding`, for nodes that need data input.
+DreamFlow includes a lightweight binding struct, `FDreamFlowValueBinding`, for nodes that need data input.
 
 - A binding can read from either a literal value or a named flow variable.
-- The details UI now exposes a dedicated source picker and a variable dropdown so bindings feel closer to the StateTree workflow.
-- Bindings can expose an expected value type, and the variable picker filters out incompatible flow variables when possible.
-- The executor resolves bindings at runtime and converts values to the target variable type when possible.
+- The details UI exposes a source picker and variable dropdown for compatible flow variables.
+- Bindings can declare an expected value type, and the editor filters incompatible variables when possible.
+- The executor resolves bindings at runtime and converts values to the target type when possible.
 - Validation reports missing variables and incompatible literal values.
 
-Out of the box, the built-in core logic nodes already use these bindings.
+The built-in core logic nodes already use these bindings.
 
 ## Built-in core nodes
 
-The base `DreamFlow` module now ships with a reusable `Core` category for generic flow logic.
+The base `DreamFlow` module ships with a reusable `Core` category for generic flow logic.
 
 - `UDreamFlowBranchNode`: evaluates a bound boolean and routes to child `0` for true or child `1` for false
 - `UDreamFlowCompareNode`: compares two bound values and routes to child `0` or `1`
@@ -86,40 +100,47 @@ The base `DreamFlow` module now ships with a reusable `Core` category for generi
 - `UDreamFlowFinishFlowNode`: immediately ends the current flow execution
 - `UDreamFlowDelayNode`: waits asynchronously for a duration, then continues through `Completed`
 
-These nodes target `UDreamFlowAsset`, so they are available in any DreamFlow-derived asset type unless a more specialized node chooses to narrow compatibility.
+These nodes target `UDreamFlowAsset`, so they are available in any DreamFlow-derived asset type unless a more specialized node narrows compatibility.
 
 ## Multi-output pins
 
-Nodes can now declare named output pins instead of being limited to one generic `Out`.
+Nodes can declare named output pins instead of being limited to one generic `Out`.
 
-- Output pin definitions come from `UDreamFlowNode::GetOutputPins`.
-- The graph editor renders one pin per declared output.
-- Automatic transitions can now resolve by output pin name instead of relying only on child index.
-- Built-in branching nodes use this to expose explicit `True` and `False` outputs.
+- Output pin definitions come from `UDreamFlowNode::GetOutputPins`
+- The graph editor renders one pin per declared output
+- Automatic transitions can resolve by output pin name instead of relying only on child index
+- Built-in branching nodes use this to expose explicit `True` and `False` outputs
 
-## Node preview area
+## Node appearance and previews
 
 Every `UDreamFlowNode` can expose a compact display area inside the graph node card.
 
-- Use the built-in `PreviewItems` array for simple previews.
-- Override `GetNodeDisplayItems` for fully data-driven custom previews from C++ or Blueprint.
-- Supported display item types are `Text`, `Color`, and `Image`.
+- Use the built-in `PreviewItems` array for simple previews
+- Override `GetNodeDisplayItems` for fully data-driven custom previews from C++ or Blueprint
+- Supported display item types are `Text`, `Color`, and `Image`
+- Node cards, pins, and connection colors use the node's `NodeTint` so graph visuals stay consistent
 
-This is useful for showing things like dialogue portraits, task state colors, reward summaries, icons, or short designer notes directly on the node.
+This is useful for showing portraits, state colors, rewards, icons, summary text, or designer notes directly on the node.
+
+## Large graph behavior
+
+The editor is optimized to stay usable on bigger graphs.
+
+- Node details are opened through a deferred update path instead of forcing synchronous details refreshes during selection changes
+- Validation messages are cached by node GUID for cheaper graph painting
+- For large graphs, inline node property editors are automatically disabled once the graph grows beyond the inline-editor threshold, and editing continues in the `Node Editor` side panel
+
+This keeps large multi-node assets more responsive while preserving normal authoring workflows.
 
 ## Asset compatibility
 
-Nodes can now declare which flow asset type they support through `SupportedFlowAssetType`.
+Nodes can declare which flow asset type they support through `SupportedFlowAssetType`.
 
-- If a node supports `UDreamFlowAsset`, it can be used in any DreamFlow asset subclass.
-- If a node supports a specialized asset such as `UDreamQuestFlowAsset` or `UDreamDialogueFlowAsset`, it will only appear in compatible editors.
-- Incompatible nodes are blocked by palette/context-menu creation and are also reported by validation if they already exist in an asset.
+- If a node supports `UDreamFlowAsset`, it can be used in any DreamFlow asset subclass
+- If a node supports a specialized asset subclass from another plugin, it will only appear in compatible editors
+- Incompatible nodes are blocked by palette/context-menu creation and can also be reported by validation
 
-The built-in domain nodes are configured like this by default:
-
-- Quest nodes target `UDreamQuestFlowAsset`
-- Dialogue nodes target `UDreamDialogueFlowAsset`
-- Core nodes target `UDreamFlowAsset`
+Core DreamFlow nodes target `UDreamFlowAsset`.
 
 ## C++ extension
 
@@ -156,22 +177,22 @@ Example:
 
 ```cpp
 UCLASS(BlueprintType, Blueprintable, EditInlineNew, DefaultToInstanced)
-class MYGAME_API UQuestStepNode : public UDreamFlowNode
+class MYGAME_API UMyTagCheckNode : public UDreamFlowNode
 {
     GENERATED_BODY()
 
 public:
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest")
-    FName QuestStepId;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flow")
+    FName Label;
 
-    UQuestStepNode()
+    UMyTagCheckNode()
     {
-        SupportedFlowAssetType = UDreamQuestFlowAsset::StaticClass();
+        SupportedFlowAssetType = UDreamFlowAsset::StaticClass();
     }
 
     virtual FText GetNodeDisplayName_Implementation() const override
     {
-        return FText::FromName(QuestStepId);
+        return FText::FromName(Label);
     }
 
     virtual TArray<FDreamFlowNodeDisplayItem> GetNodeDisplayItems_Implementation() const override
@@ -180,8 +201,8 @@ public:
 
         FDreamFlowNodeDisplayItem TextItem;
         TextItem.Type = EDreamFlowNodeDisplayItemType::Text;
-        TextItem.Label = FText::FromString(TEXT("Quest Step"));
-        TextItem.TextValue = FText::FromName(QuestStepId);
+        TextItem.Label = FText::FromString(TEXT("Label"));
+        TextItem.TextValue = FText::FromName(Label);
         Items.Add(TextItem);
 
         return Items;
@@ -197,15 +218,13 @@ For async Blueprint nodes, derive from `UDreamFlowAsyncNode` instead.
 
 - Override `StartAsyncNode`
 - Use the provided `AsyncContext` object to call `Complete()` or `CompleteWithOutputPin()`
-- Keep your async state outside the node asset itself; the `AsyncContext` and `Executor` carry the runtime state safely per execution
-- Nodes now expose a per-node `TransitionMode`. Set it to `Automatic` for nodes like branches/conditions that should resolve their next output immediately after execution, or keep it `Manual` when you want Blueprint/gameplay code to call `Step()` or `StepToOutputPin()`
-- Blueprint node classes can also call `ContinueFlow(Executor)` or `ContinueFlowFromOutputPin(Executor, OutputPinName)` directly on `self` from inside `ExecuteNodeWithExecutor`
-
-This makes it much easier to hook DreamFlow nodes into Blueprint timers, latent tasks, gameplay callbacks, online requests, or animation notifies without manually rebuilding executor state.
+- Keep runtime state outside the node asset itself; the `AsyncContext` and `Executor` carry execution state per run
+- Use per-node `TransitionMode` to switch between `Automatic` and `Manual` output handling
+- Blueprint node classes can also call `ContinueFlow(Executor)` or `ContinueFlowFromOutputPin(Executor, OutputPinName)` from `ExecuteNodeWithExecutor`
 
 ## Runtime execution
 
-You can execute graphs either by creating `UDreamFlowExecutor` directly or by attaching `UDreamFlowExecutorComponent` to an Actor.
+You can execute flows either by creating `UDreamFlowExecutor` directly or by attaching `UDreamFlowExecutorComponent` to an Actor.
 
 The executor currently supports:
 
@@ -237,7 +256,7 @@ The executor currently supports:
 - `ResolveBindingValue`
 - `ResolveBindingAsBool`
 
-For Blueprint convenience, `UDreamFlowBlueprintLibrary` also exposes helper constructors such as:
+`UDreamFlowBlueprintLibrary` also exposes helper constructors such as:
 
 - `MakeBoolFlowValue`
 - `MakeIntFlowValue`
@@ -247,7 +266,7 @@ For Blueprint convenience, `UDreamFlowBlueprintLibrary` also exposes helper cons
 - `MakeTextFlowValue`
 - `MakeGameplayTagFlowValue`
 
-It also exposes Blueprint delegates for:
+And it exposes Blueprint delegates for:
 
 - `OnFlowStarted`
 - `OnFlowFinished`
@@ -259,36 +278,35 @@ It also exposes Blueprint delegates for:
 
 ## Logging and diagnostics
 
-DreamFlow now includes a built-in log category and a `Developer Settings` page.
+DreamFlow includes a built-in log category and a `Developer Settings` page.
 
 - Open `Project Settings -> DreamPlugin -> Dream Flow`
 - Use `Logging` to enable or disable DreamFlow logs globally
-- Use `Log Verbosity` to clamp output from `Error` up through `VeryVerbose`
+- Use `Log Verbosity` to clamp output from `Error` through `VeryVerbose`
 - Use channel toggles to control `General`, `Execution`, `Variables`, `Replication`, `Validation`, and `Automation Tests` logging independently
 
 Runtime logs are emitted through `LogDreamFlow`, so they can also be filtered through normal Unreal log tooling.
 
 ## Networking
 
-`UDreamFlowExecutorComponent` now supports a server-authoritative replication flow.
+`UDreamFlowExecutorComponent` supports a server-authoritative replication flow.
 
-- The server owns the real `UDreamFlowExecutor` and runs node logic there.
-- The component replicates flow asset assignment, current node GUID, visited node GUIDs, pause state, and runtime flow variables.
-- The replicated snapshot also carries the async waiting state, so client mirrors know when a flow is blocked on an async node.
-- Clients build a mirrored local executor from that replicated snapshot, so Blueprint reads such as `GetCurrentNode` and `GetVariable...Value` continue to work on remote machines.
-- Client calls made through `UDreamFlowExecutorComponent` such as `StartFlow`, `Advance`, `ChooseChild`, `MoveToOutputPin`, `SetVariable...Value`, and `ResetVariablesToDefaults` are forwarded to the server with RPCs.
-- Manual multi-output nodes can be driven safely over the network with `StepToOutputPin`, while automatic nodes continue to resolve on the authoritative executor.
-- For multiplayer gameplay, prefer calling the component APIs instead of invoking `UDreamFlowExecutor` directly.
+- The server owns the real `UDreamFlowExecutor` and runs node logic there
+- The component replicates flow asset assignment, current node GUID, visited node GUIDs, pause state, and runtime flow variables
+- The replicated snapshot also carries async waiting state so clients know when a flow is blocked
+- Clients build a mirrored local executor from that replicated snapshot, so Blueprint reads such as `GetCurrentNode` and `GetVariable...Value` still work remotely
+- Client calls such as `StartFlow`, `Advance`, `ChooseChild`, `MoveToOutputPin`, `SetVariable...Value`, and `ResetVariablesToDefaults` are forwarded to the server with RPCs
+- Manual multi-output nodes can be driven safely over the network with `StepToOutputPin`
 
 Notes:
 
-- The owning Actor still needs normal Unreal replication enabled.
-- This first pass syncs execution state and variables, but it does not replay arbitrary node-side gameplay effects on clients; those should still be driven by your own replicated gameplay systems.
-- `Object` variables are only safe to use over the network when they point to references Unreal can already replicate or resolve on remote machines.
+- The owning Actor still needs normal Unreal replication enabled
+- The replicated state mirrors execution and variables, but it does not replay arbitrary gameplay side effects for your nodes
+- `Object` variables are only safe over the network when they point to references Unreal can already replicate or resolve remotely
 
 ## Automation tests
 
-DreamFlow now ships with automation coverage for core runtime behavior.
+DreamFlow ships with automation coverage for core runtime behavior.
 
 - `DreamFlow.Core.Execution.AutomaticBranching`
 - `DreamFlow.Core.Execution.ManualMultiOutputStep`
@@ -300,7 +318,7 @@ DreamFlow now ships with automation coverage for core runtime behavior.
 - `DreamFlow.Core.Logging.SettingsFiltering`
 - `DreamFlow.Core.Display.BindingCompactDescription`
 
-You can run them from the Automation window or from command line with:
+Run them from the Automation window or from command line with:
 
 ```powershell
 UnrealEditor-Cmd.exe PluginsDevelop.uproject -ExecCmds="Automation RunTests DreamFlow.Core; Quit" -TestExit="Automation Test Queue Empty" -unattended -NullRHI
@@ -310,29 +328,22 @@ UnrealEditor-Cmd.exe PluginsDevelop.uproject -ExecCmds="Automation RunTests Drea
 
 The editor debugger is designed for live inspection of `UDreamFlowExecutor` instances tied to the currently opened asset.
 
-- It lists active executors for the asset while PIE or gameplay is running.
-- It shows current debug state and focused node.
-- It supports `Pause`, `Continue`, `Step`, and `Stop`.
-- It can focus the selected runtime node back in the graph editor.
-- Breakpoints are stored on the flow asset by node GUID, so they stay attached to the graph.
+- It lists active executors for the asset while PIE or gameplay is running
+- It shows current debug state and focused node
+- It supports `Pause`, `Continue`, `Step`, and `Stop`
+- It can focus the selected runtime node back in the graph editor
+- Breakpoints are stored on the flow asset by node GUID, so they stay attached to the graph
 
-## Included domain modules
+## Companion plugins
 
-### Quest module
+DreamFlow is designed to be extended by sibling plugins.
 
-`DreamFlowQuest` ships with:
+Current companion plugins in this repository include:
 
-- `UDreamFlowQuestTaskNode`
-- `UDreamFlowQuestConditionNode`
-- `UDreamFlowQuestCompleteNode`
+- `DreamFlowExpansion`: domain packs such as Quest, Dialogue, Story, and Encounter flow assets and nodes
+- `DreamFlowGameplayTaskBridge`: bridge nodes that connect DreamFlow execution to the `DreamGameplayTask` plugin
 
-### Dialogue module
-
-`DreamFlowDialogue` ships with:
-
-- `UDreamFlowDialogueLineNode`
-- `UDreamFlowDialogueChoiceNode`
-- `UDreamFlowDialogueEndNode`
+If you need quest/dialogue behavior, enable `DreamFlowExpansion` in addition to `DreamFlow`.
 
 ## Validation
 
@@ -346,5 +357,6 @@ The editor debugger is designed for live inspection of `UDreamFlowExecutor` inst
 - nodes with no incoming links
 - missing bound variables
 - incompatible literal bindings for typed variable writes
+- asset-type compatibility issues for incompatible nodes
 
-These rules are intentionally generic so the framework stays reusable across quest, dialogue, and custom flow systems.
+These rules are intentionally generic so the core framework stays reusable across different flow domains.
