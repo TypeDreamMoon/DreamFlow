@@ -25,6 +25,7 @@
 #include "SGraphPin.h"
 #include "Widgets/Colors/SColorBlock.h"
 #include "Widgets/Images/SImage.h"
+#include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SSeparator.h"
@@ -730,6 +731,14 @@ TSharedRef<SWidget> SGraphNode_DreamFlow::BuildInlineEditorArea()
 
 TSharedRef<SWidget> SGraphNode_DreamFlow::BuildInlinePropertyWidget(const TSharedRef<IDetailTreeNode>& DetailNode) const
 {
+    if (const TSharedPtr<IPropertyHandle> PropertyHandle = DetailNode->CreatePropertyHandle())
+    {
+        if (PropertyHandle->AsArray().IsValid())
+        {
+            return BuildInlineArrayPropertyWidget(PropertyHandle.ToSharedRef());
+        }
+    }
+
     const FNodeWidgets NodeWidgets = DetailNode->CreateNodeWidgets();
 
     if (NodeWidgets.WholeRowWidget.IsValid())
@@ -767,6 +776,219 @@ TSharedRef<SWidget> SGraphNode_DreamFlow::BuildInlinePropertyWidget(const TShare
                     : SNullWidget::NullWidget
             ]
         ];
+}
+
+TSharedRef<SWidget> SGraphNode_DreamFlow::BuildInlineArrayPropertyWidget(const TSharedRef<IPropertyHandle>& PropertyHandle) const
+{
+    const TSharedPtr<IPropertyHandleArray> ArrayHandle = PropertyHandle->AsArray();
+    if (!ArrayHandle.IsValid())
+    {
+        return SNullWidget::NullWidget;
+    }
+
+    uint32 ElementCount = 0;
+    ArrayHandle->GetNumElements(ElementCount);
+
+    TSharedRef<SVerticalBox> ElementsBox = SNew(SVerticalBox);
+    if (ElementCount == 0)
+    {
+        ElementsBox->AddSlot()
+            .AutoHeight()
+            .Padding(0.0f, 8.0f, 0.0f, 0.0f)
+            [
+                SNew(STextBlock)
+                .Text(FText::FromString(TEXT("No items yet.")))
+                .TextStyle(FAppStyle::Get(), "SmallText")
+                .ColorAndOpacity(this, &SGraphNode_DreamFlow::GetMutedTextColor)
+            ];
+    }
+    else
+    {
+        for (uint32 ElementIndex = 0; ElementIndex < ElementCount; ++ElementIndex)
+        {
+            const TSharedPtr<IPropertyHandle> ElementHandle = ArrayHandle->GetElement(ElementIndex);
+            if (!ElementHandle.IsValid())
+            {
+                continue;
+            }
+
+            ElementsBox->AddSlot()
+                .AutoHeight()
+                .Padding(0.0f, ElementIndex == 0 ? 8.0f : 6.0f, 0.0f, 0.0f)
+                [
+                    SNew(SBorder)
+                    .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                    .BorderBackgroundColor(FSlateColor(EStyleColor::Panel))
+                    .Padding(FMargin(8.0f, 6.0f))
+                    [
+                        SNew(SHorizontalBox)
+                        + SHorizontalBox::Slot()
+                        .AutoWidth()
+                        .VAlign(VAlign_Center)
+                        [
+                            SNew(STextBlock)
+                            .Text(FText::Format(FText::FromString(TEXT("#{0}")), FText::AsNumber(static_cast<int32>(ElementIndex) + 1)))
+                            .TextStyle(FAppStyle::Get(), "SmallText")
+                            .ColorAndOpacity(this, &SGraphNode_DreamFlow::GetClassTextColor)
+                        ]
+                        + SHorizontalBox::Slot()
+                        .FillWidth(1.0f)
+                        .Padding(8.0f, 0.0f, 0.0f, 0.0f)
+                        .VAlign(VAlign_Center)
+                        [
+                            ElementHandle->CreatePropertyValueWidget()
+                        ]
+                        + SHorizontalBox::Slot()
+                        .AutoWidth()
+                        .Padding(6.0f, 0.0f, 0.0f, 0.0f)
+                        .VAlign(VAlign_Center)
+                        [
+                            SNew(SButton)
+                            .ButtonStyle(FAppStyle::Get(), "SimpleButton")
+                            .ToolTipText(FText::FromString(TEXT("Remove this item.")))
+                            .OnClicked_Lambda([this, WeakPropertyHandle = TWeakPtr<IPropertyHandle>(PropertyHandle), ElementIndex]()
+                            {
+                                if (const TSharedPtr<IPropertyHandle> PinnedPropertyHandle = WeakPropertyHandle.Pin())
+                                {
+                                    if (const TSharedPtr<IPropertyHandleArray> PinnedArrayHandle = PinnedPropertyHandle->AsArray())
+                                    {
+                                        if (PinnedArrayHandle->DeleteItem(static_cast<int32>(ElementIndex)) == FPropertyAccess::Success)
+                                        {
+                                            RefreshGraphNodeAfterInlineArrayMutation();
+                                        }
+                                    }
+                                }
+
+                                return FReply::Handled();
+                            })
+                            [
+                                SNew(SImage)
+                                .Image(FAppStyle::GetBrush("Icons.Delete"))
+                            ]
+                        ]
+                    ]
+                ];
+        }
+    }
+
+    return SNew(SBorder)
+        .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+        .BorderBackgroundColor(FSlateColor(EStyleColor::Panel))
+        .Padding(FMargin(8.0f, 6.0f))
+        [
+            SNew(SVerticalBox)
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                .VAlign(VAlign_Center)
+                [
+                    PropertyHandle->CreatePropertyNameWidget()
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                [
+                    SNew(STextBlock)
+                    .Text(FText::Format(
+                        FText::FromString(TEXT("{0} item{1}")),
+                        FText::AsNumber(static_cast<int32>(ElementCount)),
+                        ElementCount == 1 ? FText::GetEmpty() : FText::FromString(TEXT("s"))))
+                    .TextStyle(FAppStyle::Get(), "SmallText")
+                    .ColorAndOpacity(this, &SGraphNode_DreamFlow::GetMutedTextColor)
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(8.0f, 0.0f, 0.0f, 0.0f)
+                .VAlign(VAlign_Center)
+                [
+                    SNew(SButton)
+                    .ButtonStyle(FAppStyle::Get(), "SimpleButton")
+                    .ToolTipText(FText::FromString(TEXT("Add a new item.")))
+                    .OnClicked_Lambda([this, WeakPropertyHandle = TWeakPtr<IPropertyHandle>(PropertyHandle)]()
+                    {
+                        if (const TSharedPtr<IPropertyHandle> PinnedPropertyHandle = WeakPropertyHandle.Pin())
+                        {
+                            if (const TSharedPtr<IPropertyHandleArray> PinnedArrayHandle = PinnedPropertyHandle->AsArray())
+                            {
+                                const FPropertyHandleItemAddResult AddResult = PinnedArrayHandle->AddItem();
+                                if (AddResult.GetAccessResult() == FPropertyAccess::Success)
+                                {
+                                    RefreshGraphNodeAfterInlineArrayMutation();
+                                }
+                            }
+                        }
+
+                        return FReply::Handled();
+                    })
+                    [
+                        SNew(SImage)
+                        .Image(FAppStyle::GetBrush("Icons.PlusCircle"))
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(6.0f, 0.0f, 0.0f, 0.0f)
+                .VAlign(VAlign_Center)
+                [
+                    SNew(SButton)
+                    .ButtonStyle(FAppStyle::Get(), "SimpleButton")
+                    .IsEnabled(ElementCount > 0)
+                    .ToolTipText(FText::FromString(TEXT("Remove all items.")))
+                    .OnClicked_Lambda([this, WeakPropertyHandle = TWeakPtr<IPropertyHandle>(PropertyHandle)]()
+                    {
+                        if (const TSharedPtr<IPropertyHandle> PinnedPropertyHandle = WeakPropertyHandle.Pin())
+                        {
+                            if (const TSharedPtr<IPropertyHandleArray> PinnedArrayHandle = PinnedPropertyHandle->AsArray())
+                            {
+                                uint32 PinnedElementCount = 0;
+                                PinnedArrayHandle->GetNumElements(PinnedElementCount);
+
+                                bool bRemovedAny = false;
+                                for (int32 Index = static_cast<int32>(PinnedElementCount) - 1; Index >= 0; --Index)
+                                {
+                                    bRemovedAny |= PinnedArrayHandle->DeleteItem(Index) == FPropertyAccess::Success;
+                                }
+
+                                if (bRemovedAny)
+                                {
+                                    RefreshGraphNodeAfterInlineArrayMutation();
+                                }
+                            }
+                        }
+
+                        return FReply::Handled();
+                    })
+                    [
+                        SNew(SImage)
+                        .Image(FAppStyle::GetBrush("Icons.Delete"))
+                    ]
+                ]
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                ElementsBox
+            ]
+        ];
+}
+
+void SGraphNode_DreamFlow::RefreshGraphNodeAfterInlineArrayMutation() const
+{
+    UDreamFlowEdGraphNode* FlowNode = GetFlowNode();
+    if (FlowNode == nullptr)
+    {
+        return;
+    }
+
+    FlowNode->ReconstructNode();
+
+    if (UEdGraph* Graph = FlowNode->GetGraph())
+    {
+        Graph->NotifyGraphChanged();
+    }
 }
 
 TSharedRef<SWidget> SGraphNode_DreamFlow::BuildPreviewArea()

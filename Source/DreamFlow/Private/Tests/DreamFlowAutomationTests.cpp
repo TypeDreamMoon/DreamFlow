@@ -30,6 +30,14 @@ namespace
         UDreamFlowNode* CompletedNode = nullptr;
     };
 
+    struct FDreamFlowFinishTestGraph
+    {
+        UDreamFlowAsset* Asset = nullptr;
+        UDreamFlowEntryNode* EntryNode = nullptr;
+        UDreamFlowFinishFlowNode* FinishNode = nullptr;
+        UDreamFlowNode* IgnoredNode = nullptr;
+    };
+
     static FDreamFlowValue MakeBoolValue(const bool bValue)
     {
         FDreamFlowValue Value;
@@ -112,6 +120,30 @@ namespace
             Graph.EntryNode,
             Graph.AsyncNode,
             Graph.CompletedNode
+        });
+        Graph.Asset->SetEntryNodeInternal(Graph.EntryNode);
+
+        return Graph;
+    }
+
+    static FDreamFlowFinishTestGraph BuildFinishFlowAsset()
+    {
+        FDreamFlowFinishTestGraph Graph;
+        Graph.Asset = NewObject<UDreamFlowAsset>(GetTransientPackage(), NAME_None, RF_Transient);
+
+        Graph.EntryNode = NewObject<UDreamFlowEntryNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.FinishNode = NewObject<UDreamFlowFinishFlowNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.IgnoredNode = NewObject<UDreamFlowNode>(Graph.Asset, NAME_None, RF_Transient);
+
+        Graph.IgnoredNode->Title = FText::FromString(TEXT("Ignored After Finish"));
+
+        Graph.EntryNode->SetOutputLinks({ MakeOutputLink(TEXT("Out"), Graph.FinishNode) });
+        Graph.FinishNode->SetOutputLinks({ MakeOutputLink(TEXT("Out"), Graph.IgnoredNode) });
+
+        Graph.Asset->ReplaceNodes({
+            Graph.EntryNode,
+            Graph.FinishNode,
+            Graph.IgnoredNode
         });
         Graph.Asset->SetEntryNodeInternal(Graph.EntryNode);
 
@@ -207,6 +239,32 @@ bool FDreamFlowManualMultiOutputStepTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("A second executor should also start successfully."), NodeDrivenExecutor->StartFlow());
     TestTrue(TEXT("Node helper flow continuation should step through the requested output pin."), Graph.BranchNode->ContinueFlowFromOutputPin(NodeDrivenExecutor, TEXT("False")));
     TestEqual(TEXT("Node helper output stepping should enter the false node."), NodeDrivenExecutor->GetCurrentNode(), Graph.FalseNode);
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowFinishNodeStopsExecutionTest,
+    "DreamFlow.Core.Execution.FinishFlowNodeStopsExecution",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowFinishNodeStopsExecutionTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FDreamFlowFinishTestGraph Graph = BuildFinishFlowAsset();
+    UDreamFlowExecutor* Executor = NewObject<UDreamFlowExecutor>(GetTransientPackage(), NAME_None, RF_Transient);
+    Executor->Initialize(Graph.Asset, nullptr);
+
+    TestTrue(TEXT("Finish flow test graph should start successfully."), Executor->StartFlow());
+    TestFalse(TEXT("Finish Flow node should stop execution immediately."), Executor->IsRunning());
+    TestEqual(TEXT("Executor should report the finished debug state after the finish node runs."), Executor->GetDebugState(), EDreamFlowExecutorDebugState::Finished);
+    TestNull(TEXT("Current node should be cleared after FinishFlow executes."), Executor->GetCurrentNode());
+
+    const TArray<UDreamFlowNode*> VisitedNodes = Executor->GetVisitedNodes();
+    TestEqual(TEXT("Finish flow test should only visit the entry node and finish node."), VisitedNodes.Num(), 2);
+    TestTrue(TEXT("Visited nodes should include the finish node."), VisitedNodes.Contains(Graph.FinishNode));
+    TestFalse(TEXT("Nodes after Finish Flow should never execute."), VisitedNodes.Contains(Graph.IgnoredNode));
 
     return true;
 }

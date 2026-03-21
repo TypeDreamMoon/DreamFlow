@@ -125,6 +125,12 @@ FDreamFlowEditorToolkit::~FDreamFlowEditorToolkit()
         FCoreUObjectDelegates::OnObjectPropertyChanged.Remove(ObjectPropertyChangedHandle);
         ObjectPropertyChangedHandle.Reset();
     }
+
+    if (DeferredGraphRefreshHandle.IsValid())
+    {
+        FTSTicker::GetCoreTicker().RemoveTicker(DeferredGraphRefreshHandle);
+        DeferredGraphRefreshHandle.Reset();
+    }
 }
 
 void FDreamFlowEditorToolkit::InitEditor(const EToolkitMode::Type Mode, const TSharedPtr<IToolkitHost>& InitToolkitHost, UDreamFlowAsset* InFlowAsset)
@@ -696,8 +702,88 @@ void FDreamFlowEditorToolkit::HandleObjectPropertyChanged(UObject* ObjectBeingMo
         SyncVariableEditorDataFromAsset();
     }
 
-    EditingGraph->NotifyGraphChanged();
-    MarkValidationDirty();
+    if (UDreamFlowNode* RuntimeNode = Cast<UDreamFlowNode>(ObjectBeingModified))
+    {
+        QueueDeferredNodeReconstruction(RuntimeNode);
+    }
+    else if (UDreamFlowNode* OwningRuntimeNode = ObjectBeingModified->GetTypedOuter<UDreamFlowNode>())
+    {
+        QueueDeferredNodeReconstruction(OwningRuntimeNode);
+    }
+
+    bValidationDirty = true;
+    RefreshValidation();
+    RequestDeferredGraphRefresh();
+}
+
+void FDreamFlowEditorToolkit::QueueDeferredNodeReconstruction(UDreamFlowNode* RuntimeNode)
+{
+    if (RuntimeNode == nullptr)
+    {
+        return;
+    }
+
+    PendingNodeReconstructions.RemoveAll([](const TWeakObjectPtr<UDreamFlowNode>& WeakNode)
+    {
+        return !WeakNode.IsValid();
+    });
+
+    PendingNodeReconstructions.AddUnique(RuntimeNode);
+}
+
+void FDreamFlowEditorToolkit::RequestDeferredGraphRefresh()
+{
+    if (DeferredGraphRefreshHandle.IsValid())
+    {
+        return;
+    }
+
+    // Rebuilding the graph immediately from a PropertyEditor callback can invalidate
+    // inline property widgets while array mutations are still being processed.
+    DeferredGraphRefreshHandle = FTSTicker::GetCoreTicker().AddTicker(
+        FTickerDelegate::CreateRaw(this, &FDreamFlowEditorToolkit::HandleDeferredGraphRefresh),
+        0.0f);
+}
+
+bool FDreamFlowEditorToolkit::HandleDeferredGraphRefresh(float DeltaTime)
+{
+    (void)DeltaTime;
+
+    DeferredGraphRefreshHandle.Reset();
+
+    if (UDreamFlowEdGraph* FlowGraph = Cast<UDreamFlowEdGraph>(EditingGraph))
+    {
+        TArray<UDreamFlowEdGraphNode*> GraphNodes;
+        FlowGraph->GetNodesOfClass(GraphNodes);
+
+        for (const TWeakObjectPtr<UDreamFlowNode>& WeakRuntimeNode : PendingNodeReconstructions)
+        {
+            UDreamFlowNode* RuntimeNode = WeakRuntimeNode.Get();
+            if (RuntimeNode == nullptr)
+            {
+                continue;
+            }
+
+            for (UDreamFlowEdGraphNode* GraphNode : GraphNodes)
+            {
+                if (GraphNode != nullptr && GraphNode->GetRuntimeNode() == RuntimeNode)
+                {
+                    GraphNode->ReconstructNode();
+                    break;
+                }
+            }
+        }
+    }
+
+    PendingNodeReconstructions.Reset();
+
+    if (GraphEditorWidget.IsValid())
+    {
+        TGuardValue<bool> RefreshGuard(bIsRefreshingValidationGraph, true);
+        GraphEditorWidget->NotifyGraphChanged();
+    }
+
+    return false;
 }
 
 bool FDreamFlowEditorToolkit::HandleNodeVerifyTitleCommit(const FText& NewText, UEdGraphNode* NodeBeingChanged, FText& OutErrorMessage)

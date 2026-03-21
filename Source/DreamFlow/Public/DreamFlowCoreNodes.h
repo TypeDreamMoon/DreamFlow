@@ -88,6 +88,26 @@ public:
 };
 
 UCLASS(BlueprintType, Blueprintable, EditInlineNew, DefaultToInstanced)
+class DREAMFLOW_API UDreamFlowFinishFlowNode : public UDreamFlowCoreNode
+{
+    GENERATED_BODY()
+
+public:
+    UDreamFlowFinishFlowNode();
+
+    virtual FText GetNodeDisplayName_Implementation() const override;
+    virtual FLinearColor GetNodeTint_Implementation() const override;
+    virtual FText GetNodeAccentLabel_Implementation() const override;
+    virtual TArray<FDreamFlowNodeDisplayItem> GetNodeDisplayItems_Implementation() const override;
+    virtual TArray<FDreamFlowNodeOutputPin> GetOutputPins_Implementation() const override;
+    virtual bool SupportsMultipleChildren_Implementation() const override;
+    virtual bool IsTerminalNode_Implementation() const override;
+    virtual bool CanConnectTo_Implementation(const UDreamFlowNode* OtherNode) const override;
+    virtual void ExecuteNodeWithExecutor_Implementation(UObject* Context, UDreamFlowExecutor* Executor) override;
+    virtual void ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const override;
+};
+
+UCLASS(BlueprintType, Blueprintable, EditInlineNew, DefaultToInstanced)
 class DREAMFLOW_API UDreamFlowDelayNode : public UDreamFlowAsyncNode
 {
     GENERATED_BODY()

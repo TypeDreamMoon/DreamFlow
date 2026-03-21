@@ -417,6 +417,84 @@ void UDreamFlowSetVariableNode::ValidateNode(const UDreamFlowAsset* OwningAsset,
     }
 }
 
+UDreamFlowFinishFlowNode::UDreamFlowFinishFlowNode()
+{
+    Title = FText::FromString(TEXT("Finish Flow"));
+    Description = FText::FromString(TEXT("Immediately ends the current flow execution."));
+
+#if WITH_EDITORONLY_DATA
+    NodeTint = FLinearColor(0.78f, 0.20f, 0.25f, 1.0f);
+#endif
+}
+
+FText UDreamFlowFinishFlowNode::GetNodeDisplayName_Implementation() const
+{
+    return Title;
+}
+
+FLinearColor UDreamFlowFinishFlowNode::GetNodeTint_Implementation() const
+{
+    return FLinearColor(0.78f, 0.20f, 0.25f, 1.0f);
+}
+
+FText UDreamFlowFinishFlowNode::GetNodeAccentLabel_Implementation() const
+{
+    return FText::FromString(TEXT("Finish"));
+}
+
+TArray<FDreamFlowNodeDisplayItem> UDreamFlowFinishFlowNode::GetNodeDisplayItems_Implementation() const
+{
+    TArray<FDreamFlowNodeDisplayItem> Items = Super::GetNodeDisplayItems_Implementation();
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Action")), TEXT("End Execution")));
+    return Items;
+}
+
+TArray<FDreamFlowNodeOutputPin> UDreamFlowFinishFlowNode::GetOutputPins_Implementation() const
+{
+    return {};
+}
+
+bool UDreamFlowFinishFlowNode::SupportsMultipleChildren_Implementation() const
+{
+    return false;
+}
+
+bool UDreamFlowFinishFlowNode::IsTerminalNode_Implementation() const
+{
+    return true;
+}
+
+bool UDreamFlowFinishFlowNode::CanConnectTo_Implementation(const UDreamFlowNode* OtherNode) const
+{
+    (void)OtherNode;
+    return false;
+}
+
+void UDreamFlowFinishFlowNode::ExecuteNodeWithExecutor_Implementation(UObject* Context, UDreamFlowExecutor* Executor)
+{
+    Super::ExecuteNodeWithExecutor_Implementation(Context, Executor);
+    (void)Context;
+
+    if (Executor != nullptr)
+    {
+        Executor->FinishFlow();
+    }
+}
+
+void UDreamFlowFinishFlowNode::ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const
+{
+    (void)OwningAsset;
+
+    if (GetChildrenCopy().Num() > 0)
+    {
+        AddValidationMessage(
+            OutMessages,
+            this,
+            EDreamFlowValidationSeverity::Info,
+            FText::FromString(TEXT("Finish Flow ends execution immediately and ignores outgoing links.")));
+    }
+}
+
 UDreamFlowDelayNode::UDreamFlowDelayNode()
 {
     Title = FText::FromString(TEXT("Delay"));

@@ -5,6 +5,7 @@
 #include "Toolkits/AssetEditorToolkit.h"
 #include "EdGraph/EdGraph.h"
 #include "EditorUndoClient.h"
+#include "Containers/Ticker.h"
 #include "Types/SlateEnums.h"
 #include "UObject/GCObject.h"
 
@@ -17,6 +18,7 @@ class UDreamFlowAsset;
 class UDreamFlowVariablesEditorData;
 class UEdGraph;
 class UEdGraphNode;
+class UDreamFlowEdGraphNode;
 class UDreamFlowNode;
 class FExtender;
 class FReply;
@@ -63,6 +65,9 @@ private:
     void FillToolbar(FToolBarBuilder& ToolbarBuilder);
     void HandleSelectedNodesChanged(const TSet<UObject*>& NewSelection);
     void HandleObjectPropertyChanged(UObject* ObjectBeingModified, FPropertyChangedEvent& PropertyChangedEvent);
+    void QueueDeferredNodeReconstruction(UDreamFlowNode* RuntimeNode);
+    void RequestDeferredGraphRefresh();
+    bool HandleDeferredGraphRefresh(float DeltaTime);
     bool HandleNodeVerifyTitleCommit(const FText& NewText, UEdGraphNode* NodeBeingChanged, FText& OutErrorMessage);
     void HandleNodeTitleCommitted(const FText& NewText, ETextCommit::Type CommitInfo, UEdGraphNode* NodeBeingChanged);
     void HandleGraphChanged(const FEdGraphEditAction& Action);
@@ -127,6 +132,8 @@ private:
     TSharedPtr<FExtender> ToolbarExtender;
     FDelegateHandle GraphChangedHandle;
     FDelegateHandle ObjectPropertyChangedHandle;
+    FTSTicker::FDelegateHandle DeferredGraphRefreshHandle;
+    TArray<TWeakObjectPtr<UDreamFlowNode>> PendingNodeReconstructions;
     bool bIsSynchronizingVariableEditorData = false;
     bool bIsRefreshingValidationGraph = false;
     bool bHasValidationRun = false;

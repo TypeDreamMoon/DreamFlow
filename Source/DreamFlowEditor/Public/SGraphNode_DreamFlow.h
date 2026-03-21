@@ -5,6 +5,7 @@
 #include "SGraphNode.h"
 
 class IDetailTreeNode;
+class IPropertyHandle;
 class IPropertyRowGenerator;
 class UDreamFlowEdGraphNode;
 class UTexture2D;
@@ -31,6 +32,8 @@ private:
     TArray<TSharedRef<IDetailTreeNode>> GetInlinePropertyNodes() const;
     TSharedRef<SWidget> BuildInlineEditorArea();
     TSharedRef<SWidget> BuildInlinePropertyWidget(const TSharedRef<IDetailTreeNode>& DetailNode) const;
+    TSharedRef<SWidget> BuildInlineArrayPropertyWidget(const TSharedRef<IPropertyHandle>& PropertyHandle) const;
+    void RefreshGraphNodeAfterInlineArrayMutation() const;
     TSharedRef<SWidget> BuildPreviewArea();
     TSharedRef<SWidget> BuildDisplayItemWidget(const struct FDreamFlowNodeDisplayItem& Item);
     TArray<FDreamFlowValidationMessage> GetValidationMessages() const;

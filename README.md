@@ -83,6 +83,7 @@ The base `DreamFlow` module now ships with a reusable `Core` category for generi
 - `UDreamFlowBranchNode`: evaluates a bound boolean and routes to child `0` for true or child `1` for false
 - `UDreamFlowCompareNode`: compares two bound values and routes to child `0` or `1`
 - `UDreamFlowSetVariableNode`: writes a flow variable, then auto-continues to the first child
+- `UDreamFlowFinishFlowNode`: immediately ends the current flow execution
 - `UDreamFlowDelayNode`: waits asynchronously for a duration, then continues through `Completed`
 
 These nodes target `UDreamFlowAsset`, so they are available in any DreamFlow-derived asset type unless a more specialized node chooses to narrow compatibility.
@@ -294,6 +295,7 @@ DreamFlow now ships with automation coverage for core runtime behavior.
 - `DreamFlow.Core.Execution.AsyncManualCompletion`
 - `DreamFlow.Core.Execution.ManualEntryStart`
 - `DreamFlow.Core.Validation.MissingVariable`
+- `DreamFlow.Core.Execution.FinishFlowNodeStopsExecution`
 - `DreamFlow.Core.Network.ReplicatedStateMirror`
 - `DreamFlow.Core.Logging.SettingsFiltering`
 - `DreamFlow.Core.Display.BindingCompactDescription`
