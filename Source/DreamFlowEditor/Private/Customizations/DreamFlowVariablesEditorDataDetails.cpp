@@ -3,18 +3,19 @@
 #include "DreamFlowVariablesEditorData.h"
 #include "DetailCategoryBuilder.h"
 #include "DetailLayoutBuilder.h"
+#include "DetailWidgetRow.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "IPropertyUtilities.h"
-#include "PropertyCustomizationHelpers.h"
 #include "PropertyHandle.h"
 #include "Styling/AppStyle.h"
 #include "Styling/StyleColors.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SComboButton.h"
+#include "Widgets/Input/SSearchBox.h"
 #include "Widgets/Layout/SBorder.h"
-#include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
+#include "Widgets/Layout/SSplitter.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SNullWidget.h"
 #include "Widgets/Text/STextBlock.h"
@@ -129,52 +130,60 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildVariablesPanel()
         .Padding(0.0f)
         [
             SNew(SVerticalBox)
-
             + SVerticalBox::Slot()
             .AutoHeight()
             [
                 SNew(SBorder)
                 .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-                .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
-                .Padding(FMargin(12.0f, 12.0f))
+                .BorderBackgroundColor(FSlateColor(EStyleColor::Header))
+                .Padding(FMargin(14.0f, 12.0f))
                 [
-                    SNew(SVerticalBox)
-                    + SVerticalBox::Slot()
-                    .AutoHeight()
+                    SNew(SHorizontalBox)
+                    + SHorizontalBox::Slot()
+                    .FillWidth(1.0f)
+                    .VAlign(VAlign_Center)
                     [
-                        SNew(SHorizontalBox)
-                        + SHorizontalBox::Slot()
-                        .FillWidth(1.0f)
-                        .VAlign(VAlign_Center)
+                        SNew(SVerticalBox)
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
                         [
-                            SNew(SVerticalBox)
-                            + SVerticalBox::Slot()
-                            .AutoHeight()
-                            [
-                                SNew(STextBlock)
-                                .Text(LOCTEXT("VariablesPanelTitle", "Environment Variables"))
-                                .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
-                                .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
-                            ]
-                            + SVerticalBox::Slot()
-                            .AutoHeight()
-                            .Padding(0.0f, 4.0f, 0.0f, 0.0f)
-                            [
-                                SNew(STextBlock)
-                                .Text(FText::Format(
-                                    LOCTEXT("VariablesPanelSubtitle", "{0} variables available to bindings and runtime execution."),
-                                    FText::AsNumber(VariableCount)))
-                                .TextStyle(FAppStyle::Get(), "SmallText")
-                                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
-                            ]
+                            SNew(STextBlock)
+                            .Text(LOCTEXT("VariablesPanelTitle", "Flow Variables"))
+                            .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
                         ]
-                        + SHorizontalBox::Slot()
-                        .AutoWidth()
-                        .VAlign(VAlign_Center)
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        .Padding(0.0f, 4.0f, 0.0f, 0.0f)
                         [
-                            SNew(SComboButton)
-                            .OnGetMenuContent(this, &FDreamFlowVariablesEditorDataDetails::BuildAddVariableMenu)
-                            .ButtonContent()
+                            SNew(STextBlock)
+                            .Text(FText::Format(
+                                LOCTEXT("VariablesPanelSubtitle", "{0} environment variables available to DreamFlow bindings and runtime execution."),
+                                FText::AsNumber(VariableCount)))
+                            .TextStyle(FAppStyle::Get(), "SmallText")
+                            .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                        ]
+                    ]
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .VAlign(VAlign_Center)
+                    [
+                        SNew(SComboButton)
+                        .ButtonStyle(FAppStyle::Get(), "SimpleButton")
+                        .OnGetMenuContent(this, &FDreamFlowVariablesEditorDataDetails::BuildAddVariableMenu)
+                        .ButtonContent()
+                        [
+                            SNew(SHorizontalBox)
+                            + SHorizontalBox::Slot()
+                            .AutoWidth()
+                            .VAlign(VAlign_Center)
+                            [
+                                SNew(SImage)
+                                .Image(FAppStyle::Get().GetBrush("Icons.Plus"))
+                            ]
+                            + SHorizontalBox::Slot()
+                            .AutoWidth()
+                            .Padding(6.0f, 0.0f, 0.0f, 0.0f)
+                            .VAlign(VAlign_Center)
                             [
                                 SNew(STextBlock)
                                 .Text(LOCTEXT("AddVariableButton", "Add Variable"))
@@ -184,19 +193,71 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildVariablesPanel()
                     ]
                 ]
             ]
-
             + SVerticalBox::Slot()
-            .FillHeight(0.40f)
-            .Padding(FMargin(0.0f, 10.0f, 0.0f, 0.0f))
+            .FillHeight(1.0f)
+            .Padding(FMargin(0.0f, 8.0f, 0.0f, 0.0f))
+            [
+                SNew(SSplitter)
+                .PhysicalSplitterHandleSize(2.0f)
+                + SSplitter::Slot()
+                .Value(0.38f)
+                [
+                    BuildVariablesSidebar()
+                ]
+                + SSplitter::Slot()
+                .Value(0.62f)
+                [
+                    BuildSelectedVariableEditor()
+                ]
+            ]
+        ];
+}
+
+TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildVariablesSidebar() const
+{
+    const TArray<int32> FilteredIndices = GetFilteredVariableIndices();
+
+    return SNew(SBorder)
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+        .Padding(0.0f)
+        [
+            SNew(SVerticalBox)
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                SNew(SBorder)
+                .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
+                .Padding(FMargin(10.0f, 8.0f))
+                [
+                    SNew(SVerticalBox)
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    [
+                        SNew(SSearchBox)
+                        .HintText(LOCTEXT("VariablesSearchHint", "Search variables"))
+                        .InitialText(FText::FromString(SearchText))
+                        .OnTextChanged(const_cast<FDreamFlowVariablesEditorDataDetails*>(this), &FDreamFlowVariablesEditorDataDetails::HandleSearchTextChanged)
+                    ]
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(0.0f, 6.0f, 0.0f, 0.0f)
+                    [
+                        SNew(STextBlock)
+                        .Text(FText::Format(
+                            SearchText.IsEmpty()
+                                ? LOCTEXT("VariablesListCount", "{0} variables")
+                                : LOCTEXT("VariablesFilteredCount", "{0} shown"),
+                            FText::AsNumber(FilteredIndices.Num())))
+                        .TextStyle(FAppStyle::Get(), "SmallText")
+                        .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                    ]
+                ]
+            ]
+            + SVerticalBox::Slot()
+            .FillHeight(1.0f)
             [
                 BuildVariablesList()
-            ]
-
-            + SVerticalBox::Slot()
-            .FillHeight(0.60f)
-            .Padding(FMargin(0.0f, 10.0f, 0.0f, 0.0f))
-            [
-                BuildSelectedVariableEditor()
             ]
         ];
 }
@@ -235,33 +296,36 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildVariablesList() c
         VariablesArrayHandle->GetNumElements(VariableCount);
     }
 
+    const TArray<int32> FilteredIndices = GetFilteredVariableIndices();
     if (VariableCount == 0)
     {
         return BuildEmptyState(
             LOCTEXT("NoVariablesTitle", "No Variables Yet"),
-            LOCTEXT("NoVariablesDescription", "Add a variable type from the header above to expose runtime data to bindings and flow logic."));
+            LOCTEXT("NoVariablesDescription", "Add a variable from the header above to expose runtime data to bindings and flow logic."));
+    }
+
+    if (FilteredIndices.Num() == 0)
+    {
+        return BuildEmptyState(
+            LOCTEXT("NoSearchMatchesTitle", "No Matching Variables"),
+            LOCTEXT("NoSearchMatchesDescription", "Try another name, type, description, or default value search term."));
     }
 
     TSharedRef<SVerticalBox> CardsBox = SNew(SVerticalBox);
-    for (uint32 Index = 0; Index < VariableCount; ++Index)
+    for (int32 EntryIndex = 0; EntryIndex < FilteredIndices.Num(); ++EntryIndex)
     {
         CardsBox->AddSlot()
             .AutoHeight()
-            .Padding(FMargin(0.0f, Index == 0 ? 0.0f : 8.0f, 0.0f, 0.0f))
+            .Padding(FMargin(8.0f, EntryIndex == 0 ? 8.0f : 4.0f, 8.0f, EntryIndex == FilteredIndices.Num() - 1 ? 8.0f : 0.0f))
             [
-                BuildVariableCard(static_cast<int32>(Index))
+                BuildVariableCard(FilteredIndices[EntryIndex])
             ];
     }
 
-    return SNew(SBorder)
-        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-        .Padding(8.0f)
+    return SNew(SScrollBox)
+        + SScrollBox::Slot()
         [
-            SNew(SScrollBox)
-            + SScrollBox::Slot()
-            [
-                CardsBox
-            ]
+            CardsBox
         ];
 }
 
@@ -277,77 +341,118 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildVariableCard(int3
     const bool bIsSelected = GetSelectedVariableIndex() == VariableIndex;
     const FLinearColor AccentColor = DreamFlowVariablesDetails::GetValueTypeColor(VariableDefinition.DefaultValue.Type);
 
-    return SNew(SButton)
-        .ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
-        .OnClicked_Lambda([this, VariableIndex]()
-        {
-            SelectVariable(VariableIndex);
-            return FReply::Handled();
-        })
-        .ContentPadding(0.0f)
+    return SNew(SBorder)
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+        .BorderBackgroundColor(bIsSelected ? FSlateColor(EStyleColor::Select) : FSlateColor(EStyleColor::InputOutline))
+        .Padding(1.0f)
         [
-            SNew(SBorder)
-            .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-            .BorderBackgroundColor(bIsSelected ? FSlateColor(EStyleColor::Primary) : FSlateColor(EStyleColor::InputOutline))
-            .Padding(1.0f)
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot()
+            .AutoWidth()
             [
-                SNew(SHorizontalBox)
-
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                [
-                    SNew(SBorder)
-                    .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-                    .BorderBackgroundColor(AccentColor)
-                    .Padding(FMargin(2.5f, 0.0f))
-                ]
-
-                + SHorizontalBox::Slot()
-                .FillWidth(1.0f)
+                SNew(SBorder)
+                .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                .BorderBackgroundColor(AccentColor)
+                .Padding(FMargin(2.5f, 0.0f))
+            ]
+            + SHorizontalBox::Slot()
+            .FillWidth(1.0f)
+            [
+                SNew(SButton)
+                .ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
+                .ContentPadding(0.0f)
+                .OnClicked_Lambda([this, VariableIndex]()
+                {
+                    SelectVariable(VariableIndex);
+                    return FReply::Handled();
+                })
                 [
                     SNew(SBorder)
                     .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
                     .BorderBackgroundColor(bIsSelected ? FSlateColor(EStyleColor::Header) : FSlateColor(EStyleColor::Panel))
                     .Padding(FMargin(10.0f, 8.0f))
                     [
-                        SNew(SVerticalBox)
-                        + SVerticalBox::Slot()
-                        .AutoHeight()
+                        SNew(SHorizontalBox)
+                        + SHorizontalBox::Slot()
+                        .FillWidth(1.0f)
                         [
-                            SNew(SHorizontalBox)
-                            + SHorizontalBox::Slot()
-                            .FillWidth(1.0f)
+                            SNew(SVerticalBox)
+                            + SVerticalBox::Slot()
+                            .AutoHeight()
                             [
-                                SNew(STextBlock)
-                                .Text(GetVariableDisplayName(VariableIndex))
-                                .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-                                .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
-                            ]
-                            + SHorizontalBox::Slot()
-                            .AutoWidth()
-                            [
-                                SNew(SBorder)
-                                .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-                                .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
-                                .Padding(FMargin(6.0f, 2.0f))
+                                SNew(SHorizontalBox)
+                                + SHorizontalBox::Slot()
+                                .FillWidth(1.0f)
                                 [
                                     SNew(STextBlock)
-                                    .Text(DreamFlowVariablesDetails::GetValueTypeLabel(VariableDefinition.DefaultValue.Type))
-                                    .TextStyle(FAppStyle::Get(), "SmallText")
-                                    .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                                    .Text(GetVariableDisplayName(VariableIndex))
+                                    .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+                                ]
+                                + SHorizontalBox::Slot()
+                                .AutoWidth()
+                                [
+                                    SNew(SBorder)
+                                    .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                                    .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
+                                    .Padding(FMargin(6.0f, 2.0f))
+                                    [
+                                        SNew(STextBlock)
+                                        .Text(DreamFlowVariablesDetails::GetValueTypeLabel(VariableDefinition.DefaultValue.Type))
+                                        .TextStyle(FAppStyle::Get(), "SmallText")
+                                    ]
                                 ]
                             ]
+                            + SVerticalBox::Slot()
+                            .AutoHeight()
+                            .Padding(0.0f, 4.0f, 0.0f, 0.0f)
+                            [
+                                SNew(STextBlock)
+                                .Text(GetVariableSummary(VariableIndex))
+                                .TextStyle(FAppStyle::Get(), "SmallText")
+                                .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                                .WrapTextAt(260.0f)
+                            ]
                         ]
-                        + SVerticalBox::Slot()
-                        .AutoHeight()
-                        .Padding(0.0f, 4.0f, 0.0f, 0.0f)
-                        [
-                            SNew(STextBlock)
-                            .Text(GetVariableSummary(VariableIndex))
-                            .TextStyle(FAppStyle::Get(), "SmallText")
-                            .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
-                            .WrapTextAt(320.0f)
-                        ]
+                    ]
+                ]
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(FMargin(6.0f, 0.0f, 0.0f, 0.0f))
+            .VAlign(VAlign_Center)
+            [
+                SNew(SVerticalBox)
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                [
+                    SNew(SButton)
+                    .ButtonStyle(FAppStyle::Get(), "SimpleButton")
+                    .ToolTipText(LOCTEXT("DuplicateVariableTooltip", "Duplicate this variable."))
+                    .OnClicked_Lambda([this, VariableIndex]()
+                    {
+                        DuplicateVariable(VariableIndex);
+                        return FReply::Handled();
+                    })
+                    [
+                        SNew(SImage)
+                        .Image(FAppStyle::Get().GetBrush("Icons.Duplicate"))
+                    ]
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 4.0f, 0.0f, 0.0f)
+                [
+                    SNew(SButton)
+                    .ButtonStyle(FAppStyle::Get(), "SimpleButton")
+                    .ToolTipText(LOCTEXT("RemoveVariableTooltip", "Remove this variable."))
+                    .OnClicked_Lambda([this, VariableIndex]()
+                    {
+                        RemoveVariable(VariableIndex);
+                        return FReply::Handled();
+                    })
+                    [
+                        SNew(SImage)
+                        .Image(FAppStyle::Get().GetBrush("Icons.Delete"))
                     ]
                 ]
             ]
@@ -362,7 +467,7 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildSelectedVariableE
     {
         return BuildEmptyState(
             LOCTEXT("NoVariableSelectedTitle", "Select A Variable"),
-            LOCTEXT("NoVariableSelectedDescription", "Pick a variable card above to edit its name, description, and default value."));
+            LOCTEXT("NoVariableSelectedDescription", "Pick a variable on the left to edit its name, description, and default value."));
     }
 
     return SNew(SBorder)
@@ -370,7 +475,6 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildSelectedVariableE
         .Padding(0.0f)
         [
             SNew(SVerticalBox)
-
             + SVerticalBox::Slot()
             .AutoHeight()
             [
@@ -389,9 +493,8 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildSelectedVariableE
                         .AutoHeight()
                         [
                             SNew(STextBlock)
-                            .Text(LOCTEXT("SelectedVariableTitle", "Selected Variable"))
+                            .Text(LOCTEXT("SelectedVariableTitle", "Variable Details"))
                             .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
-                            .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
                         ]
                         + SVerticalBox::Slot()
                         .AutoHeight()
@@ -440,35 +543,99 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildSelectedVariableE
                     ]
                 ]
             ]
-
             + SVerticalBox::Slot()
             .FillHeight(1.0f)
-            .Padding(FMargin(10.0f, 10.0f))
             [
-                    SNew(SScrollBox)
-                    + SScrollBox::Slot()
+                SNew(SScrollBox)
+                + SScrollBox::Slot()
+                [
+                    SNew(SVerticalBox)
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(FMargin(10.0f, 10.0f, 10.0f, 0.0f))
                     [
-                        SNew(SVerticalBox)
-                        + SVerticalBox::Slot()
-                        .AutoHeight()
-                        [
+                        BuildInspectorSummary(SelectedIndex)
+                    ]
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(FMargin(10.0f, 10.0f, 10.0f, 0.0f))
+                    [
                         BuildPropertyEditorRow(VariableHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowVariableDefinition, Name)))
-                        ]
-                        + SVerticalBox::Slot()
-                        .AutoHeight()
-                        .Padding(0.0f, 8.0f, 0.0f, 0.0f)
-                        [
+                    ]
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(FMargin(10.0f, 8.0f, 10.0f, 0.0f))
+                    [
                         BuildPropertyEditorRow(VariableHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowVariableDefinition, Description)))
-                        ]
-                        + SVerticalBox::Slot()
-                        .AutoHeight()
-                        .Padding(0.0f, 8.0f, 0.0f, 0.0f)
-                        [
+                    ]
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(FMargin(10.0f, 8.0f, 10.0f, 10.0f))
+                    [
                         BuildPropertyEditorRow(
                             VariableHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowVariableDefinition, DefaultValue)),
                             true)
-                        ]
                     ]
+                ]
+            ]
+        ];
+}
+
+TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildInspectorSummary(int32 VariableIndex) const
+{
+    const UDreamFlowVariablesEditorData* EditorData = GetVariablesEditorData();
+    if (EditorData == nullptr || !EditorData->Variables.IsValidIndex(VariableIndex))
+    {
+        return SNullWidget::NullWidget;
+    }
+
+    const FDreamFlowVariableDefinition& VariableDefinition = EditorData->Variables[VariableIndex];
+    const FLinearColor AccentColor = DreamFlowVariablesDetails::GetValueTypeColor(VariableDefinition.DefaultValue.Type);
+
+    return SNew(SBorder)
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+        .BorderBackgroundColor(FSlateColor(EStyleColor::Panel))
+        .Padding(FMargin(12.0f, 10.0f))
+        [
+            SNew(SVerticalBox)
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(SBorder)
+                    .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                    .BorderBackgroundColor(AccentColor)
+                    .Padding(FMargin(8.0f, 2.0f))
+                    [
+                        SNew(STextBlock)
+                        .Text(DreamFlowVariablesDetails::GetValueTypeLabel(VariableDefinition.DefaultValue.Type))
+                        .TextStyle(FAppStyle::Get(), "SmallText")
+                        .ColorAndOpacity(FLinearColor::White)
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(8.0f, 0.0f, 0.0f, 0.0f)
+                [
+                    SNew(STextBlock)
+                    .Text(FText::Format(
+                        LOCTEXT("InspectorDefaultValue", "Default: {0}"),
+                        FText::FromString(VariableDefinition.DefaultValue.Describe())))
+                    .TextStyle(FAppStyle::Get(), "SmallText")
+                    .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                ]
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0.0f, 8.0f, 0.0f, 0.0f)
+            [
+                SNew(STextBlock)
+                .Text(GetVariableSummary(VariableIndex))
+                .TextStyle(FAppStyle::Get(), "SmallText")
+                .WrapTextAt(520.0f)
             ]
         ];
 }
@@ -486,27 +653,21 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildPropertyEditorRow
         : PropertyHandle->CreatePropertyValueWidget();
 
     return SNew(SBorder)
-        .BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
         .BorderBackgroundColor(FSlateColor(EStyleColor::Panel))
-        .Padding(FMargin(10.0f, 8.0f))
+        .Padding(FMargin(12.0f, 10.0f))
         [
-            SNew(SHorizontalBox)
-            + SHorizontalBox::Slot()
-            .FillWidth(0.34f)
-            .VAlign(VAlign_Center)
+            SNew(SVerticalBox)
+            + SVerticalBox::Slot()
+            .AutoHeight()
             [
                 PropertyHandle->CreatePropertyNameWidget()
             ]
-            + SHorizontalBox::Slot()
-            .FillWidth(0.66f)
-            .Padding(12.0f, 0.0f, 0.0f, 0.0f)
-            .VAlign(VAlign_Center)
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0.0f, 8.0f, 0.0f, 0.0f)
             [
-                SNew(SBox)
-                .MinDesiredWidth(260.0f)
-                [
-                    ValueWidget
-                ]
+                ValueWidget
             ]
         ];
 }
@@ -516,25 +677,28 @@ TSharedRef<SWidget> FDreamFlowVariablesEditorDataDetails::BuildEmptyState(const 
     return SNew(SBorder)
         .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
         .BorderBackgroundColor(FSlateColor(EStyleColor::Recessed))
-        .Padding(FMargin(12.0f, 14.0f))
+        .Padding(FMargin(18.0f, 20.0f))
         [
             SNew(SVerticalBox)
             + SVerticalBox::Slot()
             .AutoHeight()
+            .HAlign(HAlign_Center)
             [
                 SNew(STextBlock)
                 .Text(Title)
                 .TextStyle(FAppStyle::Get(), "HeadingExtraSmall")
-                .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                .Justification(ETextJustify::Center)
             ]
             + SVerticalBox::Slot()
             .AutoHeight()
+            .HAlign(HAlign_Center)
             .Padding(0.0f, 6.0f, 0.0f, 0.0f)
             [
                 SNew(STextBlock)
                 .Text(Description)
                 .TextStyle(FAppStyle::Get(), "SmallText")
                 .ColorAndOpacity(FSlateColor(EStyleColor::ForegroundHeader))
+                .Justification(ETextJustify::Center)
                 .WrapTextAt(360.0f)
             ]
         ];
@@ -728,6 +892,16 @@ void FDreamFlowVariablesEditorDataDetails::RemoveVariable(int32 VariableIndex) c
     }
 }
 
+void FDreamFlowVariablesEditorDataDetails::HandleSearchTextChanged(const FText& InSearchText)
+{
+    SearchText = InSearchText.ToString();
+
+    if (PropertyUtilities.IsValid())
+    {
+        PropertyUtilities->ForceRefresh();
+    }
+}
+
 int32 FDreamFlowVariablesEditorDataDetails::GetSelectedVariableIndex() const
 {
     const UDreamFlowVariablesEditorData* EditorData = GetVariablesEditorData();
@@ -742,6 +916,42 @@ int32 FDreamFlowVariablesEditorDataDetails::GetSelectedVariableIndex() const
     }
 
     return EditorData->Variables.Num() > 0 ? 0 : INDEX_NONE;
+}
+
+TArray<int32> FDreamFlowVariablesEditorDataDetails::GetFilteredVariableIndices() const
+{
+    TArray<int32> Result;
+
+    const UDreamFlowVariablesEditorData* EditorData = GetVariablesEditorData();
+    if (EditorData == nullptr)
+    {
+        return Result;
+    }
+
+    const FString TrimmedSearch = SearchText.TrimStartAndEnd();
+    for (int32 Index = 0; Index < EditorData->Variables.Num(); ++Index)
+    {
+        const FDreamFlowVariableDefinition& VariableDefinition = EditorData->Variables[Index];
+        if (TrimmedSearch.IsEmpty())
+        {
+            Result.Add(Index);
+            continue;
+        }
+
+        const FString SearchableText = FString::Printf(
+            TEXT("%s %s %s %s"),
+            *VariableDefinition.Name.ToString(),
+            *DreamFlowVariablesDetails::GetValueTypeLabel(VariableDefinition.DefaultValue.Type).ToString(),
+            *VariableDefinition.DefaultValue.Describe(),
+            *VariableDefinition.Description.ToString());
+
+        if (SearchableText.Contains(TrimmedSearch, ESearchCase::IgnoreCase))
+        {
+            Result.Add(Index);
+        }
+    }
+
+    return Result;
 }
 
 TSharedPtr<IPropertyHandleArray> FDreamFlowVariablesEditorDataDetails::GetVariablesArrayHandle() const
