@@ -170,9 +170,17 @@ bool UDreamFlowExecutor::EnterNode(UDreamFlowNode* Node)
     CurrentNode = Node;
     VisitedNodes.AddUnique(Node);
     OnNodeEntered.Broadcast(Node);
-    if (ShouldPauseAtNode(Node))
+    bool bHitBreakpoint = false;
+    if (ShouldPauseAtNode(Node, bHitBreakpoint))
     {
         bIsPaused = true;
+        if (GEngine != nullptr)
+        {
+            if (UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>())
+            {
+                DebuggerSubsystem->NotifyExecutionPaused(this, Node, bHitBreakpoint);
+            }
+        }
         BroadcastDebugStateChanged();
         OnExecutionPaused.Broadcast(Node);
         return true;
@@ -194,6 +202,13 @@ bool UDreamFlowExecutor::PauseExecution()
     }
 
     bIsPaused = true;
+    if (GEngine != nullptr)
+    {
+        if (UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>())
+        {
+            DebuggerSubsystem->NotifyExecutionPaused(this, CurrentNode, false);
+        }
+    }
     BroadcastDebugStateChanged();
     OnExecutionPaused.Broadcast(CurrentNode);
     return true;
@@ -389,8 +404,10 @@ bool UDreamFlowExecutor::ExecuteCurrentNode()
     return true;
 }
 
-bool UDreamFlowExecutor::ShouldPauseAtNode(const UDreamFlowNode* Node)
+bool UDreamFlowExecutor::ShouldPauseAtNode(const UDreamFlowNode* Node, bool& bOutHitBreakpoint)
 {
+    bOutHitBreakpoint = false;
+
     if (Node == nullptr)
     {
         return false;
@@ -402,7 +419,8 @@ bool UDreamFlowExecutor::ShouldPauseAtNode(const UDreamFlowNode* Node)
         return true;
     }
 
-    return bPauseOnBreakpoints && FlowAsset != nullptr && FlowAsset->HasBreakpointOnNode(Node->NodeGuid);
+    bOutHitBreakpoint = bPauseOnBreakpoints && FlowAsset != nullptr && FlowAsset->HasBreakpointOnNode(Node->NodeGuid);
+    return bOutHitBreakpoint;
 }
 
 void UDreamFlowExecutor::BroadcastDebugStateChanged()

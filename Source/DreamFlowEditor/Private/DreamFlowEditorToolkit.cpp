@@ -19,6 +19,7 @@
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
 #include "ScopedTransaction.h"
+#include "Subsystems/AssetEditorSubsystem.h"
 #include "UObject/UObjectGlobals.h"
 #include "Widgets/Docking/SDockTab.h"
 
@@ -168,6 +169,32 @@ void FDreamFlowEditorToolkit::OpenNodeEditorForGraph(UEdGraph* Graph, UObject* O
     {
         Toolkit->OpenNodeEditor(ObjectToEdit);
     }
+}
+
+bool FDreamFlowEditorToolkit::OpenAssetAndFocusNode(UDreamFlowAsset* InFlowAsset, const FGuid& NodeGuid)
+{
+    if (InFlowAsset == nullptr || !NodeGuid.IsValid() || GEditor == nullptr)
+    {
+        return false;
+    }
+
+    if (UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
+    {
+        AssetEditorSubsystem->OpenEditorForAsset(InFlowAsset);
+
+        if (IAssetEditorInstance* AssetEditorInstance = AssetEditorSubsystem->FindEditorForAsset(InFlowAsset, true))
+        {
+            AssetEditorInstance->InvokeTab(FTabId(GraphTabId));
+            AssetEditorInstance->FocusWindow(InFlowAsset);
+        }
+    }
+
+    if (FDreamFlowEditorToolkit* Toolkit = ActiveEditors.FindRef(InFlowAsset))
+    {
+        return Toolkit->JumpToNodeGuid(NodeGuid);
+    }
+
+    return false;
 }
 
 FName FDreamFlowEditorToolkit::GetToolkitFName() const
@@ -335,10 +362,10 @@ void FDreamFlowEditorToolkit::CreateWidgets()
 
     DebuggerWidget = SNew(SDreamFlowDebuggerView)
         .FlowAsset(FlowAsset)
-        .OnNodeGuidActivated(SDreamFlowDebuggerView::FOnNodeGuidActivated::CreateSP(this, &FDreamFlowEditorToolkit::JumpToNodeGuid));
+        .OnNodeGuidActivated(SDreamFlowDebuggerView::FOnNodeGuidActivated::CreateSP(this, &FDreamFlowEditorToolkit::HandleNodeGuidActivated));
 
     ValidationWidget = SNew(SDreamFlowValidationView)
-        .OnMessageActivated(SDreamFlowValidationView::FOnMessageActivated::CreateSP(this, &FDreamFlowEditorToolkit::JumpToNodeGuid));
+        .OnMessageActivated(SDreamFlowValidationView::FOnMessageActivated::CreateSP(this, &FDreamFlowEditorToolkit::HandleNodeGuidActivated));
 
     FGraphAppearanceInfo AppearanceInfo;
     AppearanceInfo.CornerText = LOCTEXT("GraphCornerText", "Dream Flow Studio");
@@ -771,12 +798,23 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
     }
 }
 
-void FDreamFlowEditorToolkit::JumpToNodeGuid(const FGuid& NodeGuid)
+void FDreamFlowEditorToolkit::HandleNodeGuidActivated(const FGuid& NodeGuid)
+{
+    JumpToNodeGuid(NodeGuid);
+}
+
+bool FDreamFlowEditorToolkit::JumpToNodeGuid(const FGuid& NodeGuid)
 {
     UDreamFlowEdGraph* FlowGraph = Cast<UDreamFlowEdGraph>(EditingGraph);
     if (FlowGraph == nullptr || !GraphEditorWidget.IsValid() || !NodeGuid.IsValid())
     {
-        return;
+        return false;
+    }
+
+    FocusWindow(FlowAsset);
+    if (TSharedPtr<FTabManager> ToolkitTabManager = GetTabManager())
+    {
+        ToolkitTabManager->TryInvokeTab(GraphTabId);
     }
 
     TArray<UDreamFlowEdGraphNode*> GraphNodes;
@@ -795,9 +833,11 @@ void FDreamFlowEditorToolkit::JumpToNodeGuid(const FGuid& NodeGuid)
             GraphEditorWidget->SetNodeSelection(GraphNode, true);
             GraphEditorWidget->JumpToNode(GraphNode, false);
             OpenNodeEditor(GraphNode->GetRuntimeNode());
-            break;
+            return true;
         }
     }
+
+    return false;
 }
 
 void FDreamFlowEditorToolkit::OpenNodeEditor(UObject* ObjectToEdit)

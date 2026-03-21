@@ -24,6 +24,7 @@ class DREAMFLOWEDITOR_API FDreamFlowEditorToolkit : public FAssetEditorToolkit, 
 public:
     void InitEditor(const EToolkitMode::Type Mode, const TSharedPtr<class IToolkitHost>& InitToolkitHost, UDreamFlowAsset* InFlowAsset);
     static void OpenNodeEditorForGraph(UEdGraph* Graph, UObject* ObjectToEdit);
+    static bool OpenAssetAndFocusNode(UDreamFlowAsset* InFlowAsset, const FGuid& NodeGuid);
 
     virtual FName GetToolkitFName() const override;
     virtual FText GetBaseToolkitName() const override;
@@ -70,7 +71,8 @@ private:
     void UndoGraphAction();
     void RedoGraphAction();
     void CreateNodeFromPalette(TSubclassOf<UDreamFlowNode> NodeClass);
-    void JumpToNodeGuid(const FGuid& NodeGuid);
+    void HandleNodeGuidActivated(const FGuid& NodeGuid);
+    bool JumpToNodeGuid(const FGuid& NodeGuid);
     void OpenNodeEditor(UObject* ObjectToEdit);
     void SyncVariableEditorDataFromAsset();
     void SyncVariablesFromEditorData();

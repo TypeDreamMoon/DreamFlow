@@ -17,6 +17,7 @@ public:
     virtual void AddPin(const TSharedRef<SGraphPin>& PinToAdd) override;
     virtual void MoveTo(const FVector2f& NewPosition, FNodeSet& NodeFilter, bool bMarkDirty = true) override;
     virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+    virtual void GetOverlayBrushes(bool bSelected, const FVector2f& WidgetSize, TArray<FOverlayBrushInfo>& Brushes) const override;
 
 private:
     TSharedRef<SWidget> BuildPreviewArea();

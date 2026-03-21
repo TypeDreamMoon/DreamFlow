@@ -23,7 +23,11 @@ private:
     void CleanupCachedExecutors();
     void RefreshExecutors();
     void RebuildExecutorList();
+    void RebuildSelectedExecutorDetails();
     TSharedRef<SWidget> BuildExecutorCard(UDreamFlowExecutor* Executor) const;
+    TSharedRef<SWidget> BuildSelectedExecutorInspector() const;
+    TSharedRef<SWidget> BuildInfoRow(const FText& Label, const FText& Value) const;
+    TSharedRef<SWidget> BuildVariableRow(const struct FDreamFlowVariableDefinition& VariableDefinition, const struct FDreamFlowValue& CurrentValue, bool bHasRuntimeValue) const;
     void SelectExecutor(UDreamFlowExecutor* Executor);
     FReply HandleSelectExecutor(TWeakObjectPtr<UDreamFlowExecutor> Executor) const;
     FReply HandleContinueClicked() const;
@@ -31,11 +35,13 @@ private:
     FReply HandlePauseClicked() const;
     FReply HandleStopClicked() const;
     FReply HandleFocusNodeClicked() const;
+    FReply HandleCopySnapshotClicked() const;
     bool CanContinue() const;
     bool CanStep() const;
     bool CanPause() const;
     bool CanStop() const;
     bool CanFocusNode() const;
+    bool CanCopySnapshot() const;
     FText GetSummaryText() const;
     FText GetExecutorDisplayNameText(TWeakObjectPtr<UDreamFlowExecutor> Executor) const;
     FText GetExecutorStateText(TWeakObjectPtr<UDreamFlowExecutor> Executor) const;
@@ -51,6 +57,7 @@ private:
     TWeakObjectPtr<UDreamFlowExecutor> SelectedExecutor;
     TArray<TWeakObjectPtr<UDreamFlowExecutor>> CachedExecutors;
     FOnNodeGuidActivated OnNodeGuidActivated;
+    TSharedPtr<class SVerticalBox> SelectedInspectorContainer;
     TSharedPtr<class SScrollBox> ExecutorContainer;
     TSharedPtr<class STextBlock> SummaryTextBlock;
 };

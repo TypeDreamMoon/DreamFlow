@@ -5,6 +5,8 @@
 #include "DreamFlowEditorUtils.h"
 #include "DreamFlowNodeDisplayTypes.h"
 #include "DreamFlowNode.h"
+#include "Execution/DreamFlowDebuggerSubsystem.h"
+#include "Engine/Engine.h"
 #include "Engine/Texture2D.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "InputCoreTypes.h"
@@ -269,6 +271,42 @@ FReply SGraphNode_DreamFlow::OnMouseButtonDown(const FGeometry& MyGeometry, cons
     }
 
     return Reply;
+}
+
+void SGraphNode_DreamFlow::GetOverlayBrushes(bool bSelected, const FVector2f& WidgetSize, TArray<FOverlayBrushInfo>& Brushes) const
+{
+    SGraphNode::GetOverlayBrushes(bSelected, WidgetSize, Brushes);
+
+    const UDreamFlowEdGraphNode* FlowNode = GetFlowNode();
+    const UDreamFlowNode* RuntimeNode = FlowNode != nullptr ? FlowNode->GetRuntimeNode() : nullptr;
+    const UDreamFlowAsset* FlowAsset = FlowNode != nullptr ? FDreamFlowEditorUtils::GetFlowAssetFromGraph(FlowNode->GetGraph()) : nullptr;
+    if (RuntimeNode == nullptr || FlowAsset == nullptr || !RuntimeNode->NodeGuid.IsValid() || GEngine == nullptr)
+    {
+        return;
+    }
+
+    bool bIsBreakpointHit = false;
+    const UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>();
+    if (DebuggerSubsystem == nullptr || !DebuggerSubsystem->IsNodeCurrentExecutionLocation(FlowAsset, RuntimeNode->NodeGuid, bIsBreakpointHit))
+    {
+        return;
+    }
+
+    FOverlayBrushInfo InstructionPointerOverlay;
+    InstructionPointerOverlay.Brush = FAppStyle::GetBrush(
+        bIsBreakpointHit
+            ? TEXT("Kismet.DebuggerOverlay.InstructionPointerBreakpoint")
+            : TEXT("Kismet.DebuggerOverlay.InstructionPointer"));
+
+    if (InstructionPointerOverlay.Brush != nullptr)
+    {
+        const float Overlap = 10.0f;
+        InstructionPointerOverlay.OverlayOffset.X = (WidgetSize.X / 2.0f) - (InstructionPointerOverlay.Brush->ImageSize.X / 2.0f);
+        InstructionPointerOverlay.OverlayOffset.Y = Overlap - InstructionPointerOverlay.Brush->ImageSize.Y;
+    }
+
+    InstructionPointerOverlay.AnimationEnvelope = FVector2f(0.0f, 10.0f);
+    Brushes.Add(InstructionPointerOverlay);
 }
 
 TSharedRef<SWidget> SGraphNode_DreamFlow::BuildPreviewArea()

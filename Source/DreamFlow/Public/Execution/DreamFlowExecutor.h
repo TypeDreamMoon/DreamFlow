@@ -129,7 +129,7 @@ public:
 
 protected:
     bool ExecuteCurrentNode();
-    bool ShouldPauseAtNode(const UDreamFlowNode* Node);
+    bool ShouldPauseAtNode(const UDreamFlowNode* Node, bool& bOutHitBreakpoint);
     void BroadcastDebugStateChanged();
     void RegisterWithDebugger();
     void UnregisterFromDebugger();

@@ -8,10 +8,12 @@
 #include "DreamDialogueFlowAsset.h"
 #include "DreamFlowAsset.h"
 #include "DreamFlowAssetTypeActions.h"
+#include "DreamFlowEditorToolkit.h"
 #include "DreamFlowVariablesEditorData.h"
 #include "DreamQuestFlowAsset.h"
 #include "AssetToolsModule.h"
 #include "EdGraphUtilities.h"
+#include "Editor.h"
 #include "IAssetTools.h"
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
@@ -33,10 +35,22 @@ void FDreamFlowEditorModule::StartupModule()
     RegisterAssetTools();
     RegisterConnectionFactory();
     RegisterPropertyCustomizations();
+
+    if (!DebuggerTickerHandle.IsValid())
+    {
+        DebuggerTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
+            FTickerDelegate::CreateRaw(this, &FDreamFlowEditorModule::HandleDebuggerTicker));
+    }
 }
 
 void FDreamFlowEditorModule::ShutdownModule()
 {
+    if (DebuggerTickerHandle.IsValid())
+    {
+        FTSTicker::GetCoreTicker().RemoveTicker(DebuggerTickerHandle);
+        DebuggerTickerHandle.Reset();
+    }
+
     UnregisterPropertyCustomizations();
     UnregisterConnectionFactory();
     UnregisterAssetTools();
@@ -125,6 +139,69 @@ void FDreamFlowEditorModule::UnregisterPropertyCustomizations()
     PropertyEditorModule.UnregisterCustomPropertyTypeLayout(TEXT("DreamFlowVariableDefinition"));
     PropertyEditorModule.UnregisterCustomClassLayout(UDreamFlowVariablesEditorData::StaticClass()->GetFName());
     PropertyEditorModule.NotifyCustomizationModuleChanged();
+}
+
+bool FDreamFlowEditorModule::HandleDebuggerTicker(float DeltaTime)
+{
+    (void)DeltaTime;
+
+    if (bHasPendingBreakpointFocus)
+    {
+        if (!PendingBreakpointFocus.IsValid() || FocusBreakpointLocation(PendingBreakpointFocus))
+        {
+            bHasPendingBreakpointFocus = false;
+            PendingBreakpointFocus.Reset();
+        }
+    }
+
+    if (GEditor == nullptr || GEngine == nullptr)
+    {
+        return true;
+    }
+
+    UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>();
+    if (DebuggerSubsystem == nullptr)
+    {
+        return true;
+    }
+
+    const uint64 BreakpointHitSerial = DebuggerSubsystem->GetBreakpointHitSerial();
+    if (BreakpointHitSerial == LastHandledBreakpointHitSerial)
+    {
+        return true;
+    }
+
+    LastHandledBreakpointHitSerial = BreakpointHitSerial;
+
+    FDreamFlowExecutionLocation BreakpointLocation;
+    if (!DebuggerSubsystem->GetMostRecentBreakpointHit(BreakpointLocation))
+    {
+        return true;
+    }
+
+    if (GEditor->PlayWorld != nullptr && !GEditor->PlayWorld->bDebugPauseExecution)
+    {
+        GEditor->SetPIEWorldsPaused(true);
+        GEditor->PlaySessionPaused();
+    }
+
+    if (!FocusBreakpointLocation(BreakpointLocation))
+    {
+        bHasPendingBreakpointFocus = true;
+        PendingBreakpointFocus = BreakpointLocation;
+    }
+
+    return true;
+}
+
+bool FDreamFlowEditorModule::FocusBreakpointLocation(const FDreamFlowExecutionLocation& BreakpointLocation)
+{
+    if (!BreakpointLocation.IsValid())
+    {
+        return false;
+    }
+
+    return FDreamFlowEditorToolkit::OpenAssetAndFocusNode(BreakpointLocation.FlowAsset.Get(), BreakpointLocation.NodeGuid);
 }
 
 IMPLEMENT_MODULE(FDreamFlowEditorModule, DreamFlowEditor)
