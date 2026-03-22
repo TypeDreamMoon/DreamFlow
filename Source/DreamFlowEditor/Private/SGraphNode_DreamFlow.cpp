@@ -519,6 +519,7 @@ void SGraphNode_DreamFlow::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
     {
         RightNodeBox->AddSlot()
             .AutoHeight()
+            .HAlign(HAlign_Right)
             .VAlign(VAlign_Top)
             .Padding(FMargin(4.0f, 0.0f, 0.0f, 4.0f))
             [

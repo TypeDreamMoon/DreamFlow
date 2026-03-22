@@ -47,6 +47,19 @@ namespace
         UDreamFlowNode* IgnoredNode = nullptr;
     };
 
+    struct FDreamFlowSubFlowTestGraph
+    {
+        UDreamFlowAsset* ParentAsset = nullptr;
+        UDreamFlowEntryNode* ParentEntryNode = nullptr;
+        UDreamFlowRunSubFlowNode* RunSubFlowNode = nullptr;
+        UDreamFlowNode* ParentCompletedNode = nullptr;
+
+        UDreamFlowAsset* ChildAsset = nullptr;
+        UDreamFlowEntryNode* ChildEntryNode = nullptr;
+        UDreamFlowSetVariableNode* ChildSetVariableNode = nullptr;
+        UDreamFlowFinishFlowNode* ChildFinishNode = nullptr;
+    };
+
     static FDreamFlowValue MakeBoolValue(const bool bValue)
     {
         FDreamFlowValue Value;
@@ -195,6 +208,61 @@ namespace
             Graph.CompletedNode
         });
         Graph.Asset->SetEntryNodeInternal(Graph.EntryNode);
+
+        return Graph;
+    }
+
+    static FDreamFlowSubFlowTestGraph BuildSubFlowAsset()
+    {
+        FDreamFlowSubFlowTestGraph Graph;
+
+        Graph.ChildAsset = NewObject<UDreamFlowAsset>(GetTransientPackage(), NAME_None, RF_Transient);
+
+        FDreamFlowVariableDefinition SharedVariable;
+        SharedVariable.Name = TEXT("SharedFlag");
+        SharedVariable.Description = FText::FromString(TEXT("Shared between parent and child flow tests."));
+        SharedVariable.DefaultValue = MakeBoolValue(false);
+        Graph.ChildAsset->Variables.Add(SharedVariable);
+
+        Graph.ChildEntryNode = NewObject<UDreamFlowEntryNode>(Graph.ChildAsset, NAME_None, RF_Transient);
+        Graph.ChildSetVariableNode = NewObject<UDreamFlowSetVariableNode>(Graph.ChildAsset, NAME_None, RF_Transient);
+        Graph.ChildFinishNode = NewObject<UDreamFlowFinishFlowNode>(Graph.ChildAsset, NAME_None, RF_Transient);
+
+        Graph.ChildSetVariableNode->TargetVariable = SharedVariable.Name;
+        Graph.ChildSetVariableNode->ValueBinding.SourceType = EDreamFlowValueSourceType::Literal;
+        Graph.ChildSetVariableNode->ValueBinding.LiteralValue = MakeBoolValue(true);
+
+        Graph.ChildEntryNode->SetOutputLinks({ MakeOutputLink(TEXT("Out"), Graph.ChildSetVariableNode) });
+        Graph.ChildSetVariableNode->SetOutputLinks({ MakeOutputLink(TEXT("Out"), Graph.ChildFinishNode) });
+
+        Graph.ChildAsset->ReplaceNodes({
+            Graph.ChildEntryNode,
+            Graph.ChildSetVariableNode,
+            Graph.ChildFinishNode
+        });
+        Graph.ChildAsset->SetEntryNodeInternal(Graph.ChildEntryNode);
+
+        Graph.ParentAsset = NewObject<UDreamFlowAsset>(GetTransientPackage(), NAME_None, RF_Transient);
+        Graph.ParentAsset->Variables.Add(SharedVariable);
+
+        Graph.ParentEntryNode = NewObject<UDreamFlowEntryNode>(Graph.ParentAsset, NAME_None, RF_Transient);
+        Graph.RunSubFlowNode = NewObject<UDreamFlowRunSubFlowNode>(Graph.ParentAsset, NAME_None, RF_Transient);
+        Graph.ParentCompletedNode = NewObject<UDreamFlowNode>(Graph.ParentAsset, NAME_None, RF_Transient);
+
+        Graph.ParentCompletedNode->Title = FText::FromString(TEXT("After Child Flow"));
+        Graph.RunSubFlowNode->SubFlowAsset = Graph.ChildAsset;
+        Graph.RunSubFlowNode->bCopyParentVariablesToChild = true;
+        Graph.RunSubFlowNode->bCopyChildVariablesToParent = true;
+
+        Graph.ParentEntryNode->SetOutputLinks({ MakeOutputLink(TEXT("Out"), Graph.RunSubFlowNode) });
+        Graph.RunSubFlowNode->SetOutputLinks({ MakeOutputLink(TEXT("Completed"), Graph.ParentCompletedNode) });
+
+        Graph.ParentAsset->ReplaceNodes({
+            Graph.ParentEntryNode,
+            Graph.RunSubFlowNode,
+            Graph.ParentCompletedNode
+        });
+        Graph.ParentAsset->SetEntryNodeInternal(Graph.ParentEntryNode);
 
         return Graph;
     }
@@ -476,6 +544,30 @@ bool FDreamFlowDelayBindingTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Delay test flow should start successfully."), Executor->StartFlow());
     TestFalse(TEXT("A zero-duration delay binding should complete immediately without leaving the executor in waiting mode."), Executor->IsWaitingForAsyncNode());
     TestEqual(TEXT("Delay binding should allow the flow to continue to the completed node immediately."), Executor->GetCurrentNode(), Graph.CompletedNode);
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowRunSubFlowNodeTest,
+    "DreamFlow.Core.Execution.RunSubFlow",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowRunSubFlowNodeTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FDreamFlowSubFlowTestGraph Graph = BuildSubFlowAsset();
+    UDreamFlowExecutor* Executor = NewObject<UDreamFlowExecutor>(GetTransientPackage(), NAME_None, RF_Transient);
+    Executor->Initialize(Graph.ParentAsset, nullptr);
+
+    TestTrue(TEXT("Parent flow with a child flow node should start successfully."), Executor->StartFlow());
+    TestFalse(TEXT("The parent flow should not remain in async waiting after the child flow finishes immediately."), Executor->IsWaitingForAsyncNode());
+    TestEqual(TEXT("The parent flow should continue through the Completed output after the child flow finishes."), Executor->GetCurrentNode(), Graph.ParentCompletedNode);
+
+    bool bSharedFlagValue = false;
+    TestTrue(TEXT("Shared variables should still be readable on the parent flow after the child flow finishes."), Executor->GetVariableBoolValue(TEXT("SharedFlag"), bSharedFlagValue));
+    TestTrue(TEXT("The child flow should be able to write shared variables back to the parent flow."), bSharedFlagValue);
 
     return true;
 }

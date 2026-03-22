@@ -100,11 +100,191 @@ namespace
         bool bEqual = false;
         return DreamFlowVariable::TryCompareValues(Binding.LiteralValue, DefaultValue, EDreamFlowComparisonOperation::Equal, bEqual) && bEqual;
     }
+
+    static void SyncSharedVariables(UDreamFlowExecutor* SourceExecutor, UDreamFlowExecutor* TargetExecutor)
+    {
+        if (SourceExecutor == nullptr || TargetExecutor == nullptr || TargetExecutor->GetFlowAsset() == nullptr)
+        {
+            return;
+        }
+
+        for (const FDreamFlowVariableDefinition& TargetDefinition : TargetExecutor->GetFlowAsset()->Variables)
+        {
+            if (TargetDefinition.Name.IsNone() || !SourceExecutor->HasVariable(TargetDefinition.Name))
+            {
+                continue;
+            }
+
+            FDreamFlowValue SourceValue;
+            if (SourceExecutor->GetVariableValue(TargetDefinition.Name, SourceValue))
+            {
+                TargetExecutor->SetVariableValue(TargetDefinition.Name, SourceValue);
+            }
+        }
+    }
 }
 
 FText UDreamFlowCoreNode::GetNodeCategory_Implementation() const
 {
     return FText::FromString(TEXT("Core"));
+}
+
+void UDreamFlowSubFlowAsyncProxy::Initialize(
+    UDreamFlowAsyncContext* InParentAsyncContext,
+    UDreamFlowExecutor* InParentExecutor,
+    UDreamFlowExecutor* InChildExecutor,
+    const bool bInCopyParentVariablesToChild,
+    const bool bInCopyChildVariablesToParent)
+{
+    ParentAsyncContext = InParentAsyncContext;
+    ParentExecutor = InParentExecutor;
+    ChildExecutor = InChildExecutor;
+    bCopyParentVariablesToChild = bInCopyParentVariablesToChild;
+    bCopyChildVariablesToParent = bInCopyChildVariablesToParent;
+}
+
+void UDreamFlowSubFlowAsyncProxy::StartSubFlow()
+{
+    if (ParentAsyncContext == nullptr || ParentExecutor == nullptr || ChildExecutor == nullptr)
+    {
+        FinalizeSubFlow(TEXT("Failed"), false);
+        return;
+    }
+
+    ChildRuntimeStateChangedHandle = ChildExecutor->OnRuntimeStateChangedNative().AddUObject(this, &ThisClass::HandleChildRuntimeStateChanged);
+
+    if (bCopyParentVariablesToChild)
+    {
+        SyncVariablesFromParentToChild();
+    }
+
+    if (!ChildExecutor->StartFlow())
+    {
+        DREAMFLOW_LOG(
+            Execution,
+            Warning,
+            "Sub flow node failed to start child flow '%s'.",
+            *GetNameSafe(ChildExecutor->GetFlowAsset()));
+        FinalizeSubFlow(TEXT("Failed"), false);
+        return;
+    }
+
+    if (!bHasCompleted)
+    {
+        DriveChildFlow();
+    }
+}
+
+void UDreamFlowSubFlowAsyncProxy::BeginDestroy()
+{
+    if (ChildExecutor != nullptr && ChildRuntimeStateChangedHandle.IsValid())
+    {
+        ChildExecutor->OnRuntimeStateChangedNative().Remove(ChildRuntimeStateChangedHandle);
+        ChildRuntimeStateChangedHandle.Reset();
+    }
+
+    if (!bHasCompleted && ChildExecutor != nullptr && ChildExecutor->IsRunning())
+    {
+        ChildExecutor->FinishFlow();
+    }
+
+    Super::BeginDestroy();
+}
+
+void UDreamFlowSubFlowAsyncProxy::DriveChildFlow()
+{
+    if (bHasCompleted || ChildExecutor == nullptr)
+    {
+        return;
+    }
+
+    while (ChildExecutor->IsRunning())
+    {
+        if (ChildExecutor->IsPaused())
+        {
+            DREAMFLOW_LOG(
+                Execution,
+                Warning,
+                "Sub flow '%s' paused while running inside another flow. Completing through Failed.",
+                *GetNameSafe(ChildExecutor->GetFlowAsset()));
+            FinalizeSubFlow(TEXT("Failed"), false);
+            return;
+        }
+
+        if (ChildExecutor->IsWaitingForAsyncNode())
+        {
+            return;
+        }
+
+        if (ChildExecutor->IsWaitingForAdvance())
+        {
+            if (!ChildExecutor->Advance())
+            {
+                DREAMFLOW_LOG(
+                    Execution,
+                    Warning,
+                    "Sub flow '%s' blocked on a manual choice while running as a child flow. Completing through Failed.",
+                    *GetNameSafe(ChildExecutor->GetFlowAsset()));
+                FinalizeSubFlow(TEXT("Failed"), false);
+                return;
+            }
+
+            continue;
+        }
+
+        break;
+    }
+
+    if (!ChildExecutor->IsRunning())
+    {
+        FinalizeSubFlow(TEXT("Completed"), true);
+    }
+}
+
+void UDreamFlowSubFlowAsyncProxy::FinalizeSubFlow(const FName OutputPinName, const bool bSyncChildVariables)
+{
+    if (bHasCompleted)
+    {
+        return;
+    }
+
+    bHasCompleted = true;
+
+    if (ChildExecutor != nullptr && ChildRuntimeStateChangedHandle.IsValid())
+    {
+        ChildExecutor->OnRuntimeStateChangedNative().Remove(ChildRuntimeStateChangedHandle);
+        ChildRuntimeStateChangedHandle.Reset();
+    }
+
+    if (bSyncChildVariables && bCopyChildVariablesToParent)
+    {
+        SyncVariablesFromChildToParent();
+    }
+
+    if (ParentAsyncContext != nullptr && ParentAsyncContext->IsValidAsyncContext())
+    {
+        ParentAsyncContext->CompleteWithOutputPin(OutputPinName);
+    }
+}
+
+void UDreamFlowSubFlowAsyncProxy::HandleChildRuntimeStateChanged(UDreamFlowExecutor* InUpdatedExecutor)
+{
+    if (bHasCompleted || InUpdatedExecutor == nullptr || InUpdatedExecutor != ChildExecutor)
+    {
+        return;
+    }
+
+    DriveChildFlow();
+}
+
+void UDreamFlowSubFlowAsyncProxy::SyncVariablesFromParentToChild() const
+{
+    SyncSharedVariables(ParentExecutor, ChildExecutor);
+}
+
+void UDreamFlowSubFlowAsyncProxy::SyncVariablesFromChildToParent() const
+{
+    SyncSharedVariables(ChildExecutor, ParentExecutor);
 }
 
 UDreamFlowBranchNode::UDreamFlowBranchNode()
@@ -425,6 +605,142 @@ void UDreamFlowSetVariableNode::ValidateNode(const UDreamFlowAsset* OwningAsset,
             this,
             EDreamFlowValidationSeverity::Info,
             FText::FromString(TEXT("Set Variable only auto-continues to the first child. Additional links are ignored.")));
+    }
+}
+
+UDreamFlowRunSubFlowNode::UDreamFlowRunSubFlowNode()
+{
+    Title = FText::FromString(TEXT("Run Sub Flow"));
+    Description = FText::FromString(TEXT("Runs another flow asset as a child flow, waits for it to finish, then continues."));
+    SubFlowExecutorClass = UDreamFlowExecutor::StaticClass();
+
+#if WITH_EDITORONLY_DATA
+    NodeTint = FLinearColor(0.16f, 0.44f, 0.68f, 1.0f);
+#endif
+}
+
+FText UDreamFlowRunSubFlowNode::GetNodeDisplayName_Implementation() const
+{
+    return Title;
+}
+
+FLinearColor UDreamFlowRunSubFlowNode::GetNodeTint_Implementation() const
+{
+    return FLinearColor(0.16f, 0.44f, 0.68f, 1.0f);
+}
+
+FText UDreamFlowRunSubFlowNode::GetNodeAccentLabel_Implementation() const
+{
+    return FText::FromString(TEXT("Sub Flow"));
+}
+
+TArray<FDreamFlowNodeDisplayItem> UDreamFlowRunSubFlowNode::GetNodeDisplayItems_Implementation() const
+{
+    TArray<FDreamFlowNodeDisplayItem> Items = Super::GetNodeDisplayItems_Implementation();
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Flow")), GetNameSafe(SubFlowAsset)));
+    Items.Add(MakeTextPreviewItem(
+        FText::FromString(TEXT("Sync In")),
+        bCopyParentVariablesToChild ? TEXT("Shared variables") : TEXT("Disabled")));
+    Items.Add(MakeTextPreviewItem(
+        FText::FromString(TEXT("Sync Out")),
+        bCopyChildVariablesToParent ? TEXT("Shared variables") : TEXT("Disabled")));
+    return Items;
+}
+
+TArray<FDreamFlowNodeOutputPin> UDreamFlowRunSubFlowNode::GetOutputPins_Implementation() const
+{
+    FDreamFlowNodeOutputPin CompletedPin;
+    CompletedPin.PinName = TEXT("Completed");
+    CompletedPin.DisplayName = FText::FromString(TEXT("Completed"));
+
+    FDreamFlowNodeOutputPin FailedPin;
+    FailedPin.PinName = TEXT("Failed");
+    FailedPin.DisplayName = FText::FromString(TEXT("Failed"));
+
+    return { CompletedPin, FailedPin };
+}
+
+void UDreamFlowRunSubFlowNode::StartAsyncNode_Implementation(UObject* Context, UDreamFlowExecutor* Executor, UDreamFlowAsyncContext* AsyncContext)
+{
+    if (AsyncContext == nullptr)
+    {
+        return;
+    }
+
+    if (Executor == nullptr || SubFlowAsset == nullptr)
+    {
+        DREAMFLOW_LOG(
+            Execution,
+            Warning,
+            "Run Sub Flow node '%s' is missing an executor or child flow asset. Completing through Failed.",
+            *GetNodeDisplayName().ToString());
+        AsyncContext->CompleteWithOutputPin(TEXT("Failed"));
+        return;
+    }
+
+    UClass* EffectiveExecutorClass = SubFlowExecutorClass != nullptr ? SubFlowExecutorClass.Get() : UDreamFlowExecutor::StaticClass();
+    UDreamFlowSubFlowAsyncProxy* Proxy = NewObject<UDreamFlowSubFlowAsyncProxy>(AsyncContext, NAME_None, RF_Transient);
+    UDreamFlowExecutor* ChildExecutor = Proxy != nullptr
+        ? NewObject<UDreamFlowExecutor>(Proxy, EffectiveExecutorClass, NAME_None, RF_Transient)
+        : nullptr;
+
+    if (Proxy == nullptr || ChildExecutor == nullptr)
+    {
+        DREAMFLOW_LOG(
+            Execution,
+            Warning,
+            "Run Sub Flow node '%s' failed to create a child executor for asset '%s'.",
+            *GetNodeDisplayName().ToString(),
+            *GetNameSafe(SubFlowAsset));
+        AsyncContext->CompleteWithOutputPin(TEXT("Failed"));
+        return;
+    }
+
+    UObject* ChildExecutionContext = Context != nullptr ? Context : Executor->GetExecutionContext();
+    ChildExecutor->Initialize(SubFlowAsset, ChildExecutionContext);
+
+    Proxy->Initialize(AsyncContext, Executor, ChildExecutor, bCopyParentVariablesToChild, bCopyChildVariablesToParent);
+    Proxy->StartSubFlow();
+}
+
+void UDreamFlowRunSubFlowNode::ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const
+{
+    if (SubFlowAsset == nullptr)
+    {
+        AddValidationMessage(
+            OutMessages,
+            this,
+            EDreamFlowValidationSeverity::Error,
+            FText::FromString(TEXT("Run Sub Flow requires a child flow asset.")));
+    }
+    else
+    {
+        if (SubFlowAsset->GetEntryNode() == nullptr)
+        {
+            AddValidationMessage(
+                OutMessages,
+                this,
+                EDreamFlowValidationSeverity::Error,
+                FText::FromString(TEXT("The selected child flow asset does not have a valid entry node.")));
+        }
+
+        if (SubFlowAsset == OwningAsset)
+        {
+            AddValidationMessage(
+                OutMessages,
+                this,
+                EDreamFlowValidationSeverity::Warning,
+                FText::FromString(TEXT("Run Sub Flow references its own flow asset. This can recurse indefinitely if the child path reaches the same node again.")));
+        }
+    }
+
+    if (GetChildrenCopy().Num() > 2)
+    {
+        AddValidationMessage(
+            OutMessages,
+            this,
+            EDreamFlowValidationSeverity::Info,
+            FText::FromString(TEXT("Run Sub Flow only uses the Completed and Failed outputs. Additional links are ignored.")));
     }
 }
 
