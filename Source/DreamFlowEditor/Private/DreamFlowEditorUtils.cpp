@@ -95,6 +95,42 @@ namespace DreamFlowEditorUtils
             }
         }
     }
+
+    static bool IsTransientBlueprintNodeClass(const UClass* NodeClass)
+    {
+        if (NodeClass == nullptr)
+        {
+            return false;
+        }
+
+        if (FKismetEditorUtilities::IsClassABlueprintSkeleton(NodeClass))
+        {
+            return true;
+        }
+
+        const FString ClassName = NodeClass->GetName();
+        return ClassName.StartsWith(TEXT("SKEL_")) || ClassName.StartsWith(TEXT("REINST_"));
+    }
+
+    static UClass* ResolveAuthoritativeNodeClass(const UClass* NodeClass)
+    {
+        if (NodeClass == nullptr)
+        {
+            return nullptr;
+        }
+
+        if (const UBlueprint* Blueprint = Cast<UBlueprint>(NodeClass->ClassGeneratedBy))
+        {
+            if (Blueprint->GeneratedClass != nullptr && Blueprint->GeneratedClass->IsChildOf(UDreamFlowNode::StaticClass()))
+            {
+                return Blueprint->GeneratedClass;
+            }
+
+            return nullptr;
+        }
+
+        return const_cast<UClass*>(NodeClass);
+    }
 }
 
 TSubclassOf<UDreamFlowNode> FDreamFlowEditorUtils::PickNodeClass(UDreamFlowAsset* FlowAsset)
@@ -301,8 +337,9 @@ UDreamFlowEdGraphNode* FDreamFlowEditorUtils::CreateNodeInGraph(
 {
     UDreamFlowEdGraph* FlowGraph = Cast<UDreamFlowEdGraph>(Graph);
     UDreamFlowAsset* FlowAsset = FlowGraph ? FlowGraph->GetFlowAsset() : nullptr;
+    UClass* ResolvedNodeClass = DreamFlowEditorUtils::ResolveAuthoritativeNodeClass(*NodeClass);
 
-    if (FlowGraph == nullptr || FlowAsset == nullptr || !IsNodeClassCreatable(*NodeClass, FlowAsset))
+    if (FlowGraph == nullptr || FlowAsset == nullptr || !IsNodeClassCreatable(ResolvedNodeClass, FlowAsset))
     {
         return nullptr;
     }
@@ -312,7 +349,7 @@ UDreamFlowEdGraphNode* FDreamFlowEditorUtils::CreateNodeInGraph(
     FlowAsset->Modify();
     FlowGraph->Modify();
 
-    UDreamFlowNode* RuntimeNode = NewObject<UDreamFlowNode>(FlowAsset, NodeClass, NAME_None, RF_Transactional);
+    UDreamFlowNode* RuntimeNode = NewObject<UDreamFlowNode>(FlowAsset, ResolvedNodeClass, NAME_None, RF_Transactional);
     RuntimeNode->SetEditorPosition(FVector2D(Location.X, Location.Y));
 
     FGraphNodeCreator<UDreamFlowEdGraphNode> NodeCreator(*FlowGraph);
@@ -503,13 +540,18 @@ TArray<TSubclassOf<UDreamFlowNode>> FDreamFlowEditorUtils::GetLoadedCreatableNod
 {
     TArray<TSubclassOf<UDreamFlowNode>> Result;
     TArray<UClass*> DerivedClasses;
+    TSet<const UClass*> AddedClasses;
     GetDerivedClasses(UDreamFlowNode::StaticClass(), DerivedClasses, true);
 
     for (UClass* DerivedClass : DerivedClasses)
     {
-        if (IsNodeClassCreatable(DerivedClass, FlowAsset))
+        UClass* ResolvedClass = DreamFlowEditorUtils::ResolveAuthoritativeNodeClass(DerivedClass);
+        if (IsNodeClassCreatable(DerivedClass, FlowAsset)
+            && ResolvedClass != nullptr
+            && !AddedClasses.Contains(ResolvedClass))
         {
-            Result.Add(DerivedClass);
+            AddedClasses.Add(ResolvedClass);
+            Result.Add(ResolvedClass);
         }
     }
 
@@ -537,27 +579,33 @@ TArray<TSubclassOf<UDreamFlowNode>> FDreamFlowEditorUtils::GetLoadedCreatableNod
 
 bool FDreamFlowEditorUtils::IsNodeClassCreatable(const UClass* NodeClass, const UDreamFlowAsset* FlowAsset)
 {
-    if (NodeClass == nullptr)
+    if (DreamFlowEditorUtils::IsTransientBlueprintNodeClass(NodeClass))
     {
         return false;
     }
 
-    if (!NodeClass->IsChildOf(UDreamFlowNode::StaticClass()))
+    UClass* ResolvedNodeClass = DreamFlowEditorUtils::ResolveAuthoritativeNodeClass(NodeClass);
+    if (ResolvedNodeClass == nullptr)
     {
         return false;
     }
 
-    if (NodeClass->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists | CLASS_HideDropDown))
+    if (!ResolvedNodeClass->IsChildOf(UDreamFlowNode::StaticClass()))
     {
         return false;
     }
 
-    if (NodeClass->IsChildOf(UDreamFlowEntryNode::StaticClass()))
+    if (ResolvedNodeClass->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists | CLASS_HideDropDown))
     {
         return false;
     }
 
-    const UDreamFlowNode* DefaultNode = Cast<UDreamFlowNode>(NodeClass->GetDefaultObject());
+    if (ResolvedNodeClass->IsChildOf(UDreamFlowEntryNode::StaticClass()))
+    {
+        return false;
+    }
+
+    const UDreamFlowNode* DefaultNode = Cast<UDreamFlowNode>(ResolvedNodeClass->GetDefaultObject());
     return DefaultNode != nullptr && DefaultNode->IsUserCreatable() && DefaultNode->SupportsFlowAsset(FlowAsset);
 }
 
