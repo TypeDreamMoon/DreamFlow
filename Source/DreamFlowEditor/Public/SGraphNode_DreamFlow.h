@@ -76,5 +76,6 @@ private:
     TArray<TSharedPtr<FSlateBrush>> PreviewImageBrushes;
     mutable TSharedPtr<FSlateBrush> NodeIconBrush;
     mutable bool bPendingAssetSynchronization = false;
+    mutable bool bPendingInlineArrayGraphRefresh = false;
     bool bHasInlinePropertyNodes = false;
 };

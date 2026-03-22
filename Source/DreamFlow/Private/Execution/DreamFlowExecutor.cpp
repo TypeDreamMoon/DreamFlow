@@ -715,6 +715,7 @@ void UDreamFlowExecutor::FinishFlow()
 
     ActiveChildExecutorsByNodeGuid.Reset();
     CachedSubFlowStack.Reset();
+    PersistentRuntimeObjectsByNodeGuid.Reset();
     DetachFromParentExecutor();
 
     if (!bIsRunning)
@@ -759,15 +760,6 @@ bool UDreamFlowExecutor::Advance()
         return false;
     }
 
-    if (Children.Num() > 1)
-    {
-        const TArray<FDreamFlowNodeOutputPin> OutputPins = CurrentNode->GetOutputPins();
-        if (OutputPins.Num() == 1)
-        {
-            return MoveToOutputPin(OutputPins[0].PinName);
-        }
-    }
-
     return Children.Num() == 1 ? EnterNode(Children[0]) : false;
 }
 
@@ -794,7 +786,7 @@ bool UDreamFlowExecutor::MoveToOutputPin(FName OutputPinName)
         return false;
     }
 
-    return EnterChildrenForOutputPin(CurrentNode, OutputPinName);
+    return EnterNode(CurrentNode->GetFirstChildForOutputPin(OutputPinName));
 }
 
 bool UDreamFlowExecutor::ChooseChild(UDreamFlowNode* ChildNode)
@@ -860,49 +852,6 @@ bool UDreamFlowExecutor::ActivateNode(UDreamFlowNode* Node, const bool bExecuteN
 
     BroadcastDebugStateChanged();
     return true;
-}
-
-bool UDreamFlowExecutor::EnterChildrenForOutputPin(const UDreamFlowNode* SourceNode, FName OutputPinName)
-{
-    if (SourceNode == nullptr || OutputPinName.IsNone())
-    {
-        return false;
-    }
-
-    const TArray<UDreamFlowNode*> OutputChildren = SourceNode->GetChildrenForOutputPin(OutputPinName);
-    if (OutputChildren.Num() == 0)
-    {
-        return false;
-    }
-
-    for (int32 ChildIndex = 1; ChildIndex < OutputChildren.Num(); ++ChildIndex)
-    {
-        if (UDreamFlowNode* ParallelStartNode = OutputChildren[ChildIndex])
-        {
-            if (UDreamFlowExecutor* ParallelExecutor = StartParallelBranchAtNode(ParallelStartNode))
-            {
-                DREAMFLOW_LOG(
-                    Execution,
-                    Verbose,
-                    "Spawned parallel branch executor for node '%s' from output '%s' on flow '%s'.",
-                    *ParallelStartNode->GetNodeDisplayName().ToString(),
-                    *OutputPinName.ToString(),
-                    *GetNameSafe(FlowAsset));
-            }
-            else
-            {
-                DREAMFLOW_LOG(
-                    Execution,
-                    Warning,
-                    "Failed to spawn parallel branch executor for node '%s' from output '%s' on flow '%s'.",
-                    *GetNameSafe(ParallelStartNode),
-                    *OutputPinName.ToString(),
-                    *GetNameSafe(FlowAsset));
-            }
-        }
-    }
-
-    return EnterNode(OutputChildren[0]);
 }
 
 void UDreamFlowExecutor::SetExecutionContext(UObject* InExecutionContext)
@@ -2038,7 +1987,7 @@ bool UDreamFlowExecutor::TryConsumeCompletedAsyncNode(FName RequestedOutputPinNa
         {
             ClearAsyncExecutionState();
             DREAMFLOW_LOG(Execution, Log, "Async node '%s' completed through output '%s'.", *AsyncNode->GetNodeDisplayName().ToString(), *ResolvedOutputPinName.ToString());
-            return EnterChildrenForOutputPin(AsyncNode, ResolvedOutputPinName);
+            return EnterNode(AsyncNode->GetFirstChildForOutputPin(ResolvedOutputPinName));
         }
 
         if (!bCanFinishWithoutTransition)
@@ -2164,9 +2113,19 @@ void UDreamFlowExecutor::NotifyDebuggerStateChanged()
 
 UDreamFlowExecutor* UDreamFlowExecutor::StartParallelBranchAtNode(UDreamFlowNode* StartNode)
 {
+    return StartParallelBranchAtNodeWithOwnerKey(StartNode, StartNode != nullptr ? StartNode->NodeGuid : FGuid());
+}
+
+UDreamFlowExecutor* UDreamFlowExecutor::StartParallelBranchAtNodeWithOwnerKey(UDreamFlowNode* StartNode, FGuid OwnerKey)
+{
     if (FlowAsset == nullptr || StartNode == nullptr || !FlowAsset->OwnsNode(StartNode))
     {
         return nullptr;
+    }
+
+    if (!OwnerKey.IsValid())
+    {
+        OwnerKey = StartNode->NodeGuid;
     }
 
     UClass* EffectiveClass = GetClass();
@@ -2180,9 +2139,21 @@ UDreamFlowExecutor* UDreamFlowExecutor::StartParallelBranchAtNode(UDreamFlowNode
     BranchExecutor->RuntimeVariables = RuntimeVariables;
     BranchExecutor->NodeRuntimeStates = NodeRuntimeStates;
     BranchExecutor->bPauseOnBreakpoints = bPauseOnBreakpoints;
-    BranchExecutor->bSharesRuntimeVariablesWithParent = true;
 
-    RegisterChildExecutor(StartNode, BranchExecutor);
+    if (OwnerKey == StartNode->NodeGuid)
+    {
+        RegisterChildExecutor(StartNode, BranchExecutor);
+    }
+    else
+    {
+        ActiveChildExecutorsByNodeGuid.FindOrAdd(OwnerKey) = BranchExecutor;
+        BranchExecutor->DetachFromParentExecutor();
+        BranchExecutor->ParentExecutor = this;
+        BranchExecutor->ParentLinkNodeGuid = OwnerKey;
+        CachedSubFlowStack.Reset();
+        NotifyDebuggerStateChanged();
+    }
+    BranchExecutor->bSharesRuntimeVariablesWithParent = true;
 
     BranchExecutor->bIsRunning = true;
     BranchExecutor->bIsPaused = false;
@@ -2199,6 +2170,43 @@ UDreamFlowExecutor* UDreamFlowExecutor::StartParallelBranchAtNode(UDreamFlowNode
     }
 
     return BranchExecutor;
+}
+
+UObject* UDreamFlowExecutor::GetPersistentRuntimeObject(FGuid OwnerNodeGuid) const
+{
+    if (!OwnerNodeGuid.IsValid())
+    {
+        return nullptr;
+    }
+
+    const TObjectPtr<UObject>* RuntimeObject = PersistentRuntimeObjectsByNodeGuid.Find(OwnerNodeGuid);
+    return RuntimeObject != nullptr ? RuntimeObject->Get() : nullptr;
+}
+
+void UDreamFlowExecutor::SetPersistentRuntimeObject(FGuid OwnerNodeGuid, UObject* RuntimeObject)
+{
+    if (!OwnerNodeGuid.IsValid())
+    {
+        return;
+    }
+
+    if (RuntimeObject == nullptr)
+    {
+        PersistentRuntimeObjectsByNodeGuid.Remove(OwnerNodeGuid);
+        return;
+    }
+
+    PersistentRuntimeObjectsByNodeGuid.FindOrAdd(OwnerNodeGuid) = RuntimeObject;
+}
+
+void UDreamFlowExecutor::ClearPersistentRuntimeObject(FGuid OwnerNodeGuid)
+{
+    if (!OwnerNodeGuid.IsValid())
+    {
+        return;
+    }
+
+    PersistentRuntimeObjectsByNodeGuid.Remove(OwnerNodeGuid);
 }
 
 void UDreamFlowExecutor::DetachFromParentExecutor()
@@ -2248,6 +2256,7 @@ void UDreamFlowExecutor::ResetRuntimeState(UDreamFlowAsset* InFlowAsset, UObject
     ParentLinkNodeGuid.Invalidate();
     bSharesRuntimeVariablesWithParent = false;
     CachedSubFlowStack.Reset();
+    PersistentRuntimeObjectsByNodeGuid.Reset();
 
     ResetVariablesToDefaults();
 

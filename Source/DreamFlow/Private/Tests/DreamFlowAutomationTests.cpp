@@ -60,6 +60,28 @@ namespace
         UDreamFlowFinishFlowNode* ChildFinishNode = nullptr;
     };
 
+    struct FDreamFlowSequenceTestGraph
+    {
+        UDreamFlowAsset* Asset = nullptr;
+        UDreamFlowEntryNode* EntryNode = nullptr;
+        UDreamFlowSequenceNode* SequenceNode = nullptr;
+        UDreamFlowSetVariableNode* SetAlphaNode = nullptr;
+        UDreamFlowFinishFlowNode* FinishAlphaNode = nullptr;
+        UDreamFlowSetVariableNode* SetBetaNode = nullptr;
+        UDreamFlowFinishFlowNode* FinishBetaNode = nullptr;
+    };
+
+    struct FDreamFlowPersistentListenerTestGraph
+    {
+        UDreamFlowAsset* Asset = nullptr;
+        UDreamFlowEntryNode* EntryNode = nullptr;
+        UDreamFlowListenForBindingChangeNode* ListenNode = nullptr;
+        UDreamFlowSetVariableNode* SetObservedNode = nullptr;
+        UDreamFlowFinishFlowNode* MainFinishNode = nullptr;
+        UDreamFlowSetVariableNode* SetTriggeredNode = nullptr;
+        UDreamFlowFinishFlowNode* ListenerFinishNode = nullptr;
+    };
+
     static FDreamFlowValue MakeBoolValue(const bool bValue)
     {
         FDreamFlowValue Value;
@@ -263,6 +285,120 @@ namespace
             Graph.ParentCompletedNode
         });
         Graph.ParentAsset->SetEntryNodeInternal(Graph.ParentEntryNode);
+
+        return Graph;
+    }
+
+    static FDreamFlowSequenceTestGraph BuildSequenceFlowAsset()
+    {
+        FDreamFlowSequenceTestGraph Graph;
+        Graph.Asset = NewObject<UDreamFlowAsset>(GetTransientPackage(), NAME_None, RF_Transient);
+
+        FDreamFlowVariableDefinition AlphaVariable;
+        AlphaVariable.Name = TEXT("Alpha");
+        AlphaVariable.Description = FText::FromString(TEXT("Set by the first sequence branch."));
+        AlphaVariable.DefaultValue = MakeBoolValue(false);
+        Graph.Asset->Variables.Add(AlphaVariable);
+
+        FDreamFlowVariableDefinition BetaVariable;
+        BetaVariable.Name = TEXT("Beta");
+        BetaVariable.Description = FText::FromString(TEXT("Set by the second sequence branch."));
+        BetaVariable.DefaultValue = MakeBoolValue(false);
+        Graph.Asset->Variables.Add(BetaVariable);
+
+        Graph.EntryNode = NewObject<UDreamFlowEntryNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.SequenceNode = NewObject<UDreamFlowSequenceNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.SetAlphaNode = NewObject<UDreamFlowSetVariableNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.FinishAlphaNode = NewObject<UDreamFlowFinishFlowNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.SetBetaNode = NewObject<UDreamFlowSetVariableNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.FinishBetaNode = NewObject<UDreamFlowFinishFlowNode>(Graph.Asset, NAME_None, RF_Transient);
+
+        Graph.SequenceNode->ThenLabels = {
+            FText::FromString(TEXT("Then 0")),
+            FText::FromString(TEXT("Then 1"))
+        };
+
+        Graph.SetAlphaNode->TargetVariable = AlphaVariable.Name;
+        Graph.SetAlphaNode->ValueBinding.SourceType = EDreamFlowValueSourceType::Literal;
+        Graph.SetAlphaNode->ValueBinding.LiteralValue = MakeBoolValue(true);
+
+        Graph.SetBetaNode->TargetVariable = BetaVariable.Name;
+        Graph.SetBetaNode->ValueBinding.SourceType = EDreamFlowValueSourceType::Literal;
+        Graph.SetBetaNode->ValueBinding.LiteralValue = MakeBoolValue(true);
+
+        Graph.EntryNode->SetOutputLinks({ MakeOutputLink(TEXT("Out"), Graph.SequenceNode) });
+        Graph.SequenceNode->SetOutputLinks({
+            MakeOutputLink(TEXT("Then_0"), Graph.SetAlphaNode),
+            MakeOutputLink(TEXT("Then_1"), Graph.SetBetaNode)
+        });
+        Graph.SetAlphaNode->SetOutputLinks({ MakeOutputLink(TEXT("Out"), Graph.FinishAlphaNode) });
+        Graph.SetBetaNode->SetOutputLinks({ MakeOutputLink(TEXT("Out"), Graph.FinishBetaNode) });
+
+        Graph.Asset->ReplaceNodes({
+            Graph.EntryNode,
+            Graph.SequenceNode,
+            Graph.SetAlphaNode,
+            Graph.FinishAlphaNode,
+            Graph.SetBetaNode,
+            Graph.FinishBetaNode
+        });
+        Graph.Asset->SetEntryNodeInternal(Graph.EntryNode);
+
+        return Graph;
+    }
+
+    static FDreamFlowPersistentListenerTestGraph BuildPersistentListenerFlowAsset()
+    {
+        FDreamFlowPersistentListenerTestGraph Graph;
+        Graph.Asset = NewObject<UDreamFlowAsset>(GetTransientPackage(), NAME_None, RF_Transient);
+
+        FDreamFlowVariableDefinition ObservedVariable;
+        ObservedVariable.Name = TEXT("Observed");
+        ObservedVariable.Description = FText::FromString(TEXT("Observed by the persistent listener test."));
+        ObservedVariable.DefaultValue = MakeBoolValue(false);
+        Graph.Asset->Variables.Add(ObservedVariable);
+
+        FDreamFlowVariableDefinition TriggeredVariable;
+        TriggeredVariable.Name = TEXT("Triggered");
+        TriggeredVariable.Description = FText::FromString(TEXT("Set by the listener branch when a change is detected."));
+        TriggeredVariable.DefaultValue = MakeBoolValue(false);
+        Graph.Asset->Variables.Add(TriggeredVariable);
+
+        Graph.EntryNode = NewObject<UDreamFlowEntryNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.ListenNode = NewObject<UDreamFlowListenForBindingChangeNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.SetObservedNode = NewObject<UDreamFlowSetVariableNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.MainFinishNode = NewObject<UDreamFlowFinishFlowNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.SetTriggeredNode = NewObject<UDreamFlowSetVariableNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.ListenerFinishNode = NewObject<UDreamFlowFinishFlowNode>(Graph.Asset, NAME_None, RF_Transient);
+
+        Graph.ListenNode->ObservedBinding.SourceType = EDreamFlowValueSourceType::FlowVariable;
+        Graph.ListenNode->ObservedBinding.VariableName = ObservedVariable.Name;
+
+        Graph.SetObservedNode->TargetVariable = ObservedVariable.Name;
+        Graph.SetObservedNode->ValueBinding.SourceType = EDreamFlowValueSourceType::Literal;
+        Graph.SetObservedNode->ValueBinding.LiteralValue = MakeBoolValue(true);
+
+        Graph.SetTriggeredNode->TargetVariable = TriggeredVariable.Name;
+        Graph.SetTriggeredNode->ValueBinding.SourceType = EDreamFlowValueSourceType::Literal;
+        Graph.SetTriggeredNode->ValueBinding.LiteralValue = MakeBoolValue(true);
+
+        Graph.EntryNode->SetOutputLinks({ MakeOutputLink(TEXT("Out"), Graph.ListenNode) });
+        Graph.ListenNode->SetOutputLinks({
+            MakeOutputLink(TEXT("Next"), Graph.SetObservedNode),
+            MakeOutputLink(TEXT("Changed"), Graph.SetTriggeredNode)
+        });
+        Graph.SetObservedNode->SetOutputLinks({ MakeOutputLink(TEXT("Out"), Graph.MainFinishNode) });
+        Graph.SetTriggeredNode->SetOutputLinks({ MakeOutputLink(TEXT("Out"), Graph.ListenerFinishNode) });
+
+        Graph.Asset->ReplaceNodes({
+            Graph.EntryNode,
+            Graph.ListenNode,
+            Graph.SetObservedNode,
+            Graph.MainFinishNode,
+            Graph.SetTriggeredNode,
+            Graph.ListenerFinishNode
+        });
+        Graph.Asset->SetEntryNodeInternal(Graph.EntryNode);
 
         return Graph;
     }
@@ -568,6 +704,57 @@ bool FDreamFlowRunSubFlowNodeTest::RunTest(const FString& Parameters)
     bool bSharedFlagValue = false;
     TestTrue(TEXT("Shared variables should still be readable on the parent flow after the child flow finishes."), Executor->GetVariableBoolValue(TEXT("SharedFlag"), bSharedFlagValue));
     TestTrue(TEXT("The child flow should be able to write shared variables back to the parent flow."), bSharedFlagValue);
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowSequenceNodeBranchesTest,
+    "DreamFlow.Core.Execution.SequenceBranches",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowSequenceNodeBranchesTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FDreamFlowSequenceTestGraph Graph = BuildSequenceFlowAsset();
+    UDreamFlowExecutor* Executor = NewObject<UDreamFlowExecutor>(GetTransientPackage(), NAME_None, RF_Transient);
+    Executor->Initialize(Graph.Asset, nullptr);
+
+    TestTrue(TEXT("Sequence test flow should start successfully."), Executor->StartFlow());
+    TestFalse(TEXT("Sequence branches that finish immediately should not leave the parent executor waiting."), Executor->IsWaitingForAsyncNode());
+
+    bool bAlphaValue = false;
+    bool bBetaValue = false;
+    TestTrue(TEXT("The first sequence branch should update its target variable."), Executor->GetVariableBoolValue(TEXT("Alpha"), bAlphaValue));
+    TestTrue(TEXT("The second sequence branch should update its target variable."), Executor->GetVariableBoolValue(TEXT("Beta"), bBetaValue));
+    TestTrue(TEXT("Sequence branch 0 should have executed."), bAlphaValue);
+    TestTrue(TEXT("Sequence branch 1 should have executed."), bBetaValue);
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowPersistentBindingListenerTest,
+    "DreamFlow.Core.Execution.PersistentBindingListener",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowPersistentBindingListenerTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FDreamFlowPersistentListenerTestGraph Graph = BuildPersistentListenerFlowAsset();
+    UDreamFlowExecutor* Executor = NewObject<UDreamFlowExecutor>(GetTransientPackage(), NAME_None, RF_Transient);
+    Executor->Initialize(Graph.Asset, nullptr);
+
+    TestTrue(TEXT("Persistent listener flow should start successfully."), Executor->StartFlow());
+
+    bool bObservedValue = false;
+    bool bTriggeredValue = false;
+    TestTrue(TEXT("The main branch should update the observed variable after listener registration."), Executor->GetVariableBoolValue(TEXT("Observed"), bObservedValue));
+    TestTrue(TEXT("The listener branch should update its target variable when the observed binding changes."), Executor->GetVariableBoolValue(TEXT("Triggered"), bTriggeredValue));
+    TestTrue(TEXT("Observed should be true after the main branch runs."), bObservedValue);
+    TestTrue(TEXT("Triggered should be true after the persistent listener launches its Changed branch."), bTriggeredValue);
 
     return true;
 }

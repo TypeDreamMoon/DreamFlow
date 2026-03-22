@@ -146,6 +146,11 @@ public:
 
     void RegisterChildExecutor(UDreamFlowNode* OwnerNode, UDreamFlowExecutor* ChildExecutor);
     void UnregisterChildExecutor(UDreamFlowNode* OwnerNode, UDreamFlowExecutor* ChildExecutor);
+    UDreamFlowExecutor* StartParallelBranchAtNode(UDreamFlowNode* StartNode);
+    UDreamFlowExecutor* StartParallelBranchAtNodeWithOwnerKey(UDreamFlowNode* StartNode, FGuid OwnerKey);
+    UObject* GetPersistentRuntimeObject(FGuid OwnerNodeGuid) const;
+    void SetPersistentRuntimeObject(FGuid OwnerNodeGuid, UObject* RuntimeObject);
+    void ClearPersistentRuntimeObject(FGuid OwnerNodeGuid);
 
     void BuildReplicatedState(FDreamFlowReplicatedExecutionState& OutState) const;
     void ApplyReplicatedState(const FDreamFlowReplicatedExecutionState& InState);
@@ -427,7 +432,6 @@ public:
 
 protected:
     bool ActivateNode(UDreamFlowNode* Node, bool bExecuteNode);
-    bool EnterChildrenForOutputPin(const UDreamFlowNode* SourceNode, FName OutputPinName);
     bool ExecuteCurrentNode();
     bool TryConsumeCompletedAsyncNode(FName RequestedOutputPinName);
     FName ResolveCompletedAsyncOutputPin(const UDreamFlowNode* AsyncNode, FName RequestedOutputPinName) const;
@@ -436,7 +440,6 @@ protected:
     void RegisterWithDebugger();
     void UnregisterFromDebugger();
     void NotifyDebuggerStateChanged();
-    UDreamFlowExecutor* StartParallelBranchAtNode(UDreamFlowNode* StartNode);
     void DetachFromParentExecutor();
     void ResetRuntimeState(UDreamFlowAsset* InFlowAsset, UObject* InExecutionContext, bool bNotifyDebugger);
     void ClearAsyncExecutionState();
@@ -503,6 +506,9 @@ protected:
 
     UPROPERTY(Transient)
     TArray<FDreamFlowSubFlowStackEntry> CachedSubFlowStack;
+
+    UPROPERTY(Transient)
+    TMap<FGuid, TObjectPtr<UObject>> PersistentRuntimeObjectsByNodeGuid;
 
 private:
     FDreamFlowExecutorRuntimeStateChangedNativeSignature RuntimeStateChangedNative;

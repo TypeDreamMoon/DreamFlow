@@ -7,9 +7,11 @@
 #include "DreamFlowNodeDisplayTypes.h"
 #include "DreamFlowNode.h"
 #include "Execution/DreamFlowDebuggerSubsystem.h"
+#include "Execution/DreamFlowExecutor.h"
 #include "Engine/Engine.h"
 #include "Engine/Texture2D.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
+#include "Containers/Ticker.h"
 #include "DetailLayoutBuilder.h"
 #include "IDetailTreeNode.h"
 #include "InputCoreTypes.h"
@@ -97,8 +99,29 @@ namespace DreamFlowNodeWidget
             return false;
         }
 
-        const UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>();
-        return DebuggerSubsystem != nullptr && DebuggerSubsystem->IsNodeCurrentExecutionLocation(FlowAsset, RuntimeNode->NodeGuid, bOutIsBreakpointHit);
+        UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>();
+        if (DebuggerSubsystem == nullptr)
+        {
+            return false;
+        }
+
+        const TArray<UDreamFlowExecutor*> Executors = DebuggerSubsystem->GetExecutorsForNode(RuntimeNode);
+        for (UDreamFlowExecutor* Executor : Executors)
+        {
+            if (Executor == nullptr)
+            {
+                continue;
+            }
+
+            if (Executor->IsPaused())
+            {
+                bOutIsBreakpointHit = true;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     static EVisibility GetExecutionBadgeVisibility(const UDreamFlowEdGraphNode* FlowNode)
@@ -616,10 +639,25 @@ void SGraphNode_DreamFlow::GetOverlayBrushes(bool bSelected, const FVector2f& Wi
     }
 
     bool bIsBreakpointHit = false;
-    const UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>();
-    if (DebuggerSubsystem == nullptr || !DebuggerSubsystem->IsNodeCurrentExecutionLocation(FlowAsset, RuntimeNode->NodeGuid, bIsBreakpointHit))
+    UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>();
+    if (DebuggerSubsystem == nullptr)
     {
         return;
+    }
+
+    const TArray<UDreamFlowExecutor*> Executors = DebuggerSubsystem->GetExecutorsForNode(RuntimeNode);
+    if (Executors.Num() == 0)
+    {
+        return;
+    }
+
+    for (UDreamFlowExecutor* Executor : Executors)
+    {
+        if (Executor != nullptr && Executor->IsPaused())
+        {
+            bIsBreakpointHit = true;
+            break;
+        }
     }
 
     FOverlayBrushInfo InstructionPointerOverlay;
@@ -1004,18 +1042,43 @@ TSharedRef<SWidget> SGraphNode_DreamFlow::BuildInlineArrayPropertyWidget(const T
 
 void SGraphNode_DreamFlow::RefreshGraphNodeAfterInlineArrayMutation() const
 {
-    UDreamFlowEdGraphNode* FlowNode = GetFlowNode();
-    if (FlowNode == nullptr)
+    SGraphNode_DreamFlow* MutableThis = const_cast<SGraphNode_DreamFlow*>(this);
+    if (MutableThis->bPendingInlineArrayGraphRefresh)
     {
         return;
     }
 
-    FlowNode->ReconstructNode();
+    MutableThis->bPendingInlineArrayGraphRefresh = true;
 
-    if (UEdGraph* Graph = FlowNode->GetGraph())
-    {
-        Graph->NotifyGraphChanged();
-    }
+    const TWeakPtr<SGraphNode_DreamFlow> WeakWidget = StaticCastSharedRef<SGraphNode_DreamFlow>(MutableThis->AsShared());
+    FTSTicker::GetCoreTicker().AddTicker(
+        FTickerDelegate::CreateLambda([WeakWidget](float)
+        {
+            const TSharedPtr<SGraphNode_DreamFlow> PinnedThis = WeakWidget.Pin();
+            if (!PinnedThis.IsValid())
+            {
+                return false;
+            }
+
+            PinnedThis->bPendingInlineArrayGraphRefresh = false;
+
+            UDreamFlowEdGraphNode* FlowNode = PinnedThis->GetFlowNode();
+            if (FlowNode == nullptr)
+            {
+                return false;
+            }
+
+            FlowNode->ReconstructNode();
+            PinnedThis->UpdateGraphNode();
+
+            if (UEdGraph* Graph = FlowNode->GetGraph())
+            {
+                Graph->NotifyGraphChanged();
+            }
+
+            return false;
+        }),
+        0.0f);
 }
 
 TSharedRef<SWidget> SGraphNode_DreamFlow::BuildPreviewArea()

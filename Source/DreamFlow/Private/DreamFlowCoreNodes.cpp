@@ -187,6 +187,11 @@ namespace
             || A.StartsWith(B + TEXT("."))
             || B.StartsWith(A + TEXT("."));
     }
+
+    static FName MakeSequencePinName(const int32 Index)
+    {
+        return FName(*FString::Printf(TEXT("Then_%d"), Index));
+    }
 }
 
 FText UDreamFlowCoreNode::GetNodeCategory_Implementation() const
@@ -382,6 +387,122 @@ void UDreamFlowSubFlowAsyncProxy::SyncVariablesFromChildToParent() const
     }
 
     SyncSharedVariables(ChildExecutor, ParentExecutor);
+}
+
+void UDreamFlowSequenceAsyncProxy::Initialize(
+    UDreamFlowAsyncContext* InAsyncContext,
+    UDreamFlowExecutor* InParentExecutor,
+    UDreamFlowSequenceNode* InOwnerNode,
+    const TArray<TObjectPtr<UDreamFlowExecutor>>& InBranchExecutors)
+{
+    AsyncContext = InAsyncContext;
+    ParentExecutor = InParentExecutor;
+    OwnerNode = InOwnerNode;
+    BranchExecutors = InBranchExecutors;
+}
+
+void UDreamFlowSequenceAsyncProxy::Start()
+{
+    if (AsyncContext == nullptr || ParentExecutor == nullptr)
+    {
+        CompleteSequence();
+        return;
+    }
+
+    BindBranchDelegates();
+    EvaluateCompletion();
+}
+
+void UDreamFlowSequenceAsyncProxy::BeginDestroy()
+{
+    UnbindBranchDelegates();
+
+    if (!bCompleted)
+    {
+        for (UDreamFlowExecutor* BranchExecutor : BranchExecutors)
+        {
+            if (BranchExecutor != nullptr && BranchExecutor->IsRunning())
+            {
+                BranchExecutor->FinishFlow();
+            }
+        }
+    }
+
+    Super::BeginDestroy();
+}
+
+void UDreamFlowSequenceAsyncProxy::BindBranchDelegates()
+{
+    BranchRuntimeStateHandles.Reset();
+    BranchRuntimeStateHandles.Reserve(BranchExecutors.Num());
+
+    for (UDreamFlowExecutor* BranchExecutor : BranchExecutors)
+    {
+        BranchRuntimeStateHandles.Add(
+            BranchExecutor != nullptr
+                ? BranchExecutor->OnRuntimeStateChangedNative().AddUObject(this, &ThisClass::HandleBranchRuntimeStateChanged)
+                : FDelegateHandle());
+    }
+}
+
+void UDreamFlowSequenceAsyncProxy::UnbindBranchDelegates()
+{
+    for (int32 Index = 0; Index < BranchExecutors.Num(); ++Index)
+    {
+        if (UDreamFlowExecutor* BranchExecutor = BranchExecutors[Index])
+        {
+            if (BranchRuntimeStateHandles.IsValidIndex(Index) && BranchRuntimeStateHandles[Index].IsValid())
+            {
+                BranchExecutor->OnRuntimeStateChangedNative().Remove(BranchRuntimeStateHandles[Index]);
+            }
+        }
+    }
+
+    BranchRuntimeStateHandles.Reset();
+}
+
+void UDreamFlowSequenceAsyncProxy::EvaluateCompletion()
+{
+    if (bCompleted)
+    {
+        return;
+    }
+
+    for (UDreamFlowExecutor* BranchExecutor : BranchExecutors)
+    {
+        if (BranchExecutor != nullptr && BranchExecutor->IsRunning())
+        {
+            return;
+        }
+    }
+
+    CompleteSequence();
+}
+
+void UDreamFlowSequenceAsyncProxy::HandleBranchRuntimeStateChanged(UDreamFlowExecutor* InUpdatedExecutor)
+{
+    if (bCompleted || InUpdatedExecutor == nullptr)
+    {
+        return;
+    }
+
+    EvaluateCompletion();
+}
+
+void UDreamFlowSequenceAsyncProxy::CompleteSequence()
+{
+    if (bCompleted)
+    {
+        return;
+    }
+
+    bCompleted = true;
+    UnbindBranchDelegates();
+
+    if (AsyncContext != nullptr && AsyncContext->IsValidAsyncContext())
+    {
+        AsyncContext->FinishFlow();
+    }
 }
 
 void UDreamFlowPollingAsyncProxy::InitializeWaitUntil(
@@ -662,6 +783,254 @@ void UDreamFlowPollingAsyncProxy::Complete(const FName OutputPinName)
     {
         AsyncContext->CompleteWithOutputPin(OutputPinName);
     }
+}
+
+void UDreamFlowBindingListenerProxy::Initialize(UDreamFlowExecutor* InExecutor, UDreamFlowListenForBindingChangeNode* InOwnerNode)
+{
+    Executor = InExecutor;
+    OwnerNode = InOwnerNode;
+    ObservedBinding = InOwnerNode != nullptr ? InOwnerNode->ObservedBinding : FDreamFlowValueBinding();
+}
+
+void UDreamFlowBindingListenerProxy::Start()
+{
+    if (Executor == nullptr || OwnerNode == nullptr || !OwnerNode->NodeGuid.IsValid())
+    {
+        Deactivate();
+        return;
+    }
+
+    bHasLastObservedValue = Executor->ResolveBindingValue(ObservedBinding, LastObservedValue);
+    bIsActive = BindListeners();
+    if (!bIsActive)
+    {
+        Deactivate();
+    }
+}
+
+void UDreamFlowBindingListenerProxy::BeginDestroy()
+{
+    UnbindChangedBranchDelegate();
+    UnbindListeners();
+    bIsActive = false;
+    Super::BeginDestroy();
+}
+
+bool UDreamFlowBindingListenerProxy::IsActive() const
+{
+    return bIsActive;
+}
+
+bool UDreamFlowBindingListenerProxy::BindListeners()
+{
+    if (Executor == nullptr)
+    {
+        return false;
+    }
+
+    bool bBoundAnyListener = false;
+
+    if (ObservedBinding.SourceType == EDreamFlowValueSourceType::FlowVariable && !ObservedBinding.VariableName.IsNone())
+    {
+        VariableChangedHandle = Executor->OnVariableChangedNative().AddUObject(this, &ThisClass::HandleVariableChanged);
+        bBoundAnyListener = true;
+    }
+
+    if (ObservedBinding.SourceType == EDreamFlowValueSourceType::ExecutionContextProperty && !ObservedBinding.PropertyPath.IsEmpty())
+    {
+        ExecutionContextPropertyChangedHandle = Executor->OnExecutionContextPropertyChangedNative().AddUObject(this, &ThisClass::HandleExecutionContextPropertyChanged);
+        RuntimeStateChangedHandle = Executor->OnRuntimeStateChangedNative().AddUObject(this, &ThisClass::HandleExecutorRuntimeStateChanged);
+        bBoundAnyListener = true;
+    }
+
+    return bBoundAnyListener;
+}
+
+void UDreamFlowBindingListenerProxy::UnbindListeners()
+{
+    if (Executor != nullptr)
+    {
+        if (VariableChangedHandle.IsValid())
+        {
+            Executor->OnVariableChangedNative().Remove(VariableChangedHandle);
+            VariableChangedHandle.Reset();
+        }
+
+        if (ExecutionContextPropertyChangedHandle.IsValid())
+        {
+            Executor->OnExecutionContextPropertyChangedNative().Remove(ExecutionContextPropertyChangedHandle);
+            ExecutionContextPropertyChangedHandle.Reset();
+        }
+
+        if (RuntimeStateChangedHandle.IsValid())
+        {
+            Executor->OnRuntimeStateChangedNative().Remove(RuntimeStateChangedHandle);
+            RuntimeStateChangedHandle.Reset();
+        }
+    }
+}
+
+void UDreamFlowBindingListenerProxy::UnbindChangedBranchDelegate()
+{
+    if (ActiveChangedBranchExecutor != nullptr && ActiveChangedBranchRuntimeStateHandle.IsValid())
+    {
+        ActiveChangedBranchExecutor->OnRuntimeStateChangedNative().Remove(ActiveChangedBranchRuntimeStateHandle);
+    }
+
+    ActiveChangedBranchRuntimeStateHandle.Reset();
+    ActiveChangedBranchExecutor = nullptr;
+}
+
+void UDreamFlowBindingListenerProxy::EvaluateChange()
+{
+    if (!bIsActive || bDispatchSuspended || Executor == nullptr || OwnerNode == nullptr || !OwnerNode->NodeGuid.IsValid())
+    {
+        return;
+    }
+
+    if (!Executor->IsRunning())
+    {
+        Deactivate();
+        return;
+    }
+
+    FDreamFlowValue CurrentValue;
+    if (!Executor->ResolveBindingValue(ObservedBinding, CurrentValue))
+    {
+        return;
+    }
+
+    bool bIsEqual = false;
+    const bool bHasComparableValues =
+        bHasLastObservedValue
+        && DreamFlowVariable::TryCompareValues(LastObservedValue, CurrentValue, EDreamFlowComparisonOperation::Equal, bIsEqual);
+
+    const bool bHasChanged = !bHasLastObservedValue || !bHasComparableValues || !bIsEqual;
+    LastObservedValue = CurrentValue;
+    bHasLastObservedValue = true;
+
+    if (bHasChanged)
+    {
+        TriggerChangedBranch();
+    }
+}
+
+void UDreamFlowBindingListenerProxy::TriggerChangedBranch()
+{
+    if (Executor == nullptr || OwnerNode == nullptr)
+    {
+        return;
+    }
+
+    UDreamFlowNode* ChangedChild = OwnerNode->GetFirstChildForOutputPin(TEXT("Changed"));
+    if (ChangedChild == nullptr)
+    {
+        return;
+    }
+
+    const FGuid LaunchKey = FGuid::NewGuid();
+    bDispatchSuspended = true;
+    UDreamFlowExecutor* BranchExecutor = Executor->StartParallelBranchAtNodeWithOwnerKey(ChangedChild, LaunchKey);
+    if (BranchExecutor == nullptr)
+    {
+        bDispatchSuspended = false;
+        DREAMFLOW_LOG(
+            Execution,
+            Warning,
+            "Persistent binding listener '%s' failed to launch the Changed branch.",
+            *OwnerNode->GetNodeDisplayName().ToString());
+        return;
+    }
+
+    if (!BranchExecutor->IsRunning())
+    {
+        RefreshObservedBaseline();
+        bDispatchSuspended = false;
+        return;
+    }
+
+    UnbindChangedBranchDelegate();
+    ActiveChangedBranchExecutor = BranchExecutor;
+    ActiveChangedBranchRuntimeStateHandle = BranchExecutor->OnRuntimeStateChangedNative().AddUObject(this, &ThisClass::HandleChangedBranchRuntimeStateChanged);
+}
+
+void UDreamFlowBindingListenerProxy::Deactivate()
+{
+    if (!bIsActive)
+    {
+        if (Executor != nullptr && OwnerNode != nullptr && OwnerNode->NodeGuid.IsValid() && Executor->GetPersistentRuntimeObject(OwnerNode->NodeGuid) == this)
+        {
+            Executor->ClearPersistentRuntimeObject(OwnerNode->NodeGuid);
+        }
+        return;
+    }
+
+    bIsActive = false;
+    bDispatchSuspended = false;
+    UnbindChangedBranchDelegate();
+    UnbindListeners();
+
+    if (Executor != nullptr && OwnerNode != nullptr && OwnerNode->NodeGuid.IsValid() && Executor->GetPersistentRuntimeObject(OwnerNode->NodeGuid) == this)
+    {
+        Executor->ClearPersistentRuntimeObject(OwnerNode->NodeGuid);
+    }
+}
+
+void UDreamFlowBindingListenerProxy::HandleVariableChanged(UDreamFlowExecutor* InUpdatedExecutor, FName VariableName, const FDreamFlowValue& InValue)
+{
+    (void)InValue;
+
+    if (!bIsActive || bDispatchSuspended || InUpdatedExecutor != Executor || VariableName != ObservedBinding.VariableName)
+    {
+        return;
+    }
+
+    EvaluateChange();
+}
+
+void UDreamFlowBindingListenerProxy::HandleExecutionContextPropertyChanged(UDreamFlowExecutor* InUpdatedExecutor, const FString& PropertyPath, const FDreamFlowValue& InValue)
+{
+    (void)InValue;
+
+    if (!bIsActive || bDispatchSuspended || InUpdatedExecutor != Executor || !DoPropertyPathsOverlap(PropertyPath, ObservedBinding.PropertyPath))
+    {
+        return;
+    }
+
+    EvaluateChange();
+}
+
+void UDreamFlowBindingListenerProxy::HandleExecutorRuntimeStateChanged(UDreamFlowExecutor* InUpdatedExecutor)
+{
+    if (!bIsActive || bDispatchSuspended || InUpdatedExecutor != Executor || ObservedBinding.SourceType != EDreamFlowValueSourceType::ExecutionContextProperty)
+    {
+        return;
+    }
+
+    EvaluateChange();
+}
+
+void UDreamFlowBindingListenerProxy::HandleChangedBranchRuntimeStateChanged(UDreamFlowExecutor* InUpdatedExecutor)
+{
+    if (InUpdatedExecutor == nullptr || InUpdatedExecutor != ActiveChangedBranchExecutor || InUpdatedExecutor->IsRunning())
+    {
+        return;
+    }
+
+    UnbindChangedBranchDelegate();
+    RefreshObservedBaseline();
+    bDispatchSuspended = false;
+}
+
+void UDreamFlowBindingListenerProxy::RefreshObservedBaseline()
+{
+    if (Executor == nullptr)
+    {
+        bHasLastObservedValue = false;
+        return;
+    }
+
+    bHasLastObservedValue = Executor->ResolveBindingValue(ObservedBinding, LastObservedValue);
 }
 
 bool UDreamFlowPollingAsyncProxy::HasTimedOut() const
@@ -987,6 +1356,134 @@ void UDreamFlowSetVariableNode::ValidateNode(const UDreamFlowAsset* OwningAsset,
             this,
             EDreamFlowValidationSeverity::Info,
             FText::FromString(TEXT("Set Variable only auto-continues to the first child. Additional links are ignored.")));
+    }
+}
+
+UDreamFlowSequenceNode::UDreamFlowSequenceNode()
+{
+    Title = FText::FromString(TEXT("Sequence"));
+    Description = FText::FromString(TEXT("Launches each connected Then output as its own branch executor, then ends once all launched branches are done."));
+    ThenLabels = { FText::FromString(TEXT("Then 0")), FText::FromString(TEXT("Then 1")) };
+
+#if WITH_EDITORONLY_DATA
+    NodeTint = FLinearColor(0.29f, 0.62f, 0.93f, 1.0f);
+#endif
+}
+
+FText UDreamFlowSequenceNode::GetNodeDisplayName_Implementation() const
+{
+    return Title;
+}
+
+FLinearColor UDreamFlowSequenceNode::GetNodeTint_Implementation() const
+{
+    return FLinearColor(0.29f, 0.62f, 0.93f, 1.0f);
+}
+
+FText UDreamFlowSequenceNode::GetNodeAccentLabel_Implementation() const
+{
+    return FText::FromString(TEXT("Sequence"));
+}
+
+TArray<FDreamFlowNodeDisplayItem> UDreamFlowSequenceNode::GetNodeDisplayItems_Implementation() const
+{
+    TArray<FDreamFlowNodeDisplayItem> Items = Super::GetNodeDisplayItems_Implementation();
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Outputs")), FString::FromInt(GetOutputPins().Num())));
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Mode")), TEXT("Ordered Branch Launch")));
+    return Items;
+}
+
+TArray<FDreamFlowNodeOutputPin> UDreamFlowSequenceNode::GetOutputPins_Implementation() const
+{
+    TArray<FDreamFlowNodeOutputPin> OutputPins;
+    const int32 PinCount = FMath::Max(2, ThenLabels.Num());
+
+    for (int32 Index = 0; Index < PinCount; ++Index)
+    {
+        FDreamFlowNodeOutputPin& OutputPin = OutputPins.AddDefaulted_GetRef();
+        OutputPin.PinName = MakeSequencePinName(Index);
+        OutputPin.DisplayName = ThenLabels.IsValidIndex(Index) && !ThenLabels[Index].IsEmpty()
+            ? ThenLabels[Index]
+            : FText::Format(FText::FromString(TEXT("Then {0}")), Index);
+        OutputPin.bAllowMultipleConnections = false;
+    }
+
+    return OutputPins;
+}
+
+void UDreamFlowSequenceNode::StartAsyncNode_Implementation(UObject* Context, UDreamFlowExecutor* Executor, UDreamFlowAsyncContext* AsyncContext)
+{
+    (void)Context;
+
+    if (AsyncContext == nullptr || Executor == nullptr)
+    {
+        return;
+    }
+
+    TArray<TObjectPtr<UDreamFlowExecutor>> BranchExecutors;
+    for (const FDreamFlowNodeOutputPin& OutputPin : GetOutputPins())
+    {
+        if (UDreamFlowNode* ChildNode = GetFirstChildForOutputPin(OutputPin.PinName))
+        {
+            if (UDreamFlowExecutor* BranchExecutor = Executor->StartParallelBranchAtNode(ChildNode))
+            {
+                BranchExecutors.Add(BranchExecutor);
+            }
+            else
+            {
+                DREAMFLOW_LOG(
+                    Execution,
+                    Warning,
+                    "Sequence node '%s' failed to start branch '%s'.",
+                    *GetNodeDisplayName().ToString(),
+                    *OutputPin.PinName.ToString());
+            }
+        }
+    }
+
+    UDreamFlowSequenceAsyncProxy* Proxy = NewObject<UDreamFlowSequenceAsyncProxy>(AsyncContext, NAME_None, RF_Transient);
+    if (Proxy == nullptr)
+    {
+        AsyncContext->FinishFlow();
+        return;
+    }
+
+    Proxy->Initialize(AsyncContext, Executor, this, BranchExecutors);
+    Proxy->Start();
+}
+
+void UDreamFlowSequenceNode::ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const
+{
+    (void)OwningAsset;
+
+    int32 ConnectedOutputs = 0;
+    for (const FDreamFlowNodeOutputPin& OutputPin : GetOutputPins())
+    {
+        const TArray<UDreamFlowNode*> ConnectedChildren = GetChildrenForOutputPin(OutputPin.PinName);
+        if (ConnectedChildren.Num() > 1)
+        {
+            AddValidationMessage(
+                OutMessages,
+                this,
+                EDreamFlowValidationSeverity::Warning,
+                FText::Format(
+                    FText::FromString(TEXT("Sequence output '{0}' has multiple links. Only the first link is supported.")),
+                    OutputPin.DisplayName));
+        }
+
+        if (ConnectedChildren.Num() > 0)
+        {
+            ++ConnectedOutputs;
+        }
+    }
+
+    if (ConnectedOutputs == 0)
+    {
+        AddValidationMessage(
+            OutMessages,
+            this,
+            EDreamFlowValidationSeverity::Info,
+            FText::FromString(TEXT("Sequence has no connected Then outputs and will finish immediately.")));
     }
 }
 
@@ -1558,5 +2055,129 @@ void UDreamFlowWaitForBindingChangeNode::ValidateNode(const UDreamFlowAsset* Own
             this,
             EDreamFlowValidationSeverity::Warning,
             FText::FromString(TEXT("Wait For Binding Change is bound to a non-reactive source and has neither fallback polling nor a timeout, so it may never resume.")));
+    }
+}
+
+UDreamFlowListenForBindingChangeNode::UDreamFlowListenForBindingChangeNode()
+{
+    Title = FText::FromString(TEXT("Listen For Binding Change"));
+    Description = FText::FromString(TEXT("Registers a persistent listener that launches the Changed branch whenever the observed binding changes, then immediately continues through Next.")); 
+    TransitionMode = EDreamFlowNodeTransitionMode::Automatic;
+    ObservedBinding.LiteralValue.Type = EDreamFlowValueType::Bool;
+
+#if WITH_EDITORONLY_DATA
+    NodeTint = FLinearColor(0.22f, 0.72f, 0.59f, 1.0f);
+#endif
+}
+
+FText UDreamFlowListenForBindingChangeNode::GetNodeDisplayName_Implementation() const
+{
+    return Title;
+}
+
+FLinearColor UDreamFlowListenForBindingChangeNode::GetNodeTint_Implementation() const
+{
+    return FLinearColor(0.22f, 0.72f, 0.59f, 1.0f);
+}
+
+FText UDreamFlowListenForBindingChangeNode::GetNodeAccentLabel_Implementation() const
+{
+    return FText::FromString(TEXT("Reactive"));
+}
+
+TArray<FDreamFlowNodeDisplayItem> UDreamFlowListenForBindingChangeNode::GetNodeDisplayItems_Implementation() const
+{
+    TArray<FDreamFlowNodeDisplayItem> Items = Super::GetNodeDisplayItems_Implementation();
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Observed")), ObservedBinding.DescribeCompact()));
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Mode")), TEXT("Persistent Listener")));
+    return Items;
+}
+
+TArray<FDreamFlowNodeOutputPin> UDreamFlowListenForBindingChangeNode::GetOutputPins_Implementation() const
+{
+    FDreamFlowNodeOutputPin NextPin;
+    NextPin.PinName = TEXT("Next");
+    NextPin.DisplayName = FText::FromString(TEXT("Next"));
+
+    FDreamFlowNodeOutputPin ChangedPin;
+    ChangedPin.PinName = TEXT("Changed");
+    ChangedPin.DisplayName = FText::FromString(TEXT("Changed"));
+
+    return { NextPin, ChangedPin };
+}
+
+void UDreamFlowListenForBindingChangeNode::ExecuteNodeWithExecutor_Implementation(UObject* Context, UDreamFlowExecutor* Executor)
+{
+    Super::ExecuteNodeWithExecutor_Implementation(Context, Executor);
+
+    if (Executor == nullptr || !NodeGuid.IsValid())
+    {
+        return;
+    }
+
+    if (const UDreamFlowBindingListenerProxy* ExistingProxy = Cast<UDreamFlowBindingListenerProxy>(Executor->GetPersistentRuntimeObject(NodeGuid)))
+    {
+        if (ExistingProxy->IsActive())
+        {
+            return;
+        }
+    }
+
+    UDreamFlowBindingListenerProxy* Proxy = NewObject<UDreamFlowBindingListenerProxy>(Executor, NAME_None, RF_Transient);
+    if (Proxy == nullptr)
+    {
+        return;
+    }
+
+    Executor->SetPersistentRuntimeObject(NodeGuid, Proxy);
+    Proxy->Initialize(Executor, this);
+    Proxy->Start();
+}
+
+bool UDreamFlowListenForBindingChangeNode::SupportsAutomaticTransition_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
+{
+    (void)Context;
+    (void)Executor;
+    return GetFirstChildForOutputPin(TEXT("Next")) != nullptr;
+}
+
+FName UDreamFlowListenForBindingChangeNode::ResolveAutomaticTransitionOutputPin_Implementation(UObject* Context, UDreamFlowExecutor* Executor) const
+{
+    (void)Context;
+    (void)Executor;
+    return GetFirstChildForOutputPin(TEXT("Next")) != nullptr
+        ? FName(TEXT("Next"))
+        : NAME_None;
+}
+
+void UDreamFlowListenForBindingChangeNode::ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const
+{
+    ValidateBinding(OwningAsset, this, ObservedBinding, FText::FromString(TEXT("Observed binding")), OutMessages);
+
+    if (!SupportsReactiveBindingNotifications(ObservedBinding))
+    {
+        AddValidationMessage(
+            OutMessages,
+            this,
+            EDreamFlowValidationSeverity::Warning,
+            FText::FromString(TEXT("Listen For Binding Change only reacts to flow-variable and execution-context-property bindings. Literal bindings will never fire.")));
+    }
+
+    if (GetFirstChildForOutputPin(TEXT("Changed")) == nullptr)
+    {
+        AddValidationMessage(
+            OutMessages,
+            this,
+            EDreamFlowValidationSeverity::Info,
+            FText::FromString(TEXT("Listen For Binding Change has no Changed output connected, so notifications will be ignored.")));
+    }
+
+    if (GetFirstChildForOutputPin(TEXT("Next")) == nullptr)
+    {
+        AddValidationMessage(
+            OutMessages,
+            this,
+            EDreamFlowValidationSeverity::Info,
+            FText::FromString(TEXT("Listen For Binding Change has no Next output connected, so the parent flow will stay on this node after registration.")));
     }
 }

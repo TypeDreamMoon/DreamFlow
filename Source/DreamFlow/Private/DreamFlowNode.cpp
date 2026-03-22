@@ -122,7 +122,7 @@ TArray<FDreamFlowNodeOutputPin> UDreamFlowNode::GetOutputPins_Implementation() c
     FDreamFlowNodeOutputPin OutputPin;
     OutputPin.PinName = TEXT("Out");
     OutputPin.DisplayName = FText::FromString(TEXT("Next"));
-    OutputPin.bAllowMultipleConnections = SupportsMultipleChildren();
+    OutputPin.bAllowMultipleConnections = false;
     return { OutputPin };
 }
 
