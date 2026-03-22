@@ -101,9 +101,18 @@ FString FDreamFlowValue::DescribeCompact() const
 
 FString FDreamFlowValueBinding::Describe() const
 {
-    return SourceType == EDreamFlowValueSourceType::FlowVariable
-        ? (VariableName.IsNone() ? TEXT("<variable>") : VariableName.ToString())
-        : LiteralValue.Describe();
+    switch (SourceType)
+    {
+    case EDreamFlowValueSourceType::FlowVariable:
+        return VariableName.IsNone() ? TEXT("<variable>") : VariableName.ToString();
+
+    case EDreamFlowValueSourceType::ExecutionContextProperty:
+        return PropertyPath.IsEmpty() ? TEXT("<property path>") : PropertyPath;
+
+    case EDreamFlowValueSourceType::Literal:
+    default:
+        return LiteralValue.Describe();
+    }
 }
 
 FString FDreamFlowValueBinding::DescribeCompact() const
@@ -113,6 +122,13 @@ FString FDreamFlowValueBinding::DescribeCompact() const
         return FString::Printf(
             TEXT("Type: Variable  Value: %s"),
             VariableName.IsNone() ? TEXT("<variable>") : *VariableName.ToString());
+    }
+
+    if (SourceType == EDreamFlowValueSourceType::ExecutionContextProperty)
+    {
+        return FString::Printf(
+            TEXT("Type: Property  Value: %s"),
+            PropertyPath.IsEmpty() ? TEXT("<property path>") : *PropertyPath);
     }
 
     return LiteralValue.DescribeCompact();

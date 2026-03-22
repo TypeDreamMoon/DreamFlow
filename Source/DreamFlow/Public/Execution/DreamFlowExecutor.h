@@ -14,6 +14,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FDreamFlowExecutorEventSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FDreamFlowExecutorNodeEventSignature, UDreamFlowNode*, Node);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FDreamFlowExecutorStateChangedSignature, EDreamFlowExecutorDebugState, DebugState, UDreamFlowNode*, FocusNode);
 DECLARE_MULTICAST_DELEGATE_OneParam(FDreamFlowExecutorRuntimeStateChangedNativeSignature, UDreamFlowExecutor*);
+DECLARE_MULTICAST_DELEGATE_ThreeParams(FDreamFlowExecutorVariableChangedNativeSignature, UDreamFlowExecutor*, FName, const FDreamFlowValue&);
+DECLARE_MULTICAST_DELEGATE_ThreeParams(FDreamFlowExecutorExecutionContextPropertyChangedNativeSignature, UDreamFlowExecutor*, const FString&, const FDreamFlowValue&);
 
 UCLASS(BlueprintType, Blueprintable)
 class DREAMFLOW_API UDreamFlowExecutor : public UObject
@@ -136,9 +138,20 @@ public:
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution|Async")
     bool CompleteAsyncNodeForNode(UDreamFlowNode* Node, FName OutputPinName = NAME_None);
 
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Snapshot")
+    FDreamFlowExecutionSnapshot BuildExecutionSnapshot() const;
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution|Snapshot")
+    void ApplyExecutionSnapshot(const FDreamFlowExecutionSnapshot& InSnapshot);
+
+    void RegisterChildExecutor(UDreamFlowNode* OwnerNode, UDreamFlowExecutor* ChildExecutor);
+    void UnregisterChildExecutor(UDreamFlowNode* OwnerNode, UDreamFlowExecutor* ChildExecutor);
+
     void BuildReplicatedState(FDreamFlowReplicatedExecutionState& OutState) const;
     void ApplyReplicatedState(const FDreamFlowReplicatedExecutionState& InState);
     FDreamFlowExecutorRuntimeStateChangedNativeSignature& OnRuntimeStateChangedNative();
+    FDreamFlowExecutorVariableChangedNativeSignature& OnVariableChangedNative();
+    FDreamFlowExecutorExecutionContextPropertyChangedNativeSignature& OnExecutionContextPropertyChangedNative();
 
     /** Returns true if the executor currently exposes a variable with this name. */
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
@@ -218,6 +231,96 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
     void ResetVariablesToDefaults();
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Node State")
+    bool HasNodeStateValue(FGuid NodeGuid, FName StateKey) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Node State")
+    bool GetNodeStateValue(FGuid NodeGuid, FName StateKey, FDreamFlowValue& OutValue) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Node State")
+    bool GetNodeStateBoolValue(FGuid NodeGuid, FName StateKey, bool& OutValue) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Node State")
+    bool GetNodeStateIntValue(FGuid NodeGuid, FName StateKey, int32& OutValue) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Node State")
+    bool GetNodeStateFloatValue(FGuid NodeGuid, FName StateKey, float& OutValue) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Node State")
+    bool GetNodeStateNameValue(FGuid NodeGuid, FName StateKey, FName& OutValue) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Node State")
+    bool GetNodeStateStringValue(FGuid NodeGuid, FName StateKey, FString& OutValue) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Node State")
+    bool GetNodeStateTextValue(FGuid NodeGuid, FName StateKey, FText& OutValue) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Node State")
+    bool GetNodeStateGameplayTagValue(FGuid NodeGuid, FName StateKey, FGameplayTag& OutValue) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Node State")
+    bool GetNodeStateObjectValue(FGuid NodeGuid, FName StateKey, UObject*& OutValue) const;
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    bool SetNodeStateValue(FGuid NodeGuid, FName StateKey, const FDreamFlowValue& InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    bool SetNodeStateBoolValue(FGuid NodeGuid, FName StateKey, bool InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    bool SetNodeStateIntValue(FGuid NodeGuid, FName StateKey, int32 InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    bool SetNodeStateFloatValue(FGuid NodeGuid, FName StateKey, float InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    bool SetNodeStateNameValue(FGuid NodeGuid, FName StateKey, FName InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    bool SetNodeStateStringValue(FGuid NodeGuid, FName StateKey, const FString& InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    bool SetNodeStateTextValue(FGuid NodeGuid, FName StateKey, const FText& InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    bool SetNodeStateGameplayTagValue(FGuid NodeGuid, FName StateKey, FGameplayTag InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    bool SetNodeStateObjectValue(FGuid NodeGuid, FName StateKey, UObject* InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    void ResetNodeState(FGuid NodeGuid);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    void ResetAllNodeStates();
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Sub Flow")
+    UDreamFlowExecutor* GetParentExecutor() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Sub Flow")
+    UDreamFlowExecutor* GetChildExecutorForNode(const UDreamFlowNode* Node) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Sub Flow")
+    UDreamFlowExecutor* GetCurrentChildExecutor() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Sub Flow")
+    TArray<UDreamFlowExecutor*> GetActiveChildExecutors() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Sub Flow")
+    TArray<FDreamFlowSubFlowStackEntry> GetActiveSubFlowStack() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Property")
+    bool GetExecutionContextPropertyValue(const FString& PropertyPath, FDreamFlowValue& OutValue) const;
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Property")
+    bool SetExecutionContextPropertyValue(const FString& PropertyPath, const FDreamFlowValue& InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Property")
+    void NotifyExecutionContextChanged();
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Property")
+    bool NotifyExecutionContextPropertyChanged(const FString& PropertyPath);
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
     bool ResolveBindingValue(const FDreamFlowValueBinding& Binding, FDreamFlowValue& OutValue) const;
@@ -324,6 +427,7 @@ public:
 
 protected:
     bool ActivateNode(UDreamFlowNode* Node, bool bExecuteNode);
+    bool EnterChildrenForOutputPin(const UDreamFlowNode* SourceNode, FName OutputPinName);
     bool ExecuteCurrentNode();
     bool TryConsumeCompletedAsyncNode(FName RequestedOutputPinName);
     FName ResolveCompletedAsyncOutputPin(const UDreamFlowNode* AsyncNode, FName RequestedOutputPinName) const;
@@ -332,6 +436,8 @@ protected:
     void RegisterWithDebugger();
     void UnregisterFromDebugger();
     void NotifyDebuggerStateChanged();
+    UDreamFlowExecutor* StartParallelBranchAtNode(UDreamFlowNode* StartNode);
+    void DetachFromParentExecutor();
     void ResetRuntimeState(UDreamFlowAsset* InFlowAsset, UObject* InExecutionContext, bool bNotifyDebugger);
     void ClearAsyncExecutionState();
 
@@ -349,6 +455,9 @@ protected:
 
     UPROPERTY(Transient)
     TMap<FName, FDreamFlowValue> RuntimeVariables;
+
+    UPROPERTY(Transient)
+    TArray<FDreamFlowNodeRuntimeState> NodeRuntimeStates;
 
     UPROPERTY(Transient)
     TObjectPtr<UDreamFlowNode> PendingAsyncNode;
@@ -380,6 +489,23 @@ protected:
     UPROPERTY(Transient)
     FName QueuedAsyncCompletionOutputPin;
 
+    UPROPERTY(Transient)
+    TObjectPtr<UDreamFlowExecutor> ParentExecutor;
+
+    UPROPERTY(Transient)
+    TMap<FGuid, TObjectPtr<UDreamFlowExecutor>> ActiveChildExecutorsByNodeGuid;
+
+    UPROPERTY(Transient)
+    FGuid ParentLinkNodeGuid;
+
+    UPROPERTY(Transient)
+    bool bSharesRuntimeVariablesWithParent = false;
+
+    UPROPERTY(Transient)
+    TArray<FDreamFlowSubFlowStackEntry> CachedSubFlowStack;
+
 private:
     FDreamFlowExecutorRuntimeStateChangedNativeSignature RuntimeStateChangedNative;
+    FDreamFlowExecutorVariableChangedNativeSignature VariableChangedNative;
+    FDreamFlowExecutorExecutionContextPropertyChangedNativeSignature ExecutionContextPropertyChangedNative;
 };

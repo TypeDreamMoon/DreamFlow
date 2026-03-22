@@ -104,6 +104,7 @@ private:
     void CancelPendingDetailsObjectRequest();
     bool HandleDeferredDetailsObject(float DeltaTime);
     void SetDetailsObject(UObject* ObjectToEdit);
+    void ShowReferenceAnalysis();
     void SyncVariableEditorDataFromAsset();
     void SyncVariablesFromEditorData();
     void MarkValidationDirty();

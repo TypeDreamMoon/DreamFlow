@@ -7,6 +7,7 @@
 #include "DreamFlowEdGraphSchema.h"
 #include "DreamFlowEntryNode.h"
 #include "DreamFlowNode.h"
+#include "DreamFlowVariableTypes.h"
 #include "Algo/Sort.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetToolsModule.h"
@@ -21,6 +22,7 @@
 #include "Misc/PackageName.h"
 #include "ScopedTransaction.h"
 #include "Subsystems/AssetEditorSubsystem.h"
+#include "UObject/UnrealType.h"
 
 #define LOCTEXT_NAMESPACE "DreamFlowEditorUtils"
 
@@ -130,6 +132,24 @@ namespace DreamFlowEditorUtils
         }
 
         return const_cast<UClass*>(NodeClass);
+    }
+
+    static void AddReferenceUsage(
+        TArray<FDreamFlowReferenceUsage>& OutUsages,
+        const FString& Category,
+        const UDreamFlowNode* Node,
+        const FString& Detail)
+    {
+        if (Node == nullptr)
+        {
+            return;
+        }
+
+        FDreamFlowReferenceUsage& Usage = OutUsages.AddDefaulted_GetRef();
+        Usage.Category = Category;
+        Usage.NodeGuid = Node->NodeGuid;
+        Usage.NodeTitle = Node->GetNodeDisplayName();
+        Usage.Detail = Detail;
     }
 }
 
@@ -607,6 +627,150 @@ bool FDreamFlowEditorUtils::IsNodeClassCreatable(const UClass* NodeClass, const 
 
     const UDreamFlowNode* DefaultNode = Cast<UDreamFlowNode>(ResolvedNodeClass->GetDefaultObject());
     return DefaultNode != nullptr && DefaultNode->IsUserCreatable() && DefaultNode->SupportsFlowAsset(FlowAsset);
+}
+
+void FDreamFlowEditorUtils::CollectReferenceUsages(const UDreamFlowAsset* FlowAsset, TArray<FDreamFlowReferenceUsage>& OutUsages)
+{
+    OutUsages.Reset();
+
+    if (FlowAsset == nullptr)
+    {
+        return;
+    }
+
+    for (const TObjectPtr<UDreamFlowNode>& NodePtr : FlowAsset->GetNodes())
+    {
+        const UDreamFlowNode* Node = NodePtr.Get();
+        if (Node == nullptr)
+        {
+            continue;
+        }
+
+        DreamFlowEditorUtils::AddReferenceUsage(
+            OutUsages,
+            TEXT("Node Class"),
+            Node,
+            Node->GetClass()->GetPathName());
+
+        for (TFieldIterator<FProperty> It(Node->GetClass(), EFieldIteratorFlags::IncludeSuper); It; ++It)
+        {
+            const FProperty* Property = *It;
+            if (Property == nullptr)
+            {
+                continue;
+            }
+
+            if (const FStructProperty* StructProperty = CastField<FStructProperty>(Property))
+            {
+                if (StructProperty->Struct == FDreamFlowValueBinding::StaticStruct())
+                {
+                    const FDreamFlowValueBinding* BindingValue = StructProperty->ContainerPtrToValuePtr<FDreamFlowValueBinding>(Node);
+                    if (BindingValue == nullptr)
+                    {
+                        continue;
+                    }
+
+                    if (BindingValue->SourceType == EDreamFlowValueSourceType::FlowVariable && !BindingValue->VariableName.IsNone())
+                    {
+                        DreamFlowEditorUtils::AddReferenceUsage(
+                            OutUsages,
+                            TEXT("Flow Variable"),
+                            Node,
+                            FString::Printf(TEXT("%s -> %s"), *Property->GetName(), *BindingValue->VariableName.ToString()));
+                    }
+                    else if (BindingValue->SourceType == EDreamFlowValueSourceType::ExecutionContextProperty && !BindingValue->PropertyPath.IsEmpty())
+                    {
+                        DreamFlowEditorUtils::AddReferenceUsage(
+                            OutUsages,
+                            TEXT("Context Property"),
+                            Node,
+                            FString::Printf(TEXT("%s -> %s"), *Property->GetName(), *BindingValue->PropertyPath));
+                    }
+
+                    continue;
+                }
+            }
+
+            if (const FNameProperty* NameProperty = CastField<FNameProperty>(Property))
+            {
+                if (Property->HasMetaData(TEXT("DreamFlowVariablePicker")))
+                {
+                    const FName VariableName = NameProperty->GetPropertyValue_InContainer(Node);
+                    if (!VariableName.IsNone())
+                    {
+                        DreamFlowEditorUtils::AddReferenceUsage(
+                            OutUsages,
+                            TEXT("Flow Variable Target"),
+                            Node,
+                            FString::Printf(TEXT("%s -> %s"), *Property->GetName(), *VariableName.ToString()));
+                    }
+                }
+
+                continue;
+            }
+
+            if (const FObjectPropertyBase* ObjectProperty = CastField<FObjectPropertyBase>(Property))
+            {
+                UObject* ObjectValue = ObjectProperty->GetObjectPropertyValue_InContainer(Node);
+                if (const UDreamFlowAsset* ReferencedAsset = Cast<UDreamFlowAsset>(ObjectValue))
+                {
+                    DreamFlowEditorUtils::AddReferenceUsage(
+                        OutUsages,
+                        TEXT("Sub Flow Asset"),
+                        Node,
+                        FString::Printf(TEXT("%s -> %s"), *Property->GetName(), *ReferencedAsset->GetPathName()));
+                }
+            }
+        }
+    }
+
+    Algo::Sort(OutUsages, [](const FDreamFlowReferenceUsage& A, const FDreamFlowReferenceUsage& B)
+    {
+        if (A.Category != B.Category)
+        {
+            return A.Category < B.Category;
+        }
+
+        if (A.NodeTitle.ToString() != B.NodeTitle.ToString())
+        {
+            return A.NodeTitle.ToString() < B.NodeTitle.ToString();
+        }
+
+        return A.Detail < B.Detail;
+    });
+}
+
+FString FDreamFlowEditorUtils::BuildReferenceUsageReport(const UDreamFlowAsset* FlowAsset)
+{
+    TArray<FDreamFlowReferenceUsage> Usages;
+    CollectReferenceUsages(FlowAsset, Usages);
+
+    FString Report;
+    Report += FString::Printf(TEXT("DreamFlow Reference Report\nAsset: %s\n\n"), *GetNameSafe(FlowAsset));
+
+    if (Usages.Num() == 0)
+    {
+        Report += TEXT("No variable, context-property, sub-flow, or node-class references were found.");
+        return Report;
+    }
+
+    FString CurrentCategory;
+    for (const FDreamFlowReferenceUsage& Usage : Usages)
+    {
+        if (Usage.Category != CurrentCategory)
+        {
+            CurrentCategory = Usage.Category;
+            Report += FString::Printf(TEXT("[%s]\n"), *CurrentCategory);
+        }
+
+        Report += FString::Printf(
+            TEXT("- %s (%s): %s\n"),
+            *Usage.NodeTitle.ToString(),
+            *Usage.NodeGuid.ToString(EGuidFormats::Short),
+            *Usage.Detail);
+    }
+
+    return Report;
 }
 
 void FDreamFlowEditorUtils::RebuildGraphFromAsset(UDreamFlowAsset* FlowAsset, UDreamFlowEdGraph* Graph)

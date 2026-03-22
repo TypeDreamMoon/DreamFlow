@@ -11,6 +11,7 @@
 #include "Widgets/SNullWidget.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Input/SComboButton.h"
+#include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Text/STextBlock.h"
 
 TSharedRef<IPropertyTypeCustomization> FDreamFlowValueBindingCustomization::MakeInstance()
@@ -24,6 +25,7 @@ void FDreamFlowValueBindingCustomization::CustomizeHeader(TSharedRef<IPropertyHa
     PropertyUtilities = CustomizationUtils.GetPropertyUtilities();
     SourceTypeHandle = StructPropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValueBinding, SourceType));
     VariableNameHandle = StructPropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValueBinding, VariableName));
+    PropertyPathHandle = StructPropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValueBinding, PropertyPath));
     LiteralValueHandle = StructPropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FDreamFlowValueBinding, LiteralValue));
 
     auto RequestRefresh = [WeakPropertyUtilities = TWeakPtr<IPropertyUtilities>(PropertyUtilities)]()
@@ -42,6 +44,11 @@ void FDreamFlowValueBindingCustomization::CustomizeHeader(TSharedRef<IPropertyHa
     if (VariableNameHandle.IsValid())
     {
         VariableNameHandle->SetOnPropertyValueChanged(FSimpleDelegate::CreateLambda(RequestRefresh));
+    }
+
+    if (PropertyPathHandle.IsValid())
+    {
+        PropertyPathHandle->SetOnPropertyValueChanged(FSimpleDelegate::CreateLambda(RequestRefresh));
     }
 
     HeaderRow
@@ -119,6 +126,21 @@ void FDreamFlowValueBindingCustomization::CustomizeChildren(TSharedRef<IProperty
                     .Text(this, &FDreamFlowValueBindingCustomization::GetVariablePickerLabel)
                     .Font(IDetailLayoutBuilder::GetDetailFont())
                 ]
+            ];
+    }
+    else if (GetCurrentSourceType() == EDreamFlowValueSourceType::ExecutionContextProperty && PropertyPathHandle.IsValid())
+    {
+        StructBuilder.AddCustomRow(FText::FromString(TEXT("Execution Context Property")))
+            .NameContent()
+            [
+                SNew(STextBlock)
+                .Text(FText::FromString(TEXT("Property Path")))
+                .Font(IDetailLayoutBuilder::GetDetailFont())
+            ]
+            .ValueContent()
+            .MinDesiredWidth(360.0f)
+            [
+                BuildCompactPropertyPathEditor()
             ];
     }
     else if (LiteralValueHandle.IsValid())
@@ -289,6 +311,19 @@ FText FDreamFlowValueBindingCustomization::GetBindingSummary() const
         return FText::FromString(FString::Printf(TEXT("Type: Variable  Value: %s"), *VariableName.ToString()));
     }
 
+    if (GetCurrentSourceType() == EDreamFlowValueSourceType::ExecutionContextProperty)
+    {
+        FString PropertyPath;
+        if (PropertyPathHandle.IsValid())
+        {
+            PropertyPathHandle->GetValue(PropertyPath);
+        }
+
+        return FText::FromString(FString::Printf(
+            TEXT("Type: Execution Context Property  Value: %s"),
+            PropertyPath.IsEmpty() ? TEXT("<Property Path>") : *PropertyPath));
+    }
+
     if (bHasBindingValue)
     {
         return FText::FromString(BindingValue.LiteralValue.DescribeCompact());
@@ -299,9 +334,17 @@ FText FDreamFlowValueBindingCustomization::GetBindingSummary() const
 
 FText FDreamFlowValueBindingCustomization::GetSourceTypeLabel() const
 {
-    return GetCurrentSourceType() == EDreamFlowValueSourceType::FlowVariable
-        ? FText::FromString(TEXT("Flow Variable"))
-        : FText::FromString(TEXT("Literal"));
+    switch (GetCurrentSourceType())
+    {
+    case EDreamFlowValueSourceType::FlowVariable:
+        return FText::FromString(TEXT("Flow Variable"));
+
+    case EDreamFlowValueSourceType::ExecutionContextProperty:
+        return FText::FromString(TEXT("Execution Context Property"));
+
+    default:
+        return FText::FromString(TEXT("Literal"));
+    }
 }
 
 FText FDreamFlowValueBindingCustomization::GetVariablePickerLabel() const
@@ -334,10 +377,25 @@ FText FDreamFlowValueBindingCustomization::GetVariablePickerLabel() const
     return FText::FromName(VariableName);
 }
 
+FText FDreamFlowValueBindingCustomization::GetPropertyPathLabel() const
+{
+    FString PropertyPath;
+    if (PropertyPathHandle.IsValid())
+    {
+        PropertyPathHandle->GetValue(PropertyPath);
+    }
+
+    return PropertyPath.IsEmpty()
+        ? FText::FromString(TEXT("ExecutionContext.MyProperty"))
+        : FText::FromString(PropertyPath);
+}
+
 TSharedRef<SWidget> FDreamFlowValueBindingCustomization::BuildCompactBindingEditor() const
 {
-    const TSharedRef<SWidget> ValueEditor = GetCurrentSourceType() == EDreamFlowValueSourceType::FlowVariable
-        ? StaticCastSharedRef<SWidget>(
+    TSharedRef<SWidget> ValueEditor = BuildCompactLiteralEditor();
+    if (GetCurrentSourceType() == EDreamFlowValueSourceType::FlowVariable)
+    {
+        ValueEditor =
             SNew(SComboButton)
             .OnGetMenuContent(this, &FDreamFlowValueBindingCustomization::BuildVariableMenu)
             .ButtonContent()
@@ -345,8 +403,12 @@ TSharedRef<SWidget> FDreamFlowValueBindingCustomization::BuildCompactBindingEdit
                 SNew(STextBlock)
                 .Text(this, &FDreamFlowValueBindingCustomization::GetVariablePickerLabel)
                 .Font(IDetailLayoutBuilder::GetDetailFont())
-            ])
-        : BuildCompactLiteralEditor();
+            ];
+    }
+    else if (GetCurrentSourceType() == EDreamFlowValueSourceType::ExecutionContextProperty)
+    {
+        ValueEditor = BuildCompactPropertyPathEditor();
+    }
 
     return SNew(SHorizontalBox)
         .ToolTipText(this, &FDreamFlowValueBindingCustomization::GetBindingSummary)
@@ -386,6 +448,17 @@ TSharedRef<SWidget> FDreamFlowValueBindingCustomization::BuildCompactLiteralEdit
     return LiteralValueHandle.IsValid()
         ? LiteralValueHandle->CreatePropertyValueWidget()
         : StaticCastSharedRef<SWidget>(SNullWidget::NullWidget);
+}
+
+TSharedRef<SWidget> FDreamFlowValueBindingCustomization::BuildCompactPropertyPathEditor() const
+{
+    if (PropertyPathHandle.IsValid())
+    {
+        return PropertyPathHandle->CreatePropertyValueWidget();
+    }
+
+    return SNew(SEditableTextBox)
+        .Text(this, &FDreamFlowValueBindingCustomization::GetPropertyPathLabel);
 }
 
 void FDreamFlowValueBindingCustomization::EnsureLiteralValueMatchesExpectedType() const
@@ -469,6 +542,14 @@ void FDreamFlowValueBindingCustomization::SetVariableName(FName NewVariableName)
     }
 }
 
+void FDreamFlowValueBindingCustomization::SetPropertyPath(const FString& NewPropertyPath) const
+{
+    if (PropertyPathHandle.IsValid())
+    {
+        PropertyPathHandle->SetValue(NewPropertyPath);
+    }
+}
+
 TSharedRef<SWidget> FDreamFlowValueBindingCustomization::BuildSourceTypeMenu() const
 {
     FMenuBuilder MenuBuilder(true, nullptr);
@@ -484,6 +565,12 @@ TSharedRef<SWidget> FDreamFlowValueBindingCustomization::BuildSourceTypeMenu() c
         FText::FromString(TEXT("Read the value from one of the flow's environment variables.")),
         FSlateIcon(),
         FUIAction(FExecuteAction::CreateSP(const_cast<FDreamFlowValueBindingCustomization*>(this), &FDreamFlowValueBindingCustomization::SetSourceType, EDreamFlowValueSourceType::FlowVariable)));
+
+    MenuBuilder.AddMenuEntry(
+        FText::FromString(TEXT("Execution Context Property")),
+        FText::FromString(TEXT("Read or write a property on the executor's execution context using a dotted property path.")),
+        FSlateIcon(),
+        FUIAction(FExecuteAction::CreateSP(const_cast<FDreamFlowValueBindingCustomization*>(this), &FDreamFlowValueBindingCustomization::SetSourceType, EDreamFlowValueSourceType::ExecutionContextProperty)));
 
     return MenuBuilder.MakeWidget();
 }

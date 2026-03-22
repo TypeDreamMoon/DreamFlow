@@ -158,6 +158,9 @@ public:
     static FDreamFlowValueBinding MakeVariableFlowBinding(FName VariableName);
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static FDreamFlowValueBinding MakeExecutionContextPropertyFlowBinding(const FString& PropertyPath);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
     static EDreamFlowValueSourceType GetFlowBindingSourceType(const FDreamFlowValueBinding& Binding);
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
@@ -167,7 +170,13 @@ public:
     static bool IsVariableFlowBinding(const FDreamFlowValueBinding& Binding);
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static bool IsExecutionContextPropertyFlowBinding(const FDreamFlowValueBinding& Binding);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
     static FName GetFlowBindingVariableName(const FDreamFlowValueBinding& Binding);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static FString GetFlowBindingPropertyPath(const FDreamFlowValueBinding& Binding);
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
     static FDreamFlowValue GetFlowBindingLiteralValue(const FDreamFlowValueBinding& Binding);
@@ -211,6 +220,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding", meta = (AutoCreateRefTerm = "Binding"))
     static FDreamFlowValueBinding SetFlowBindingVariableName(const FDreamFlowValueBinding& Binding, FName VariableName);
 
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding", meta = (AutoCreateRefTerm = "Binding"))
+    static FDreamFlowValueBinding SetFlowBindingPropertyPath(const FDreamFlowValueBinding& Binding, const FString& PropertyPath);
+
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding", meta = (AutoCreateRefTerm = "Binding,LiteralValue"))
     static FDreamFlowValueBinding SetFlowBindingLiteralValue(const FDreamFlowValueBinding& Binding, const FDreamFlowValue& LiteralValue);
 
@@ -219,6 +231,9 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding", meta = (AutoCreateRefTerm = "Binding"))
     static FDreamFlowValueBinding SetFlowBindingAsVariable(const FDreamFlowValueBinding& Binding, FName VariableName);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding", meta = (AutoCreateRefTerm = "Binding"))
+    static FDreamFlowValueBinding SetFlowBindingAsExecutionContextProperty(const FDreamFlowValueBinding& Binding, const FString& PropertyPath);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
     static bool SetExecutorBindingBoolValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, bool InValue);
@@ -246,6 +261,42 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding|Low Level")
     static bool SetExecutorBindingValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, const FDreamFlowValue& InValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Property")
+    static bool GetExecutorExecutionContextProperty(const UDreamFlowExecutor* Executor, const FString& PropertyPath, FDreamFlowValue& OutValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Property")
+    static bool SetExecutorExecutionContextProperty(UDreamFlowExecutor* Executor, const FString& PropertyPath, const FDreamFlowValue& InValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Snapshot")
+    static FDreamFlowExecutionSnapshot CaptureExecutorSnapshot(const UDreamFlowExecutor* Executor);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution|Snapshot")
+    static void ApplyExecutorSnapshot(UDreamFlowExecutor* Executor, const FDreamFlowExecutionSnapshot& Snapshot);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Node State")
+    static bool GetExecutorNodeState(const UDreamFlowExecutor* Executor, FGuid NodeGuid, FName StateKey, FDreamFlowValue& OutValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    static bool SetExecutorNodeState(UDreamFlowExecutor* Executor, FGuid NodeGuid, FName StateKey, const FDreamFlowValue& InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    static void ResetExecutorNodeState(UDreamFlowExecutor* Executor, FGuid NodeGuid);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Node State")
+    static void ResetAllExecutorNodeStates(UDreamFlowExecutor* Executor);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Sub Flow")
+    static UDreamFlowExecutor* GetExecutorParent(const UDreamFlowExecutor* Executor);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Sub Flow")
+    static UDreamFlowExecutor* GetExecutorCurrentChild(const UDreamFlowExecutor* Executor);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Sub Flow")
+    static TArray<UDreamFlowExecutor*> GetExecutorActiveChildren(const UDreamFlowExecutor* Executor);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution|Sub Flow")
+    static TArray<FDreamFlowSubFlowStackEntry> GetExecutorSubFlowStack(const UDreamFlowExecutor* Executor);
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Low Level")
     static FString DescribeFlowValue(const FDreamFlowValue& Value);

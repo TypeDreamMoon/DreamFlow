@@ -22,6 +22,7 @@ enum class EDreamFlowValueSourceType : uint8
 {
     Literal,
     FlowVariable,
+    ExecutionContextProperty,
 };
 
 UENUM(BlueprintType)
@@ -97,6 +98,9 @@ struct DREAMFLOW_API FDreamFlowValueBinding
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Binding", meta = (EditCondition = "SourceType == EDreamFlowValueSourceType::FlowVariable", EditConditionHides))
     FName VariableName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Binding", meta = (EditCondition = "SourceType == EDreamFlowValueSourceType::ExecutionContextProperty", EditConditionHides))
+    FString PropertyPath;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Binding", meta = (EditCondition = "SourceType == EDreamFlowValueSourceType::Literal", EditConditionHides))
     FDreamFlowValue LiteralValue;

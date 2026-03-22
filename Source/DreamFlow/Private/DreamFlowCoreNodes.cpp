@@ -88,6 +88,14 @@ namespace
                         FText::FromName(Binding.VariableName)));
             }
         }
+        else if (Binding.SourceType == EDreamFlowValueSourceType::ExecutionContextProperty && Binding.PropertyPath.IsEmpty())
+        {
+            AddValidationMessage(
+                OutMessages,
+                Node,
+                EDreamFlowValidationSeverity::Error,
+                FText::Format(FText::FromString(TEXT("{0} is set to use an execution context property, but no property path is assigned.")), BindingLabel));
+        }
     }
 
     static bool IsDefaultLiteralBinding(const FDreamFlowValueBinding& Binding, const FDreamFlowValue& DefaultValue)
@@ -122,6 +130,63 @@ namespace
             }
         }
     }
+
+    static void SyncMappedVariables(
+        UDreamFlowExecutor* SourceExecutor,
+        UDreamFlowExecutor* TargetExecutor,
+        const TArray<FDreamFlowSubFlowVariableMapping>& Mappings,
+        const bool bParentToChild)
+    {
+        if (SourceExecutor == nullptr || TargetExecutor == nullptr || Mappings.Num() == 0)
+        {
+            return;
+        }
+
+        for (const FDreamFlowSubFlowVariableMapping& Mapping : Mappings)
+        {
+            const FName SourceVariable = bParentToChild ? Mapping.ParentVariable : Mapping.ChildVariable;
+            const FName TargetVariable = bParentToChild ? Mapping.ChildVariable : Mapping.ParentVariable;
+            if (SourceVariable.IsNone() || TargetVariable.IsNone())
+            {
+                continue;
+            }
+
+            FDreamFlowValue SourceValue;
+            if (SourceExecutor->GetVariableValue(SourceVariable, SourceValue))
+            {
+                TargetExecutor->SetVariableValue(TargetVariable, SourceValue);
+            }
+        }
+    }
+
+    static UWorld* ResolveFlowWorld(UObject* WorldContextObject, UDreamFlowExecutor* Executor)
+    {
+        UObject* EffectiveContext = WorldContextObject != nullptr
+            ? WorldContextObject
+            : (Executor != nullptr ? Executor->GetExecutionContext() : nullptr);
+
+        return GEngine != nullptr
+            ? GEngine->GetWorldFromContextObject(EffectiveContext, EGetWorldErrorMode::ReturnNull)
+            : nullptr;
+    }
+
+    static bool SupportsReactiveBindingNotifications(const FDreamFlowValueBinding& Binding)
+    {
+        return (Binding.SourceType == EDreamFlowValueSourceType::FlowVariable && !Binding.VariableName.IsNone())
+            || (Binding.SourceType == EDreamFlowValueSourceType::ExecutionContextProperty && !Binding.PropertyPath.IsEmpty());
+    }
+
+    static bool DoPropertyPathsOverlap(const FString& A, const FString& B)
+    {
+        if (A.IsEmpty() || B.IsEmpty())
+        {
+            return true;
+        }
+
+        return A == B
+            || A.StartsWith(B + TEXT("."))
+            || B.StartsWith(A + TEXT("."));
+    }
 }
 
 FText UDreamFlowCoreNode::GetNodeCategory_Implementation() const
@@ -132,15 +197,21 @@ FText UDreamFlowCoreNode::GetNodeCategory_Implementation() const
 void UDreamFlowSubFlowAsyncProxy::Initialize(
     UDreamFlowAsyncContext* InParentAsyncContext,
     UDreamFlowExecutor* InParentExecutor,
+    UDreamFlowRunSubFlowNode* InOwnerNode,
     UDreamFlowExecutor* InChildExecutor,
     const bool bInCopyParentVariablesToChild,
-    const bool bInCopyChildVariablesToParent)
+    const bool bInCopyChildVariablesToParent,
+    const TArray<FDreamFlowSubFlowVariableMapping>& InInputMappings,
+    const TArray<FDreamFlowSubFlowVariableMapping>& InOutputMappings)
 {
     ParentAsyncContext = InParentAsyncContext;
     ParentExecutor = InParentExecutor;
+    OwnerNode = InOwnerNode;
     ChildExecutor = InChildExecutor;
     bCopyParentVariablesToChild = bInCopyParentVariablesToChild;
     bCopyChildVariablesToParent = bInCopyChildVariablesToParent;
+    InputMappings = InInputMappings;
+    OutputMappings = InOutputMappings;
 }
 
 void UDreamFlowSubFlowAsyncProxy::StartSubFlow()
@@ -152,6 +223,10 @@ void UDreamFlowSubFlowAsyncProxy::StartSubFlow()
     }
 
     ChildRuntimeStateChangedHandle = ChildExecutor->OnRuntimeStateChangedNative().AddUObject(this, &ThisClass::HandleChildRuntimeStateChanged);
+    if (ParentExecutor != nullptr && OwnerNode != nullptr)
+    {
+        ParentExecutor->RegisterChildExecutor(OwnerNode, ChildExecutor);
+    }
 
     if (bCopyParentVariablesToChild)
     {
@@ -181,6 +256,11 @@ void UDreamFlowSubFlowAsyncProxy::BeginDestroy()
     {
         ChildExecutor->OnRuntimeStateChangedNative().Remove(ChildRuntimeStateChangedHandle);
         ChildRuntimeStateChangedHandle.Reset();
+    }
+
+    if (ParentExecutor != nullptr && OwnerNode != nullptr)
+    {
+        ParentExecutor->UnregisterChildExecutor(OwnerNode, ChildExecutor);
     }
 
     if (!bHasCompleted && ChildExecutor != nullptr && ChildExecutor->IsRunning())
@@ -256,6 +336,11 @@ void UDreamFlowSubFlowAsyncProxy::FinalizeSubFlow(const FName OutputPinName, con
         ChildRuntimeStateChangedHandle.Reset();
     }
 
+    if (ParentExecutor != nullptr && OwnerNode != nullptr)
+    {
+        ParentExecutor->UnregisterChildExecutor(OwnerNode, ChildExecutor);
+    }
+
     if (bSyncChildVariables && bCopyChildVariablesToParent)
     {
         SyncVariablesFromChildToParent();
@@ -279,12 +364,309 @@ void UDreamFlowSubFlowAsyncProxy::HandleChildRuntimeStateChanged(UDreamFlowExecu
 
 void UDreamFlowSubFlowAsyncProxy::SyncVariablesFromParentToChild() const
 {
+    if (InputMappings.Num() > 0)
+    {
+        SyncMappedVariables(ParentExecutor, ChildExecutor, InputMappings, true);
+        return;
+    }
+
     SyncSharedVariables(ParentExecutor, ChildExecutor);
 }
 
 void UDreamFlowSubFlowAsyncProxy::SyncVariablesFromChildToParent() const
 {
+    if (OutputMappings.Num() > 0)
+    {
+        SyncMappedVariables(ChildExecutor, ParentExecutor, OutputMappings, false);
+        return;
+    }
+
     SyncSharedVariables(ChildExecutor, ParentExecutor);
+}
+
+void UDreamFlowPollingAsyncProxy::InitializeWaitUntil(
+    UDreamFlowAsyncContext* InAsyncContext,
+    UDreamFlowExecutor* InExecutor,
+    UObject* InWorldContextObject,
+    const FDreamFlowValueBinding& InConditionBinding,
+    const float InPollIntervalSeconds,
+    const float InTimeoutSeconds)
+{
+    AsyncContext = InAsyncContext;
+    Executor = InExecutor;
+    WorldContextObject = InWorldContextObject;
+    ObservedBinding = InConditionBinding;
+    PollIntervalSeconds = FMath::Max(0.01f, InPollIntervalSeconds);
+    TimeoutSeconds = FMath::Max(0.0f, InTimeoutSeconds);
+    Mode = EMode::WaitUntil;
+}
+
+void UDreamFlowPollingAsyncProxy::InitializeWaitForChange(
+    UDreamFlowAsyncContext* InAsyncContext,
+    UDreamFlowExecutor* InExecutor,
+    UObject* InWorldContextObject,
+    const FDreamFlowValueBinding& InObservedBinding,
+    const float InPollIntervalSeconds,
+    const float InTimeoutSeconds)
+{
+    AsyncContext = InAsyncContext;
+    Executor = InExecutor;
+    WorldContextObject = InWorldContextObject;
+    ObservedBinding = InObservedBinding;
+    PollIntervalSeconds = FMath::Max(0.01f, InPollIntervalSeconds);
+    TimeoutSeconds = FMath::Max(0.0f, InTimeoutSeconds);
+    Mode = EMode::WaitForChange;
+}
+
+void UDreamFlowPollingAsyncProxy::BeginDestroy()
+{
+    UnbindListeners();
+    StopTimers();
+    Super::BeginDestroy();
+}
+
+void UDreamFlowPollingAsyncProxy::Start()
+{
+    if (AsyncContext == nullptr || Executor == nullptr)
+    {
+        Complete(TEXT("Timed Out"));
+        return;
+    }
+
+    StartTimeSeconds = FPlatformTime::Seconds();
+
+    if (Mode == EMode::WaitForChange)
+    {
+        bHasInitialValue = Executor->ResolveBindingValue(ObservedBinding, InitialValue);
+    }
+
+    EvaluateNow();
+    if (bCompleted)
+    {
+        return;
+    }
+
+    bHasBoundListener = BindListeners();
+
+    if (TimeoutSeconds > 0.0f || (!bHasBoundListener && PollIntervalSeconds > KINDA_SMALL_NUMBER))
+    {
+        CachedWorld = ResolveFlowWorld(WorldContextObject, Executor);
+        if (CachedWorld == nullptr)
+        {
+            if (!bHasBoundListener)
+            {
+                Complete(TEXT("Timed Out"));
+            }
+            return;
+        }
+    }
+
+    StartTimeoutTimer();
+    if (!bHasBoundListener && PollIntervalSeconds > KINDA_SMALL_NUMBER)
+    {
+        StartFallbackPollTimer();
+    }
+}
+
+bool UDreamFlowPollingAsyncProxy::BindListeners()
+{
+    if (Executor == nullptr)
+    {
+        return false;
+    }
+
+    bool bBoundAnyListener = false;
+
+    if (ObservedBinding.SourceType == EDreamFlowValueSourceType::FlowVariable && !ObservedBinding.VariableName.IsNone())
+    {
+        VariableChangedHandle = Executor->OnVariableChangedNative().AddUObject(this, &ThisClass::HandleVariableChanged);
+        bBoundAnyListener = true;
+    }
+
+    if (ObservedBinding.SourceType == EDreamFlowValueSourceType::ExecutionContextProperty && !ObservedBinding.PropertyPath.IsEmpty())
+    {
+        ExecutionContextPropertyChangedHandle = Executor->OnExecutionContextPropertyChangedNative().AddUObject(this, &ThisClass::HandleExecutionContextPropertyChanged);
+        RuntimeStateChangedHandle = Executor->OnRuntimeStateChangedNative().AddUObject(this, &ThisClass::HandleExecutorRuntimeStateChanged);
+        bBoundAnyListener = true;
+    }
+
+    return bBoundAnyListener;
+}
+
+void UDreamFlowPollingAsyncProxy::UnbindListeners()
+{
+    if (Executor != nullptr)
+    {
+        if (VariableChangedHandle.IsValid())
+        {
+            Executor->OnVariableChangedNative().Remove(VariableChangedHandle);
+            VariableChangedHandle.Reset();
+        }
+
+        if (ExecutionContextPropertyChangedHandle.IsValid())
+        {
+            Executor->OnExecutionContextPropertyChangedNative().Remove(ExecutionContextPropertyChangedHandle);
+            ExecutionContextPropertyChangedHandle.Reset();
+        }
+
+        if (RuntimeStateChangedHandle.IsValid())
+        {
+            Executor->OnRuntimeStateChangedNative().Remove(RuntimeStateChangedHandle);
+            RuntimeStateChangedHandle.Reset();
+        }
+    }
+}
+
+void UDreamFlowPollingAsyncProxy::StartTimeoutTimer()
+{
+    if (CachedWorld == nullptr || bCompleted || TimeoutSeconds <= 0.0f)
+    {
+        return;
+    }
+
+    FTimerDelegate TimeoutDelegate = FTimerDelegate::CreateUObject(this, &ThisClass::HandleTimeoutReached);
+    CachedWorld->GetTimerManager().SetTimer(TimeoutTimerHandle, TimeoutDelegate, TimeoutSeconds, false);
+}
+
+void UDreamFlowPollingAsyncProxy::StartFallbackPollTimer()
+{
+    if (CachedWorld == nullptr || bCompleted || PollIntervalSeconds <= KINDA_SMALL_NUMBER)
+    {
+        return;
+    }
+
+    FTimerDelegate PollDelegate = FTimerDelegate::CreateUObject(this, &ThisClass::EvaluateNow);
+    CachedWorld->GetTimerManager().SetTimer(FallbackPollTimerHandle, PollDelegate, PollIntervalSeconds, true);
+}
+
+void UDreamFlowPollingAsyncProxy::StopTimers()
+{
+    if (CachedWorld != nullptr)
+    {
+        if (TimeoutTimerHandle.IsValid())
+        {
+            CachedWorld->GetTimerManager().ClearTimer(TimeoutTimerHandle);
+        }
+
+        if (FallbackPollTimerHandle.IsValid())
+        {
+            CachedWorld->GetTimerManager().ClearTimer(FallbackPollTimerHandle);
+        }
+    }
+
+    TimeoutTimerHandle.Invalidate();
+    FallbackPollTimerHandle.Invalidate();
+    CachedWorld = nullptr;
+}
+
+void UDreamFlowPollingAsyncProxy::EvaluateNow()
+{
+    if (bCompleted || Executor == nullptr || AsyncContext == nullptr || !AsyncContext->IsValidAsyncContext())
+    {
+        UnbindListeners();
+        StopTimers();
+        return;
+    }
+
+    if (HasTimedOut())
+    {
+        Complete(TEXT("Timed Out"));
+        return;
+    }
+
+    if (Mode == EMode::WaitUntil)
+    {
+        bool bCondition = false;
+        if (Executor->ResolveBindingAsBool(ObservedBinding, bCondition) && bCondition)
+        {
+            Complete(TEXT("Completed"));
+        }
+
+        return;
+    }
+
+    if (Mode == EMode::WaitForChange)
+    {
+        FDreamFlowValue CurrentValue;
+        if (!Executor->ResolveBindingValue(ObservedBinding, CurrentValue))
+        {
+            return;
+        }
+
+        bool bIsEqual = false;
+        const bool bHasComparableValues =
+            bHasInitialValue
+            && DreamFlowVariable::TryCompareValues(InitialValue, CurrentValue, EDreamFlowComparisonOperation::Equal, bIsEqual);
+
+        if (!bHasInitialValue || !bHasComparableValues || !bIsEqual)
+        {
+            Complete(TEXT("Changed"));
+        }
+    }
+}
+
+void UDreamFlowPollingAsyncProxy::HandleTimeoutReached()
+{
+    if (!bCompleted)
+    {
+        Complete(TEXT("Timed Out"));
+    }
+}
+
+void UDreamFlowPollingAsyncProxy::HandleVariableChanged(UDreamFlowExecutor* InUpdatedExecutor, FName VariableName, const FDreamFlowValue& InValue)
+{
+    (void)InValue;
+
+    if (bCompleted || InUpdatedExecutor != Executor || VariableName != ObservedBinding.VariableName)
+    {
+        return;
+    }
+
+    EvaluateNow();
+}
+
+void UDreamFlowPollingAsyncProxy::HandleExecutionContextPropertyChanged(UDreamFlowExecutor* InUpdatedExecutor, const FString& PropertyPath, const FDreamFlowValue& InValue)
+{
+    (void)InValue;
+
+    if (bCompleted || InUpdatedExecutor != Executor || !DoPropertyPathsOverlap(PropertyPath, ObservedBinding.PropertyPath))
+    {
+        return;
+    }
+
+    EvaluateNow();
+}
+
+void UDreamFlowPollingAsyncProxy::HandleExecutorRuntimeStateChanged(UDreamFlowExecutor* InUpdatedExecutor)
+{
+    if (bCompleted || InUpdatedExecutor != Executor || ObservedBinding.SourceType != EDreamFlowValueSourceType::ExecutionContextProperty)
+    {
+        return;
+    }
+
+    EvaluateNow();
+}
+
+void UDreamFlowPollingAsyncProxy::Complete(const FName OutputPinName)
+{
+    if (bCompleted)
+    {
+        return;
+    }
+
+    bCompleted = true;
+    UnbindListeners();
+    StopTimers();
+
+    if (AsyncContext != nullptr && AsyncContext->IsValidAsyncContext())
+    {
+        AsyncContext->CompleteWithOutputPin(OutputPinName);
+    }
+}
+
+bool UDreamFlowPollingAsyncProxy::HasTimedOut() const
+{
+    return TimeoutSeconds > 0.0f && (FPlatformTime::Seconds() - StartTimeSeconds) >= TimeoutSeconds;
 }
 
 UDreamFlowBranchNode::UDreamFlowBranchNode()
@@ -644,6 +1026,8 @@ TArray<FDreamFlowNodeDisplayItem> UDreamFlowRunSubFlowNode::GetNodeDisplayItems_
     Items.Add(MakeTextPreviewItem(
         FText::FromString(TEXT("Sync Out")),
         bCopyChildVariablesToParent ? TEXT("Shared variables") : TEXT("Disabled")));
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("In Maps")), FString::FromInt(InputMappings.Num())));
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Out Maps")), FString::FromInt(OutputMappings.Num())));
     return Items;
 }
 
@@ -699,7 +1083,15 @@ void UDreamFlowRunSubFlowNode::StartAsyncNode_Implementation(UObject* Context, U
     UObject* ChildExecutionContext = Context != nullptr ? Context : Executor->GetExecutionContext();
     ChildExecutor->Initialize(SubFlowAsset, ChildExecutionContext);
 
-    Proxy->Initialize(AsyncContext, Executor, ChildExecutor, bCopyParentVariablesToChild, bCopyChildVariablesToParent);
+    Proxy->Initialize(
+        AsyncContext,
+        Executor,
+        this,
+        ChildExecutor,
+        bCopyParentVariablesToChild,
+        bCopyChildVariablesToParent,
+        InputMappings,
+        OutputMappings);
     Proxy->StartSubFlow();
 }
 
@@ -742,6 +1134,48 @@ void UDreamFlowRunSubFlowNode::ValidateNode(const UDreamFlowAsset* OwningAsset, 
             EDreamFlowValidationSeverity::Info,
             FText::FromString(TEXT("Run Sub Flow only uses the Completed and Failed outputs. Additional links are ignored.")));
     }
+
+    const auto ValidateMappings = [OwningAsset, &OutMessages, this](const UDreamFlowAsset* TargetAsset, const TArray<FDreamFlowSubFlowVariableMapping>& Mappings, const bool bInputMappings)
+    {
+        for (const FDreamFlowSubFlowVariableMapping& Mapping : Mappings)
+        {
+            const FName ParentVariable = Mapping.ParentVariable;
+            const FName ChildVariable = Mapping.ChildVariable;
+            if (ParentVariable.IsNone() || ChildVariable.IsNone())
+            {
+                AddValidationMessage(
+                    OutMessages,
+                    this,
+                    EDreamFlowValidationSeverity::Warning,
+                    FText::FromString(TEXT("Sub flow variable mappings require both parent and child variable names.")));
+                continue;
+            }
+
+            if (OwningAsset != nullptr && !OwningAsset->HasVariableDefinition(ParentVariable))
+            {
+                AddValidationMessage(
+                    OutMessages,
+                    this,
+                    EDreamFlowValidationSeverity::Error,
+                    FText::Format(FText::FromString(TEXT("Parent variable mapping references missing variable '{0}'.")), FText::FromName(ParentVariable)));
+            }
+
+            if (TargetAsset != nullptr && !TargetAsset->HasVariableDefinition(ChildVariable))
+            {
+                AddValidationMessage(
+                    OutMessages,
+                    this,
+                    EDreamFlowValidationSeverity::Error,
+                    FText::Format(
+                        FText::FromString(TEXT("{0} variable mapping references missing child variable '{1}'.")),
+                        bInputMappings ? FText::FromString(TEXT("Input")) : FText::FromString(TEXT("Output")),
+                        FText::FromName(ChildVariable)));
+            }
+        }
+    };
+
+    ValidateMappings(SubFlowAsset, InputMappings, true);
+    ValidateMappings(SubFlowAsset, OutputMappings, false);
 }
 
 UDreamFlowFinishFlowNode::UDreamFlowFinishFlowNode()
@@ -934,7 +1368,195 @@ void UDreamFlowDelayNode::ValidateNode(const UDreamFlowAsset* OwningAsset, TArra
                 OutMessages,
                 this,
                 EDreamFlowValidationSeverity::Warning,
-                FText::FromString(TEXT("The delay duration must resolve to a float-compatible value.")));
+            FText::FromString(TEXT("The delay duration must resolve to a float-compatible value.")));
         }
+    }
+}
+
+UDreamFlowWaitUntilNode::UDreamFlowWaitUntilNode()
+{
+    Title = FText::FromString(TEXT("Wait Until"));
+    Description = FText::FromString(TEXT("Listens for a bool binding to become true, then resumes. Optional fallback polling can be used for non-reactive sources."));
+    ConditionBinding.LiteralValue.Type = EDreamFlowValueType::Bool;
+    PollIntervalSeconds = 0.1f;
+    TimeoutSeconds = 0.0f;
+
+#if WITH_EDITORONLY_DATA
+    NodeTint = FLinearColor(0.42f, 0.60f, 0.88f, 1.0f);
+#endif
+}
+
+FText UDreamFlowWaitUntilNode::GetNodeDisplayName_Implementation() const
+{
+    return Title;
+}
+
+FLinearColor UDreamFlowWaitUntilNode::GetNodeTint_Implementation() const
+{
+    return FLinearColor(0.42f, 0.60f, 0.88f, 1.0f);
+}
+
+FText UDreamFlowWaitUntilNode::GetNodeAccentLabel_Implementation() const
+{
+    return FText::FromString(TEXT("Reactive"));
+}
+
+TArray<FDreamFlowNodeDisplayItem> UDreamFlowWaitUntilNode::GetNodeDisplayItems_Implementation() const
+{
+    TArray<FDreamFlowNodeDisplayItem> Items = Super::GetNodeDisplayItems_Implementation();
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Condition")), ConditionBinding.DescribeCompact()));
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Mode")), SupportsReactiveBindingNotifications(ConditionBinding) ? TEXT("Delegate") : TEXT("Fallback Poll")));
+    if (PollIntervalSeconds > 0.0f)
+    {
+        Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Fallback")), FString::Printf(TEXT("%.2fs"), PollIntervalSeconds)));
+    }
+    if (TimeoutSeconds > 0.0f)
+    {
+        Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Timeout")), FString::Printf(TEXT("%.2fs"), TimeoutSeconds)));
+    }
+    return Items;
+}
+
+TArray<FDreamFlowNodeOutputPin> UDreamFlowWaitUntilNode::GetOutputPins_Implementation() const
+{
+    FDreamFlowNodeOutputPin CompletedPin;
+    CompletedPin.PinName = TEXT("Completed");
+    CompletedPin.DisplayName = FText::FromString(TEXT("Completed"));
+
+    FDreamFlowNodeOutputPin TimedOutPin;
+    TimedOutPin.PinName = TEXT("Timed Out");
+    TimedOutPin.DisplayName = FText::FromString(TEXT("Timed Out"));
+
+    return { CompletedPin, TimedOutPin };
+}
+
+void UDreamFlowWaitUntilNode::StartAsyncNode_Implementation(UObject* Context, UDreamFlowExecutor* Executor, UDreamFlowAsyncContext* AsyncContext)
+{
+    if (AsyncContext == nullptr || Executor == nullptr)
+    {
+        return;
+    }
+
+    UDreamFlowPollingAsyncProxy* Proxy = NewObject<UDreamFlowPollingAsyncProxy>(AsyncContext, NAME_None, RF_Transient);
+    if (Proxy == nullptr)
+    {
+        AsyncContext->CompleteWithOutputPin(TEXT("Timed Out"));
+        return;
+    }
+
+    Proxy->InitializeWaitUntil(AsyncContext, Executor, Context, ConditionBinding, PollIntervalSeconds, TimeoutSeconds);
+    Proxy->Start();
+}
+
+void UDreamFlowWaitUntilNode::ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const
+{
+    ValidateBinding(OwningAsset, this, ConditionBinding, FText::FromString(TEXT("Condition binding")), OutMessages);
+
+    bool bShouldWarn = !SupportsReactiveBindingNotifications(ConditionBinding) && PollIntervalSeconds <= 0.0f && TimeoutSeconds <= 0.0f;
+    if (bShouldWarn && ConditionBinding.SourceType == EDreamFlowValueSourceType::Literal)
+    {
+        FDreamFlowValue ConvertedCondition;
+        if (DreamFlowVariable::TryConvertValue(ConditionBinding.LiteralValue, EDreamFlowValueType::Bool, ConvertedCondition) && ConvertedCondition.BoolValue)
+        {
+            bShouldWarn = false;
+        }
+    }
+
+    if (bShouldWarn)
+    {
+        AddValidationMessage(
+            OutMessages,
+            this,
+            EDreamFlowValidationSeverity::Warning,
+            FText::FromString(TEXT("Wait Until is bound to a non-reactive source and has neither fallback polling nor a timeout, so it may never resume.")));
+    }
+}
+
+UDreamFlowWaitForBindingChangeNode::UDreamFlowWaitForBindingChangeNode()
+{
+    Title = FText::FromString(TEXT("Wait For Binding Change"));
+    Description = FText::FromString(TEXT("Listens for a binding value change, then resumes. Optional fallback polling can be used for non-reactive sources."));
+    ObservedBinding.LiteralValue.Type = EDreamFlowValueType::Bool;
+    PollIntervalSeconds = 0.1f;
+    TimeoutSeconds = 0.0f;
+
+#if WITH_EDITORONLY_DATA
+    NodeTint = FLinearColor(0.28f, 0.67f, 0.72f, 1.0f);
+#endif
+}
+
+FText UDreamFlowWaitForBindingChangeNode::GetNodeDisplayName_Implementation() const
+{
+    return Title;
+}
+
+FLinearColor UDreamFlowWaitForBindingChangeNode::GetNodeTint_Implementation() const
+{
+    return FLinearColor(0.28f, 0.67f, 0.72f, 1.0f);
+}
+
+FText UDreamFlowWaitForBindingChangeNode::GetNodeAccentLabel_Implementation() const
+{
+    return FText::FromString(TEXT("Reactive"));
+}
+
+TArray<FDreamFlowNodeDisplayItem> UDreamFlowWaitForBindingChangeNode::GetNodeDisplayItems_Implementation() const
+{
+    TArray<FDreamFlowNodeDisplayItem> Items = Super::GetNodeDisplayItems_Implementation();
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Observed")), ObservedBinding.DescribeCompact()));
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Mode")), SupportsReactiveBindingNotifications(ObservedBinding) ? TEXT("Delegate") : TEXT("Fallback Poll")));
+    if (PollIntervalSeconds > 0.0f)
+    {
+        Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Fallback")), FString::Printf(TEXT("%.2fs"), PollIntervalSeconds)));
+    }
+    if (TimeoutSeconds > 0.0f)
+    {
+        Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Timeout")), FString::Printf(TEXT("%.2fs"), TimeoutSeconds)));
+    }
+    return Items;
+}
+
+TArray<FDreamFlowNodeOutputPin> UDreamFlowWaitForBindingChangeNode::GetOutputPins_Implementation() const
+{
+    FDreamFlowNodeOutputPin ChangedPin;
+    ChangedPin.PinName = TEXT("Changed");
+    ChangedPin.DisplayName = FText::FromString(TEXT("Changed"));
+
+    FDreamFlowNodeOutputPin TimedOutPin;
+    TimedOutPin.PinName = TEXT("Timed Out");
+    TimedOutPin.DisplayName = FText::FromString(TEXT("Timed Out"));
+
+    return { ChangedPin, TimedOutPin };
+}
+
+void UDreamFlowWaitForBindingChangeNode::StartAsyncNode_Implementation(UObject* Context, UDreamFlowExecutor* Executor, UDreamFlowAsyncContext* AsyncContext)
+{
+    if (AsyncContext == nullptr || Executor == nullptr)
+    {
+        return;
+    }
+
+    UDreamFlowPollingAsyncProxy* Proxy = NewObject<UDreamFlowPollingAsyncProxy>(AsyncContext, NAME_None, RF_Transient);
+    if (Proxy == nullptr)
+    {
+        AsyncContext->CompleteWithOutputPin(TEXT("Timed Out"));
+        return;
+    }
+
+    Proxy->InitializeWaitForChange(AsyncContext, Executor, Context, ObservedBinding, PollIntervalSeconds, TimeoutSeconds);
+    Proxy->Start();
+}
+
+void UDreamFlowWaitForBindingChangeNode::ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const
+{
+    ValidateBinding(OwningAsset, this, ObservedBinding, FText::FromString(TEXT("Observed binding")), OutMessages);
+
+    if (!SupportsReactiveBindingNotifications(ObservedBinding) && PollIntervalSeconds <= 0.0f && TimeoutSeconds <= 0.0f)
+    {
+        AddValidationMessage(
+            OutMessages,
+            this,
+            EDreamFlowValidationSeverity::Warning,
+            FText::FromString(TEXT("Wait For Binding Change is bound to a non-reactive source and has neither fallback polling nor a timeout, so it may never resume.")));
     }
 }

@@ -27,12 +27,15 @@ private:
     FText GetBindingSummary() const;
     FText GetSourceTypeLabel() const;
     FText GetVariablePickerLabel() const;
+    FText GetPropertyPathLabel() const;
     TSharedRef<SWidget> BuildCompactBindingEditor() const;
     TSharedRef<SWidget> BuildCompactLiteralEditor() const;
+    TSharedRef<SWidget> BuildCompactPropertyPathEditor() const;
     void EnsureLiteralValueMatchesExpectedType() const;
     TSharedPtr<IPropertyHandle> GetActiveLiteralValueHandle() const;
     void SetSourceType(EDreamFlowValueSourceType NewSourceType) const;
     void SetVariableName(FName NewVariableName) const;
+    void SetPropertyPath(const FString& NewPropertyPath) const;
     TSharedRef<SWidget> BuildSourceTypeMenu() const;
     TSharedRef<SWidget> BuildVariableMenu() const;
 
@@ -40,6 +43,7 @@ private:
     TSharedPtr<IPropertyHandle> StructHandle;
     TSharedPtr<IPropertyHandle> SourceTypeHandle;
     TSharedPtr<IPropertyHandle> VariableNameHandle;
+    TSharedPtr<IPropertyHandle> PropertyPathHandle;
     TSharedPtr<IPropertyHandle> LiteralValueHandle;
     TSharedPtr<IPropertyUtilities> PropertyUtilities;
 };

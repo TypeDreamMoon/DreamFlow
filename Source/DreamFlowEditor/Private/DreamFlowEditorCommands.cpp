@@ -17,6 +17,13 @@ FDreamFlowEditorCommands::FDreamFlowEditorCommands()
 void FDreamFlowEditorCommands::RegisterCommands()
 {
     UI_COMMAND(
+        AnalyzeReferences,
+        "Analyze References",
+        "Show a reference report for node classes, variable bindings, execution-context properties, and sub-flow usage in the current flow asset.",
+        EUserInterfaceActionType::Button,
+        FInputChord());
+
+    UI_COMMAND(
         QuickCreateNode,
         "Create Node Class",
         "Pick a DreamFlow node parent class and create a Blueprint implementation asset in the current content browser path.",

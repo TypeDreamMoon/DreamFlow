@@ -21,7 +21,10 @@ The `DreamFlow` plugin is the foundation layer. Domain packs such as quest, dial
 - `UDreamFlowAsyncContext`: async completion handle passed into async nodes
 - `UDreamFlowExecutorComponent`: Actor component wrapper with replication support
 - Per-flow typed variables with defaults and runtime values
-- Value binding support for literal-or-variable driven node inputs
+- Value binding support for literal, flow-variable, or execution-context-property driven node inputs
+- Executor-scoped per-node runtime state keyed by `NodeGuid`
+- Snapshot capture and restore support for runtime save/load style workflows
+- Child-flow stack tracking and child executor access for nested flow execution
 - Multi-output pins with named branches such as `True`, `False`, or `Completed`
 - Inline node preview items for text, color, and image display
 - Breakpoint-aware debugger tab for active executors
@@ -55,7 +58,8 @@ It does not include domain-specific packs such as Quest or Dialogue anymore. Tho
 9. Use the `Validation` tab to inspect structural problems.
 10. Use the `Debugger` tab during PIE/gameplay to inspect active executors, pause, continue, step, and stop.
 11. Right click a node and choose `Add Breakpoint` to pause before that node executes.
-12. The graph editor supports undo/redo, copy, cut, paste, duplicate, comments, and normal node selection workflows.
+12. Use the toolbar `Analyze References` button to inspect variable bindings, execution-context property bindings, sub-flow references, and node-class usage in the current asset.
+13. The graph editor supports undo/redo, copy, cut, paste, duplicate, comments, and normal node selection workflows.
 
 ## Create Node Class
 
@@ -82,10 +86,12 @@ Every `UDreamFlowAsset` owns a `Variables` array, so each flow can define its ow
 
 DreamFlow includes a lightweight binding struct, `FDreamFlowValueBinding`, for nodes that need data input.
 
-- A binding can read from either a literal value or a named flow variable.
+- A binding can read from either a literal value, a named flow variable, or a dotted property path on the current execution context.
 - The details UI exposes a source picker and variable dropdown for compatible flow variables.
+- Execution-context property bindings are authored as paths such as `QuestComponent.CurrentStage` or `DialogueState.LastSpeaker`.
 - Bindings can declare an expected value type, and the editor filters incompatible variables when possible.
 - The executor resolves bindings at runtime and converts values to the target type when possible.
+- Flow-variable and execution-context-property bindings are writable through the executor.
 - Validation reports missing variables and incompatible literal values.
 
 The built-in core logic nodes already use these bindings.
@@ -97,8 +103,11 @@ The base `DreamFlow` module ships with a reusable `Core` category for generic fl
 - `UDreamFlowBranchNode`: evaluates a bound boolean and routes to child `0` for true or child `1` for false
 - `UDreamFlowCompareNode`: compares two bound values and routes to child `0` or `1`
 - `UDreamFlowSetVariableNode`: writes a flow variable, then auto-continues to the first child
+- `UDreamFlowRunSubFlowNode`: runs another flow asset as a child flow, waits for it, and can sync or remap variables in and out
 - `UDreamFlowFinishFlowNode`: immediately ends the current flow execution
 - `UDreamFlowDelayNode`: waits asynchronously for a duration, then continues through `Completed`
+- `UDreamFlowWaitUntilNode`: waits until a bool binding becomes true
+- `UDreamFlowWaitForBindingChangeNode`: waits until a binding resolves to a different value
 
 These nodes target `UDreamFlowAsset`, so they are available in any DreamFlow-derived asset type unless a more specialized node narrows compatibility.
 
@@ -249,6 +258,8 @@ The executor currently supports:
 - `ContinueExecution`
 - `StepExecution`
 - `SetPauseOnBreakpoints`
+- `NotifyExecutionContextChanged`
+- `NotifyExecutionContextPropertyChanged`
 - `IsPaused`
 - `GetPauseOnBreakpoints`
 - `GetDebugState`
@@ -256,6 +267,17 @@ The executor currently supports:
 - `GetVariableValue`
 - `SetVariableValue`
 - `ResetVariablesToDefaults`
+- `GetNodeStateValue`
+- `SetNodeStateValue`
+- `ResetNodeState`
+- `ResetAllNodeStates`
+- `BuildExecutionSnapshot`
+- `ApplyExecutionSnapshot`
+- `GetParentExecutor`
+- `GetCurrentChildExecutor`
+- `GetActiveSubFlowStack`
+- `GetExecutionContextPropertyValue`
+- `SetExecutionContextPropertyValue`
 - `ResolveBindingValue`
 - `ResolveBindingAsBool`
 
@@ -277,6 +299,9 @@ It also exposes low-level helper nodes for:
 - reading node output links
 - converting and comparing `FDreamFlowValue`
 - describing `FDreamFlowValue` and `FDreamFlowValueBinding` for UI/debug output
+- creating and editing literal, variable, and execution-context-property bindings
+- reading and writing executor node state
+- capturing and restoring executor snapshots
 
 And it exposes Blueprint delegates for:
 
@@ -298,6 +323,40 @@ DreamFlow includes a built-in log category and a `Developer Settings` page.
 - Use channel toggles to control `General`, `Execution`, `Variables`, `Replication`, `Validation`, and `Automation Tests` logging independently
 
 Runtime logs are emitted through `LogDreamFlow`, so they can also be filtered through normal Unreal log tooling.
+
+## Node state and snapshots
+
+DreamFlow now exposes two executor-level runtime storage layers:
+
+- flow variables for shared flow-wide environment values
+- per-node runtime state for node-specific instance data keyed by `NodeGuid`
+
+Use these when you need counters, local flags, resolved values, or lightweight state without mutating the shared node asset.
+
+The executor also exposes snapshot helpers:
+
+- `BuildExecutionSnapshot`
+- `ApplyExecutionSnapshot`
+
+These capture current node, visited nodes, runtime variables, per-node runtime state, and visible child-flow stack metadata.
+
+## Sub flows
+
+`Run Sub Flow` supports more than just fire-and-wait behavior.
+
+- Parent executors can inspect active child executors and sub-flow stack entries.
+- Child flows can still inherit shared variables by name.
+- You can now define explicit input and output variable mappings when parent and child variable names differ.
+- Child executors reuse the same execution context by default.
+
+## Reactive bindings
+
+`Wait Until` and `Wait For Binding Change` are now delegate-driven for reactive binding sources.
+
+- Flow-variable bindings wake up when `SetVariable...Value` changes the target variable
+- Execution-context-property bindings wake up when `SetExecutionContextPropertyValue` or `NotifyExecutionContextPropertyChanged` reports a change
+- External gameplay code that mutates the execution context directly can manually invalidate reactive waits with `NotifyExecutionContextChanged` or `NotifyExecutionContextPropertyChanged`
+- Optional fallback polling is still available for non-reactive sources such as literal-only waits
 
 ## Networking
 

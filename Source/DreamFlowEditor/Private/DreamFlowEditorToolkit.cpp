@@ -32,6 +32,8 @@
 #include "Widgets/Layout/SSeparator.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Docking/SDockTab.h"
+#include "Widgets/Input/SMultiLineEditableTextBox.h"
+#include "Widgets/SWindow.h"
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "DreamFlowEditorToolkit"
@@ -555,6 +557,10 @@ void FDreamFlowEditorToolkit::BindCommands()
         FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanRunValidation));
 
     GraphEditorCommands->MapAction(
+        FDreamFlowEditorCommands::Get().AnalyzeReferences,
+        FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::ShowReferenceAnalysis));
+
+    GraphEditorCommands->MapAction(
         FGenericCommands::Get().Delete,
         FExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::DeleteSelectedNodes),
         FCanExecuteAction::CreateSP(this, &FDreamFlowEditorToolkit::CanDeleteSelectedNodes));
@@ -632,6 +638,13 @@ void FDreamFlowEditorToolkit::FillToolbar(FToolBarBuilder& ToolbarBuilder)
             LOCTEXT("QuickCreateNodeToolbarLabel", "Create Node Class"),
             LOCTEXT("QuickCreateNodeToolbarTooltip", "Pick a DreamFlow node parent class and create a Blueprint implementation asset in the current content browser path."),
             FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Plus"));
+
+        ToolbarBuilder.AddToolBarButton(
+            FDreamFlowEditorCommands::Get().AnalyzeReferences,
+            NAME_None,
+            LOCTEXT("AnalyzeReferencesToolbarLabel", "Analyze References"),
+            LOCTEXT("AnalyzeReferencesToolbarTooltip", "Show variable, context-property, sub-flow, and node-class references used by the current flow asset."),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"));
     }
     ToolbarBuilder.EndSection();
 }
@@ -1427,6 +1440,30 @@ void FDreamFlowEditorToolkit::SetDetailsObject(UObject* ObjectToEdit)
 
     CurrentDetailsObject = ObjectToEdit;
     DetailsView->SetObject(ObjectToEdit);
+}
+
+void FDreamFlowEditorToolkit::ShowReferenceAnalysis()
+{
+    const FString ReportText = FDreamFlowEditorUtils::BuildReferenceUsageReport(FlowAsset);
+
+    TSharedRef<SWindow> ReportWindow = SNew(SWindow)
+        .Title(LOCTEXT("DreamFlowReferenceReportTitle", "DreamFlow Reference Report"))
+        .ClientSize(FVector2D(860.0f, 620.0f))
+        .SupportsMaximize(true)
+        .SupportsMinimize(false)
+        [
+            SNew(SBorder)
+            .Padding(10.0f)
+            .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+            [
+                SNew(SMultiLineEditableTextBox)
+                .IsReadOnly(true)
+                .AutoWrapText(false)
+                .Text(FText::FromString(ReportText))
+            ]
+        ];
+
+    FSlateApplication::Get().AddWindow(ReportWindow);
 }
 
 void FDreamFlowEditorToolkit::SyncVariableEditorDataFromAsset()

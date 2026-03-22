@@ -4,11 +4,26 @@
 #include "DreamFlowAsyncNode.h"
 #include "DreamFlowNode.h"
 #include "DreamFlowVariableTypes.h"
+#include "TimerManager.h"
 #include "DreamFlowCoreNodes.generated.h"
 
 class UDreamFlowAsset;
 class UDreamFlowAsyncContext;
 class UDreamFlowExecutor;
+class UDreamFlowRunSubFlowNode;
+class UWorld;
+
+USTRUCT(BlueprintType)
+struct DREAMFLOW_API FDreamFlowSubFlowVariableMapping
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sub Flow")
+    FName ParentVariable;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sub Flow")
+    FName ChildVariable;
+};
 
 UCLASS(Transient)
 class DREAMFLOW_API UDreamFlowSubFlowAsyncProxy : public UObject
@@ -19,9 +34,12 @@ public:
     void Initialize(
         UDreamFlowAsyncContext* InParentAsyncContext,
         UDreamFlowExecutor* InParentExecutor,
+        UDreamFlowRunSubFlowNode* InOwnerNode,
         UDreamFlowExecutor* InChildExecutor,
         bool bInCopyParentVariablesToChild,
-        bool bInCopyChildVariablesToParent);
+        bool bInCopyChildVariablesToParent,
+        const TArray<FDreamFlowSubFlowVariableMapping>& InInputMappings,
+        const TArray<FDreamFlowSubFlowVariableMapping>& InOutputMappings);
 
     void StartSubFlow();
     virtual void BeginDestroy() override;
@@ -40,12 +58,97 @@ private:
     TObjectPtr<UDreamFlowExecutor> ParentExecutor;
 
     UPROPERTY(Transient)
+    TObjectPtr<UDreamFlowRunSubFlowNode> OwnerNode;
+
+    UPROPERTY(Transient)
     TObjectPtr<UDreamFlowExecutor> ChildExecutor;
+
+    UPROPERTY(Transient)
+    TArray<FDreamFlowSubFlowVariableMapping> InputMappings;
+
+    UPROPERTY(Transient)
+    TArray<FDreamFlowSubFlowVariableMapping> OutputMappings;
 
     bool bCopyParentVariablesToChild = true;
     bool bCopyChildVariablesToParent = true;
     bool bHasCompleted = false;
     FDelegateHandle ChildRuntimeStateChangedHandle;
+};
+
+UCLASS(Transient)
+class DREAMFLOW_API UDreamFlowPollingAsyncProxy : public UObject
+{
+    GENERATED_BODY()
+
+public:
+    void InitializeWaitUntil(
+        UDreamFlowAsyncContext* InAsyncContext,
+        UDreamFlowExecutor* InExecutor,
+        UObject* InWorldContextObject,
+        const FDreamFlowValueBinding& InConditionBinding,
+        float InPollIntervalSeconds,
+        float InTimeoutSeconds);
+
+    void InitializeWaitForChange(
+        UDreamFlowAsyncContext* InAsyncContext,
+        UDreamFlowExecutor* InExecutor,
+        UObject* InWorldContextObject,
+        const FDreamFlowValueBinding& InObservedBinding,
+        float InPollIntervalSeconds,
+        float InTimeoutSeconds);
+
+    virtual void BeginDestroy() override;
+    void Start();
+
+private:
+    enum class EMode : uint8
+    {
+        None,
+        WaitUntil,
+        WaitForChange,
+    };
+
+    bool BindListeners();
+    void UnbindListeners();
+    void StartTimeoutTimer();
+    void StartFallbackPollTimer();
+    void StopTimers();
+    void EvaluateNow();
+    void HandleTimeoutReached();
+    void HandleVariableChanged(UDreamFlowExecutor* InUpdatedExecutor, FName VariableName, const FDreamFlowValue& InValue);
+    void HandleExecutionContextPropertyChanged(UDreamFlowExecutor* InUpdatedExecutor, const FString& PropertyPath, const FDreamFlowValue& InValue);
+    void HandleExecutorRuntimeStateChanged(UDreamFlowExecutor* InUpdatedExecutor);
+    void Complete(FName OutputPinName);
+    bool HasTimedOut() const;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UDreamFlowAsyncContext> AsyncContext;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UDreamFlowExecutor> Executor;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UObject> WorldContextObject;
+
+    UPROPERTY(Transient)
+    FDreamFlowValueBinding ObservedBinding;
+
+    UPROPERTY(Transient)
+    FDreamFlowValue InitialValue;
+
+    EMode Mode = EMode::None;
+    TObjectPtr<UWorld> CachedWorld = nullptr;
+    float PollIntervalSeconds = 0.1f;
+    float TimeoutSeconds = 0.0f;
+    double StartTimeSeconds = 0.0;
+    bool bHasInitialValue = false;
+    bool bCompleted = false;
+    bool bHasBoundListener = false;
+    FTimerHandle TimeoutTimerHandle;
+    FTimerHandle FallbackPollTimerHandle;
+    FDelegateHandle VariableChangedHandle;
+    FDelegateHandle ExecutionContextPropertyChangedHandle;
+    FDelegateHandle RuntimeStateChangedHandle;
 };
 
 UCLASS(Abstract, BlueprintType, Blueprintable, EditInlineNew, DefaultToInstanced)
@@ -149,6 +252,12 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sub Flow", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "50"))
     bool bCopyChildVariablesToParent = true;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sub Flow")
+    TArray<FDreamFlowSubFlowVariableMapping> InputMappings;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sub Flow")
+    TArray<FDreamFlowSubFlowVariableMapping> OutputMappings;
+
     virtual FText GetNodeDisplayName_Implementation() const override;
     virtual FLinearColor GetNodeTint_Implementation() const override;
     virtual FText GetNodeAccentLabel_Implementation() const override;
@@ -197,6 +306,58 @@ public:
     virtual FLinearColor GetNodeTint_Implementation() const override;
     virtual FText GetNodeAccentLabel_Implementation() const override;
     virtual TArray<FDreamFlowNodeDisplayItem> GetNodeDisplayItems_Implementation() const override;
+    virtual void StartAsyncNode_Implementation(UObject* Context, UDreamFlowExecutor* Executor, UDreamFlowAsyncContext* AsyncContext) override;
+    virtual void ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const override;
+};
+
+UCLASS(BlueprintType, Blueprintable, EditInlineNew, DefaultToInstanced)
+class DREAMFLOW_API UDreamFlowWaitUntilNode : public UDreamFlowAsyncNode
+{
+    GENERATED_BODY()
+
+public:
+    UDreamFlowWaitUntilNode();
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Reactive", meta = (DreamFlowExpectedValueType = "Bool", DreamFlowInlineEditable, DreamFlowInlinePriority = "20"))
+    FDreamFlowValueBinding ConditionBinding;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Reactive", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "30", ClampMin = "0.0", DisplayName = "Fallback Poll Seconds"))
+    float PollIntervalSeconds = 0.1f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Reactive", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "40", ClampMin = "0.0"))
+    float TimeoutSeconds = 0.0f;
+
+    virtual FText GetNodeDisplayName_Implementation() const override;
+    virtual FLinearColor GetNodeTint_Implementation() const override;
+    virtual FText GetNodeAccentLabel_Implementation() const override;
+    virtual TArray<FDreamFlowNodeDisplayItem> GetNodeDisplayItems_Implementation() const override;
+    virtual TArray<FDreamFlowNodeOutputPin> GetOutputPins_Implementation() const override;
+    virtual void StartAsyncNode_Implementation(UObject* Context, UDreamFlowExecutor* Executor, UDreamFlowAsyncContext* AsyncContext) override;
+    virtual void ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const override;
+};
+
+UCLASS(BlueprintType, Blueprintable, EditInlineNew, DefaultToInstanced)
+class DREAMFLOW_API UDreamFlowWaitForBindingChangeNode : public UDreamFlowAsyncNode
+{
+    GENERATED_BODY()
+
+public:
+    UDreamFlowWaitForBindingChangeNode();
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Reactive", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "20"))
+    FDreamFlowValueBinding ObservedBinding;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Reactive", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "30", ClampMin = "0.0", DisplayName = "Fallback Poll Seconds"))
+    float PollIntervalSeconds = 0.1f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Reactive", meta = (DreamFlowInlineEditable, DreamFlowInlinePriority = "40", ClampMin = "0.0"))
+    float TimeoutSeconds = 0.0f;
+
+    virtual FText GetNodeDisplayName_Implementation() const override;
+    virtual FLinearColor GetNodeTint_Implementation() const override;
+    virtual FText GetNodeAccentLabel_Implementation() const override;
+    virtual TArray<FDreamFlowNodeDisplayItem> GetNodeDisplayItems_Implementation() const override;
+    virtual TArray<FDreamFlowNodeOutputPin> GetOutputPins_Implementation() const override;
     virtual void StartAsyncNode_Implementation(UObject* Context, UDreamFlowExecutor* Executor, UDreamFlowAsyncContext* AsyncContext) override;
     virtual void ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const override;
 };

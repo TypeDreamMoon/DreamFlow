@@ -3,12 +3,283 @@
 #include "DreamFlowAsset.h"
 #include "DreamFlowLog.h"
 #include "DreamFlowNode.h"
+#include "Algo/Sort.h"
 #include "Engine/Engine.h"
 #include "Execution/DreamFlowAsyncContext.h"
 #include "Execution/DreamFlowDebuggerSubsystem.h"
+#include "UObject/UnrealType.h"
 
 namespace DreamFlowExecutorPrivate
 {
+    struct FResolvedPropertyPath
+    {
+        FProperty* Property = nullptr;
+        void* ValuePtr = nullptr;
+        UObject* LeafObject = nullptr;
+    };
+
+    static bool TryResolvePropertyPath(UObject* RootObject, const FString& PropertyPath, FResolvedPropertyPath& OutResolvedPath)
+    {
+        OutResolvedPath = FResolvedPropertyPath();
+
+        if (RootObject == nullptr || PropertyPath.IsEmpty())
+        {
+            return false;
+        }
+
+        TArray<FString> Segments;
+        PropertyPath.ParseIntoArray(Segments, TEXT("."), true);
+        if (Segments.Num() == 0)
+        {
+            return false;
+        }
+
+        UObject* CurrentObject = RootObject;
+        UStruct* CurrentStruct = RootObject->GetClass();
+        void* CurrentContainer = RootObject;
+
+        for (int32 SegmentIndex = 0; SegmentIndex < Segments.Num(); ++SegmentIndex)
+        {
+            const FName SegmentName(*Segments[SegmentIndex]);
+            FProperty* Property = FindFProperty<FProperty>(CurrentStruct, SegmentName);
+            if (Property == nullptr)
+            {
+                return false;
+            }
+
+            void* PropertyValuePtr = Property->ContainerPtrToValuePtr<void>(CurrentContainer);
+            const bool bIsLeaf = SegmentIndex == Segments.Num() - 1;
+            if (bIsLeaf)
+            {
+                OutResolvedPath.Property = Property;
+                OutResolvedPath.ValuePtr = PropertyValuePtr;
+                OutResolvedPath.LeafObject = CurrentObject;
+                return true;
+            }
+
+            if (FStructProperty* StructProperty = CastField<FStructProperty>(Property))
+            {
+                CurrentStruct = StructProperty->Struct;
+                CurrentContainer = PropertyValuePtr;
+                continue;
+            }
+
+            if (FObjectPropertyBase* ObjectProperty = CastField<FObjectPropertyBase>(Property))
+            {
+                UObject* NextObject = ObjectProperty->GetObjectPropertyValue(PropertyValuePtr);
+                if (NextObject == nullptr)
+                {
+                    return false;
+                }
+
+                CurrentObject = NextObject;
+                CurrentStruct = NextObject->GetClass();
+                CurrentContainer = NextObject;
+                continue;
+            }
+
+            return false;
+        }
+
+        return false;
+    }
+
+    static bool TryReadPropertyValue(const FResolvedPropertyPath& ResolvedPath, FDreamFlowValue& OutValue)
+    {
+        if (ResolvedPath.Property == nullptr || ResolvedPath.ValuePtr == nullptr)
+        {
+            return false;
+        }
+
+        if (const FBoolProperty* BoolProperty = CastField<FBoolProperty>(ResolvedPath.Property))
+        {
+            OutValue.Type = EDreamFlowValueType::Bool;
+            OutValue.BoolValue = BoolProperty->GetPropertyValue(ResolvedPath.ValuePtr);
+            return true;
+        }
+
+        if (const FNumericProperty* NumericProperty = CastField<FNumericProperty>(ResolvedPath.Property))
+        {
+            if (NumericProperty->IsFloatingPoint())
+            {
+                OutValue.Type = EDreamFlowValueType::Float;
+                OutValue.FloatValue = static_cast<float>(NumericProperty->GetFloatingPointPropertyValue(ResolvedPath.ValuePtr));
+                return true;
+            }
+
+            OutValue.Type = EDreamFlowValueType::Int;
+            OutValue.IntValue = static_cast<int32>(NumericProperty->GetSignedIntPropertyValue(ResolvedPath.ValuePtr));
+            return true;
+        }
+
+        if (const FNameProperty* NameProperty = CastField<FNameProperty>(ResolvedPath.Property))
+        {
+            OutValue.Type = EDreamFlowValueType::Name;
+            OutValue.NameValue = NameProperty->GetPropertyValue(ResolvedPath.ValuePtr);
+            return true;
+        }
+
+        if (const FStrProperty* StringProperty = CastField<FStrProperty>(ResolvedPath.Property))
+        {
+            OutValue.Type = EDreamFlowValueType::String;
+            OutValue.StringValue = StringProperty->GetPropertyValue(ResolvedPath.ValuePtr);
+            return true;
+        }
+
+        if (const FTextProperty* TextProperty = CastField<FTextProperty>(ResolvedPath.Property))
+        {
+            OutValue.Type = EDreamFlowValueType::Text;
+            OutValue.TextValue = TextProperty->GetPropertyValue(ResolvedPath.ValuePtr);
+            return true;
+        }
+
+        if (const FStructProperty* StructProperty = CastField<FStructProperty>(ResolvedPath.Property))
+        {
+            if (StructProperty->Struct == FGameplayTag::StaticStruct())
+            {
+                OutValue.Type = EDreamFlowValueType::GameplayTag;
+                OutValue.GameplayTagValue = *StructProperty->ContainerPtrToValuePtr<FGameplayTag>(ResolvedPath.ValuePtr, 0);
+                return true;
+            }
+        }
+
+        if (const FObjectPropertyBase* ObjectProperty = CastField<FObjectPropertyBase>(ResolvedPath.Property))
+        {
+            OutValue.Type = EDreamFlowValueType::Object;
+            OutValue.ObjectValue = ObjectProperty->GetObjectPropertyValue(ResolvedPath.ValuePtr);
+            return true;
+        }
+
+        return false;
+    }
+
+    static bool TryWritePropertyValue(const FResolvedPropertyPath& ResolvedPath, const FDreamFlowValue& InValue)
+    {
+        if (ResolvedPath.Property == nullptr || ResolvedPath.ValuePtr == nullptr)
+        {
+            return false;
+        }
+
+        if (FBoolProperty* BoolProperty = CastField<FBoolProperty>(ResolvedPath.Property))
+        {
+            FDreamFlowValue ConvertedValue;
+            if (!DreamFlowVariable::TryConvertValue(InValue, EDreamFlowValueType::Bool, ConvertedValue))
+            {
+                return false;
+            }
+
+            BoolProperty->SetPropertyValue(ResolvedPath.ValuePtr, ConvertedValue.BoolValue);
+            return true;
+        }
+
+        if (FNumericProperty* NumericProperty = CastField<FNumericProperty>(ResolvedPath.Property))
+        {
+            if (NumericProperty->IsFloatingPoint())
+            {
+                FDreamFlowValue ConvertedValue;
+                if (!DreamFlowVariable::TryConvertValue(InValue, EDreamFlowValueType::Float, ConvertedValue))
+                {
+                    return false;
+                }
+
+                NumericProperty->SetFloatingPointPropertyValue(ResolvedPath.ValuePtr, ConvertedValue.FloatValue);
+                return true;
+            }
+
+            FDreamFlowValue ConvertedValue;
+            if (!DreamFlowVariable::TryConvertValue(InValue, EDreamFlowValueType::Int, ConvertedValue))
+            {
+                return false;
+            }
+
+            NumericProperty->SetIntPropertyValue(ResolvedPath.ValuePtr, static_cast<int64>(ConvertedValue.IntValue));
+            return true;
+        }
+
+        if (FNameProperty* NameProperty = CastField<FNameProperty>(ResolvedPath.Property))
+        {
+            FDreamFlowValue ConvertedValue;
+            if (!DreamFlowVariable::TryConvertValue(InValue, EDreamFlowValueType::Name, ConvertedValue))
+            {
+                return false;
+            }
+
+            NameProperty->SetPropertyValue(ResolvedPath.ValuePtr, ConvertedValue.NameValue);
+            return true;
+        }
+
+        if (FStrProperty* StringProperty = CastField<FStrProperty>(ResolvedPath.Property))
+        {
+            FDreamFlowValue ConvertedValue;
+            if (!DreamFlowVariable::TryConvertValue(InValue, EDreamFlowValueType::String, ConvertedValue))
+            {
+                return false;
+            }
+
+            StringProperty->SetPropertyValue(ResolvedPath.ValuePtr, ConvertedValue.StringValue);
+            return true;
+        }
+
+        if (FTextProperty* TextProperty = CastField<FTextProperty>(ResolvedPath.Property))
+        {
+            FDreamFlowValue ConvertedValue;
+            if (!DreamFlowVariable::TryConvertValue(InValue, EDreamFlowValueType::Text, ConvertedValue))
+            {
+                return false;
+            }
+
+            TextProperty->SetPropertyValue(ResolvedPath.ValuePtr, ConvertedValue.TextValue);
+            return true;
+        }
+
+        if (FStructProperty* StructProperty = CastField<FStructProperty>(ResolvedPath.Property))
+        {
+            if (StructProperty->Struct == FGameplayTag::StaticStruct())
+            {
+                FDreamFlowValue ConvertedValue;
+                if (!DreamFlowVariable::TryConvertValue(InValue, EDreamFlowValueType::GameplayTag, ConvertedValue))
+                {
+                    return false;
+                }
+
+                *StructProperty->ContainerPtrToValuePtr<FGameplayTag>(ResolvedPath.ValuePtr, 0) = ConvertedValue.GameplayTagValue;
+                return true;
+            }
+        }
+
+        if (FObjectPropertyBase* ObjectProperty = CastField<FObjectPropertyBase>(ResolvedPath.Property))
+        {
+            FDreamFlowValue ConvertedValue;
+            if (!DreamFlowVariable::TryConvertValue(InValue, EDreamFlowValueType::Object, ConvertedValue))
+            {
+                return false;
+            }
+
+            ObjectProperty->SetObjectPropertyValue(ResolvedPath.ValuePtr, ConvertedValue.ObjectValue.Get());
+            return true;
+        }
+
+        return false;
+    }
+
+    static bool AreValuesEquivalent(const FDreamFlowValue& A, const FDreamFlowValue& B)
+    {
+        bool bIsEqual = false;
+        return DreamFlowVariable::TryCompareValues(A, B, EDreamFlowComparisonOperation::Equal, bIsEqual) && bIsEqual;
+    }
+
+    static bool DoPropertyPathsOverlap(const FString& A, const FString& B)
+    {
+        if (A.IsEmpty() || B.IsEmpty())
+        {
+            return true;
+        }
+
+        return A == B
+            || A.StartsWith(B + TEXT("."))
+            || B.StartsWith(A + TEXT("."));
+    }
+
     static bool TryGetConvertedValue(const UDreamFlowExecutor* Executor, const FName VariableName, const EDreamFlowValueType TargetType, FDreamFlowValue& OutValue)
     {
         if (Executor == nullptr)
@@ -40,6 +311,102 @@ namespace DreamFlowExecutorPrivate
 
         return DreamFlowVariable::TryConvertValue(ResolvedValue, TargetType, OutValue);
     }
+
+    static bool TryGetConvertedNodeStateValue(const UDreamFlowExecutor* Executor, const FGuid NodeGuid, const FName StateKey, const EDreamFlowValueType TargetType, FDreamFlowValue& OutValue)
+    {
+        if (Executor == nullptr)
+        {
+            return false;
+        }
+
+        FDreamFlowValue StoredValue;
+        if (!Executor->GetNodeStateValue(NodeGuid, StateKey, StoredValue))
+        {
+            return false;
+        }
+
+        return DreamFlowVariable::TryConvertValue(StoredValue, TargetType, OutValue);
+    }
+
+    static void AppendReplicatedValues(const TMap<FName, FDreamFlowValue>& SourceValues, TArray<FDreamFlowReplicatedVariableValue>& OutValues)
+    {
+        TArray<FName> VariableNames;
+        SourceValues.GenerateKeyArray(VariableNames);
+        VariableNames.Sort(FNameLexicalLess());
+
+        for (const FName VariableName : VariableNames)
+        {
+            if (const FDreamFlowValue* Value = SourceValues.Find(VariableName))
+            {
+                FDreamFlowReplicatedVariableValue& ReplicatedValue = OutValues.AddDefaulted_GetRef();
+                ReplicatedValue.Name = VariableName;
+                ReplicatedValue.Value = *Value;
+            }
+        }
+    }
+
+    static const FDreamFlowNodeRuntimeState* FindNodeRuntimeState(const TArray<FDreamFlowNodeRuntimeState>& SourceStates, const FGuid NodeGuid)
+    {
+        return SourceStates.FindByPredicate([NodeGuid](const FDreamFlowNodeRuntimeState& State)
+        {
+            return State.NodeGuid == NodeGuid;
+        });
+    }
+
+    static FDreamFlowNodeRuntimeState* FindOrAddNodeRuntimeState(TArray<FDreamFlowNodeRuntimeState>& SourceStates, const FGuid NodeGuid)
+    {
+        if (FDreamFlowNodeRuntimeState* ExistingState = SourceStates.FindByPredicate([NodeGuid](const FDreamFlowNodeRuntimeState& State)
+        {
+            return State.NodeGuid == NodeGuid;
+        }))
+        {
+            return ExistingState;
+        }
+
+        FDreamFlowNodeRuntimeState& NewState = SourceStates.AddDefaulted_GetRef();
+        NewState.NodeGuid = NodeGuid;
+        return &NewState;
+    }
+
+    static const FDreamFlowReplicatedVariableValue* FindReplicatedValue(const TArray<FDreamFlowReplicatedVariableValue>& SourceValues, const FName ValueName)
+    {
+        return SourceValues.FindByPredicate([ValueName](const FDreamFlowReplicatedVariableValue& Value)
+        {
+            return Value.Name == ValueName;
+        });
+    }
+
+    static FDreamFlowReplicatedVariableValue* FindOrAddReplicatedValue(TArray<FDreamFlowReplicatedVariableValue>& SourceValues, const FName ValueName)
+    {
+        if (FDreamFlowReplicatedVariableValue* ExistingValue = SourceValues.FindByPredicate([ValueName](const FDreamFlowReplicatedVariableValue& Value)
+        {
+            return Value.Name == ValueName;
+        }))
+        {
+            return ExistingValue;
+        }
+
+        FDreamFlowReplicatedVariableValue& NewValue = SourceValues.AddDefaulted_GetRef();
+        NewValue.Name = ValueName;
+        return &NewValue;
+    }
+
+    static void SortNodeRuntimeStates(TArray<FDreamFlowNodeRuntimeState>& InOutStates)
+    {
+        InOutStates.Sort([](const FDreamFlowNodeRuntimeState& A, const FDreamFlowNodeRuntimeState& B)
+        {
+            return A.NodeGuid.ToString(EGuidFormats::DigitsWithHyphens) < B.NodeGuid.ToString(EGuidFormats::DigitsWithHyphens);
+        });
+
+        for (FDreamFlowNodeRuntimeState& State : InOutStates)
+        {
+            State.Values.Sort([](const FDreamFlowReplicatedVariableValue& A, const FDreamFlowReplicatedVariableValue& B)
+            {
+                return FNameLexicalLess()(A.Name, B.Name);
+            });
+        }
+    }
+
 }
 
 void UDreamFlowExecutor::Initialize(UDreamFlowAsset* InFlowAsset, UObject* InExecutionContext)
@@ -68,6 +435,227 @@ void UDreamFlowExecutor::ResetVariablesToDefaults()
     }
 
     DREAMFLOW_LOG(Variables, Verbose, "Reset %d runtime variables to flow defaults for asset '%s'.", RuntimeVariables.Num(), *GetNameSafe(FlowAsset));
+}
+
+bool UDreamFlowExecutor::HasNodeStateValue(FGuid NodeGuid, FName StateKey) const
+{
+    const FDreamFlowNodeRuntimeState* NodeState = DreamFlowExecutorPrivate::FindNodeRuntimeState(NodeRuntimeStates, NodeGuid);
+    return NodeState != nullptr && !StateKey.IsNone() && DreamFlowExecutorPrivate::FindReplicatedValue(NodeState->Values, StateKey) != nullptr;
+}
+
+bool UDreamFlowExecutor::GetNodeStateValue(FGuid NodeGuid, FName StateKey, FDreamFlowValue& OutValue) const
+{
+    const FDreamFlowNodeRuntimeState* NodeState = DreamFlowExecutorPrivate::FindNodeRuntimeState(NodeRuntimeStates, NodeGuid);
+    if (NodeState == nullptr)
+    {
+        return false;
+    }
+
+    if (const FDreamFlowReplicatedVariableValue* StoredValue = DreamFlowExecutorPrivate::FindReplicatedValue(NodeState->Values, StateKey))
+    {
+        OutValue = StoredValue->Value;
+        return true;
+    }
+
+    return false;
+}
+
+bool UDreamFlowExecutor::GetNodeStateBoolValue(FGuid NodeGuid, FName StateKey, bool& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedNodeStateValue(this, NodeGuid, StateKey, EDreamFlowValueType::Bool, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.BoolValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetNodeStateIntValue(FGuid NodeGuid, FName StateKey, int32& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedNodeStateValue(this, NodeGuid, StateKey, EDreamFlowValueType::Int, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.IntValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetNodeStateFloatValue(FGuid NodeGuid, FName StateKey, float& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedNodeStateValue(this, NodeGuid, StateKey, EDreamFlowValueType::Float, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.FloatValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetNodeStateNameValue(FGuid NodeGuid, FName StateKey, FName& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedNodeStateValue(this, NodeGuid, StateKey, EDreamFlowValueType::Name, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.NameValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetNodeStateStringValue(FGuid NodeGuid, FName StateKey, FString& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedNodeStateValue(this, NodeGuid, StateKey, EDreamFlowValueType::String, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.StringValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetNodeStateTextValue(FGuid NodeGuid, FName StateKey, FText& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedNodeStateValue(this, NodeGuid, StateKey, EDreamFlowValueType::Text, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.TextValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetNodeStateGameplayTagValue(FGuid NodeGuid, FName StateKey, FGameplayTag& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedNodeStateValue(this, NodeGuid, StateKey, EDreamFlowValueType::GameplayTag, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.GameplayTagValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetNodeStateObjectValue(FGuid NodeGuid, FName StateKey, UObject*& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedNodeStateValue(this, NodeGuid, StateKey, EDreamFlowValueType::Object, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.ObjectValue.Get();
+    return true;
+}
+
+bool UDreamFlowExecutor::SetNodeStateValue(FGuid NodeGuid, FName StateKey, const FDreamFlowValue& InValue)
+{
+    if (!NodeGuid.IsValid() || StateKey.IsNone())
+    {
+        return false;
+    }
+
+    FDreamFlowNodeRuntimeState* NodeState = DreamFlowExecutorPrivate::FindOrAddNodeRuntimeState(NodeRuntimeStates, NodeGuid);
+    FDreamFlowReplicatedVariableValue* StateValue = DreamFlowExecutorPrivate::FindOrAddReplicatedValue(NodeState->Values, StateKey);
+    StateValue->Value = InValue;
+    DreamFlowExecutorPrivate::SortNodeRuntimeStates(NodeRuntimeStates);
+    CachedSubFlowStack.Reset();
+    NotifyDebuggerStateChanged();
+    return true;
+}
+
+bool UDreamFlowExecutor::SetNodeStateBoolValue(FGuid NodeGuid, FName StateKey, bool InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Bool;
+    Value.BoolValue = InValue;
+    return SetNodeStateValue(NodeGuid, StateKey, Value);
+}
+
+bool UDreamFlowExecutor::SetNodeStateIntValue(FGuid NodeGuid, FName StateKey, int32 InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Int;
+    Value.IntValue = InValue;
+    return SetNodeStateValue(NodeGuid, StateKey, Value);
+}
+
+bool UDreamFlowExecutor::SetNodeStateFloatValue(FGuid NodeGuid, FName StateKey, float InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Float;
+    Value.FloatValue = InValue;
+    return SetNodeStateValue(NodeGuid, StateKey, Value);
+}
+
+bool UDreamFlowExecutor::SetNodeStateNameValue(FGuid NodeGuid, FName StateKey, FName InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Name;
+    Value.NameValue = InValue;
+    return SetNodeStateValue(NodeGuid, StateKey, Value);
+}
+
+bool UDreamFlowExecutor::SetNodeStateStringValue(FGuid NodeGuid, FName StateKey, const FString& InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::String;
+    Value.StringValue = InValue;
+    return SetNodeStateValue(NodeGuid, StateKey, Value);
+}
+
+bool UDreamFlowExecutor::SetNodeStateTextValue(FGuid NodeGuid, FName StateKey, const FText& InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Text;
+    Value.TextValue = InValue;
+    return SetNodeStateValue(NodeGuid, StateKey, Value);
+}
+
+bool UDreamFlowExecutor::SetNodeStateGameplayTagValue(FGuid NodeGuid, FName StateKey, FGameplayTag InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::GameplayTag;
+    Value.GameplayTagValue = InValue;
+    return SetNodeStateValue(NodeGuid, StateKey, Value);
+}
+
+bool UDreamFlowExecutor::SetNodeStateObjectValue(FGuid NodeGuid, FName StateKey, UObject* InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Object;
+    Value.ObjectValue = InValue;
+    return SetNodeStateValue(NodeGuid, StateKey, Value);
+}
+
+void UDreamFlowExecutor::ResetNodeState(FGuid NodeGuid)
+{
+    const int32 RemovedCount = NodeRuntimeStates.RemoveAll([NodeGuid](const FDreamFlowNodeRuntimeState& State)
+    {
+        return State.NodeGuid == NodeGuid;
+    });
+
+    if (RemovedCount > 0)
+    {
+        NotifyDebuggerStateChanged();
+    }
+}
+
+void UDreamFlowExecutor::ResetAllNodeStates()
+{
+    if (NodeRuntimeStates.Num() > 0)
+    {
+        NodeRuntimeStates.Reset();
+        NotifyDebuggerStateChanged();
+    }
 }
 
 bool UDreamFlowExecutor::StartFlow()
@@ -115,6 +703,20 @@ bool UDreamFlowExecutor::RestartFlow()
 
 void UDreamFlowExecutor::FinishFlow()
 {
+    TArray<TObjectPtr<UDreamFlowExecutor>> ActiveChildren;
+    ActiveChildExecutorsByNodeGuid.GenerateValueArray(ActiveChildren);
+    for (UDreamFlowExecutor* ChildExecutor : ActiveChildren)
+    {
+        if (ChildExecutor != nullptr && ChildExecutor->IsRunning())
+        {
+            ChildExecutor->FinishFlow();
+        }
+    }
+
+    ActiveChildExecutorsByNodeGuid.Reset();
+    CachedSubFlowStack.Reset();
+    DetachFromParentExecutor();
+
     if (!bIsRunning)
     {
         ClearAsyncExecutionState();
@@ -157,6 +759,15 @@ bool UDreamFlowExecutor::Advance()
         return false;
     }
 
+    if (Children.Num() > 1)
+    {
+        const TArray<FDreamFlowNodeOutputPin> OutputPins = CurrentNode->GetOutputPins();
+        if (OutputPins.Num() == 1)
+        {
+            return MoveToOutputPin(OutputPins[0].PinName);
+        }
+    }
+
     return Children.Num() == 1 ? EnterNode(Children[0]) : false;
 }
 
@@ -183,7 +794,7 @@ bool UDreamFlowExecutor::MoveToOutputPin(FName OutputPinName)
         return false;
     }
 
-    return EnterNode(CurrentNode->GetFirstChildForOutputPin(OutputPinName));
+    return EnterChildrenForOutputPin(CurrentNode, OutputPinName);
 }
 
 bool UDreamFlowExecutor::ChooseChild(UDreamFlowNode* ChildNode)
@@ -251,9 +862,58 @@ bool UDreamFlowExecutor::ActivateNode(UDreamFlowNode* Node, const bool bExecuteN
     return true;
 }
 
+bool UDreamFlowExecutor::EnterChildrenForOutputPin(const UDreamFlowNode* SourceNode, FName OutputPinName)
+{
+    if (SourceNode == nullptr || OutputPinName.IsNone())
+    {
+        return false;
+    }
+
+    const TArray<UDreamFlowNode*> OutputChildren = SourceNode->GetChildrenForOutputPin(OutputPinName);
+    if (OutputChildren.Num() == 0)
+    {
+        return false;
+    }
+
+    for (int32 ChildIndex = 1; ChildIndex < OutputChildren.Num(); ++ChildIndex)
+    {
+        if (UDreamFlowNode* ParallelStartNode = OutputChildren[ChildIndex])
+        {
+            if (UDreamFlowExecutor* ParallelExecutor = StartParallelBranchAtNode(ParallelStartNode))
+            {
+                DREAMFLOW_LOG(
+                    Execution,
+                    Verbose,
+                    "Spawned parallel branch executor for node '%s' from output '%s' on flow '%s'.",
+                    *ParallelStartNode->GetNodeDisplayName().ToString(),
+                    *OutputPinName.ToString(),
+                    *GetNameSafe(FlowAsset));
+            }
+            else
+            {
+                DREAMFLOW_LOG(
+                    Execution,
+                    Warning,
+                    "Failed to spawn parallel branch executor for node '%s' from output '%s' on flow '%s'.",
+                    *GetNameSafe(ParallelStartNode),
+                    *OutputPinName.ToString(),
+                    *GetNameSafe(FlowAsset));
+            }
+        }
+    }
+
+    return EnterNode(OutputChildren[0]);
+}
+
 void UDreamFlowExecutor::SetExecutionContext(UObject* InExecutionContext)
 {
+    if (ExecutionContext == InExecutionContext)
+    {
+        return;
+    }
+
     ExecutionContext = InExecutionContext;
+    NotifyExecutionContextChanged();
 }
 
 bool UDreamFlowExecutor::PauseExecution()
@@ -332,6 +992,160 @@ UObject* UDreamFlowExecutor::GetExecutionContext() const
 UDreamFlowAsset* UDreamFlowExecutor::GetFlowAsset() const
 {
     return FlowAsset;
+}
+
+UDreamFlowExecutor* UDreamFlowExecutor::GetParentExecutor() const
+{
+    return ParentExecutor;
+}
+
+UDreamFlowExecutor* UDreamFlowExecutor::GetChildExecutorForNode(const UDreamFlowNode* Node) const
+{
+    if (Node == nullptr || !Node->NodeGuid.IsValid())
+    {
+        return nullptr;
+    }
+
+    const TObjectPtr<UDreamFlowExecutor>* ChildExecutor = ActiveChildExecutorsByNodeGuid.Find(Node->NodeGuid);
+    return ChildExecutor != nullptr ? ChildExecutor->Get() : nullptr;
+}
+
+UDreamFlowExecutor* UDreamFlowExecutor::GetCurrentChildExecutor() const
+{
+    if (CurrentNode != nullptr)
+    {
+        if (UDreamFlowExecutor* CurrentChild = GetChildExecutorForNode(CurrentNode))
+        {
+            return CurrentChild;
+        }
+    }
+
+    for (const TPair<FGuid, TObjectPtr<UDreamFlowExecutor>>& Pair : ActiveChildExecutorsByNodeGuid)
+    {
+        if (Pair.Value != nullptr)
+        {
+            return Pair.Value.Get();
+        }
+    }
+
+    return nullptr;
+}
+
+TArray<UDreamFlowExecutor*> UDreamFlowExecutor::GetActiveChildExecutors() const
+{
+    TArray<UDreamFlowExecutor*> Result;
+    Result.Reserve(ActiveChildExecutorsByNodeGuid.Num());
+
+    for (const TPair<FGuid, TObjectPtr<UDreamFlowExecutor>>& Pair : ActiveChildExecutorsByNodeGuid)
+    {
+        if (Pair.Value != nullptr)
+        {
+            Result.Add(Pair.Value.Get());
+        }
+    }
+
+    return Result;
+}
+
+TArray<FDreamFlowSubFlowStackEntry> UDreamFlowExecutor::GetActiveSubFlowStack() const
+{
+    if (ActiveChildExecutorsByNodeGuid.Num() == 0)
+    {
+        return CachedSubFlowStack;
+    }
+
+    TArray<FDreamFlowSubFlowStackEntry> Result;
+    TArray<FGuid> OwnerNodeGuids;
+    ActiveChildExecutorsByNodeGuid.GenerateKeyArray(OwnerNodeGuids);
+    OwnerNodeGuids.Sort([](const FGuid& A, const FGuid& B)
+    {
+        return A.ToString(EGuidFormats::DigitsWithHyphens) < B.ToString(EGuidFormats::DigitsWithHyphens);
+    });
+
+    for (const FGuid& OwnerNodeGuid : OwnerNodeGuids)
+    {
+        const TObjectPtr<UDreamFlowExecutor>* ChildExecutorPtr = ActiveChildExecutorsByNodeGuid.Find(OwnerNodeGuid);
+        if (ChildExecutorPtr == nullptr || *ChildExecutorPtr == nullptr)
+        {
+            continue;
+        }
+
+        UDreamFlowExecutor* ChildExecutor = ChildExecutorPtr->Get();
+        if (ChildExecutor == nullptr || ChildExecutor->GetFlowAsset() == FlowAsset)
+        {
+            continue;
+        }
+
+        FDreamFlowSubFlowStackEntry& Entry = Result.AddDefaulted_GetRef();
+        Entry.OwnerNodeGuid = OwnerNodeGuid;
+        Entry.FlowAsset = ChildExecutor->GetFlowAsset();
+        Entry.CurrentNodeGuid = ChildExecutor->GetCurrentNode() != nullptr
+            ? ChildExecutor->GetCurrentNode()->NodeGuid
+            : FGuid();
+
+        Result.Append(ChildExecutor->GetActiveSubFlowStack());
+    }
+
+    return Result;
+}
+
+bool UDreamFlowExecutor::GetExecutionContextPropertyValue(const FString& PropertyPath, FDreamFlowValue& OutValue) const
+{
+    DreamFlowExecutorPrivate::FResolvedPropertyPath ResolvedPath;
+    return DreamFlowExecutorPrivate::TryResolvePropertyPath(ExecutionContext, PropertyPath, ResolvedPath)
+        && DreamFlowExecutorPrivate::TryReadPropertyValue(ResolvedPath, OutValue);
+}
+
+bool UDreamFlowExecutor::SetExecutionContextPropertyValue(const FString& PropertyPath, const FDreamFlowValue& InValue)
+{
+    DreamFlowExecutorPrivate::FResolvedPropertyPath ResolvedPath;
+    FDreamFlowValue PreviousValue;
+    const bool bHadPreviousValue =
+        DreamFlowExecutorPrivate::TryResolvePropertyPath(ExecutionContext, PropertyPath, ResolvedPath)
+        && DreamFlowExecutorPrivate::TryReadPropertyValue(ResolvedPath, PreviousValue);
+
+    if (!bHadPreviousValue || !DreamFlowExecutorPrivate::TryWritePropertyValue(ResolvedPath, InValue))
+    {
+        return false;
+    }
+
+    FDreamFlowValue CurrentValue;
+    if (!DreamFlowExecutorPrivate::TryReadPropertyValue(ResolvedPath, CurrentValue))
+    {
+        CurrentValue = PreviousValue;
+    }
+
+    if (!DreamFlowExecutorPrivate::AreValuesEquivalent(PreviousValue, CurrentValue))
+    {
+        ExecutionContextPropertyChangedNative.Broadcast(this, PropertyPath, CurrentValue);
+    }
+
+    NotifyDebuggerStateChanged();
+    return true;
+}
+
+void UDreamFlowExecutor::NotifyExecutionContextChanged()
+{
+    NotifyDebuggerStateChanged();
+}
+
+bool UDreamFlowExecutor::NotifyExecutionContextPropertyChanged(const FString& PropertyPath)
+{
+    if (PropertyPath.IsEmpty())
+    {
+        NotifyExecutionContextChanged();
+        return true;
+    }
+
+    FDreamFlowValue CurrentValue;
+    if (!GetExecutionContextPropertyValue(PropertyPath, CurrentValue))
+    {
+        return false;
+    }
+
+    ExecutionContextPropertyChangedNative.Broadcast(this, PropertyPath, CurrentValue);
+    NotifyDebuggerStateChanged();
+    return true;
 }
 
 UDreamFlowNode* UDreamFlowExecutor::GetEntryNode() const
@@ -522,6 +1336,79 @@ bool UDreamFlowExecutor::CompleteAsyncNodeForNode(UDreamFlowNode* Node, FName Ou
     return TryConsumeCompletedAsyncNode(ResolvedOutputPinName);
 }
 
+FDreamFlowExecutionSnapshot UDreamFlowExecutor::BuildExecutionSnapshot() const
+{
+    FDreamFlowExecutionSnapshot Snapshot;
+    Snapshot.DebugState = GetDebugState();
+    Snapshot.CurrentNodeGuid = CurrentNode != nullptr ? CurrentNode->NodeGuid : FGuid();
+    Snapshot.bPauseOnBreakpoints = bPauseOnBreakpoints;
+
+    for (UDreamFlowNode* VisitedNode : VisitedNodes)
+    {
+        if (VisitedNode != nullptr && VisitedNode->NodeGuid.IsValid())
+        {
+            Snapshot.VisitedNodeGuids.Add(VisitedNode->NodeGuid);
+        }
+    }
+
+    DreamFlowExecutorPrivate::AppendReplicatedValues(RuntimeVariables, Snapshot.Variables);
+    Snapshot.NodeStates = NodeRuntimeStates;
+    DreamFlowExecutorPrivate::SortNodeRuntimeStates(Snapshot.NodeStates);
+    Snapshot.SubFlowStack = GetActiveSubFlowStack();
+    return Snapshot;
+}
+
+void UDreamFlowExecutor::ApplyExecutionSnapshot(const FDreamFlowExecutionSnapshot& InSnapshot)
+{
+    FDreamFlowReplicatedExecutionState ReplicatedState;
+    ReplicatedState.DebugState = InSnapshot.DebugState;
+    ReplicatedState.CurrentNodeGuid = InSnapshot.CurrentNodeGuid;
+    ReplicatedState.VisitedNodeGuids = InSnapshot.VisitedNodeGuids;
+    ReplicatedState.Variables = InSnapshot.Variables;
+    ReplicatedState.NodeStates = InSnapshot.NodeStates;
+    ReplicatedState.SubFlowStack = InSnapshot.SubFlowStack;
+    ReplicatedState.bPauseOnBreakpoints = InSnapshot.bPauseOnBreakpoints;
+    ApplyReplicatedState(ReplicatedState);
+}
+
+void UDreamFlowExecutor::RegisterChildExecutor(UDreamFlowNode* OwnerNode, UDreamFlowExecutor* ChildExecutor)
+{
+    if (OwnerNode == nullptr || ChildExecutor == nullptr || !OwnerNode->NodeGuid.IsValid())
+    {
+        return;
+    }
+
+    ActiveChildExecutorsByNodeGuid.FindOrAdd(OwnerNode->NodeGuid) = ChildExecutor;
+    ChildExecutor->DetachFromParentExecutor();
+    ChildExecutor->ParentExecutor = this;
+    ChildExecutor->ParentLinkNodeGuid = OwnerNode->NodeGuid;
+    CachedSubFlowStack.Reset();
+    NotifyDebuggerStateChanged();
+}
+
+void UDreamFlowExecutor::UnregisterChildExecutor(UDreamFlowNode* OwnerNode, UDreamFlowExecutor* ChildExecutor)
+{
+    if (OwnerNode == nullptr || !OwnerNode->NodeGuid.IsValid())
+    {
+        return;
+    }
+
+    const TObjectPtr<UDreamFlowExecutor>* RegisteredExecutor = ActiveChildExecutorsByNodeGuid.Find(OwnerNode->NodeGuid);
+    if (RegisteredExecutor != nullptr && (ChildExecutor == nullptr || RegisteredExecutor->Get() == ChildExecutor))
+    {
+        if (RegisteredExecutor->Get() != nullptr && RegisteredExecutor->Get()->ParentExecutor == this)
+        {
+            RegisteredExecutor->Get()->ParentExecutor = nullptr;
+            RegisteredExecutor->Get()->ParentLinkNodeGuid.Invalidate();
+            RegisteredExecutor->Get()->bSharesRuntimeVariablesWithParent = false;
+        }
+
+        ActiveChildExecutorsByNodeGuid.Remove(OwnerNode->NodeGuid);
+        CachedSubFlowStack.Reset();
+        NotifyDebuggerStateChanged();
+    }
+}
+
 void UDreamFlowExecutor::BuildReplicatedState(FDreamFlowReplicatedExecutionState& OutState) const
 {
     OutState = FDreamFlowReplicatedExecutionState();
@@ -537,21 +1424,20 @@ void UDreamFlowExecutor::BuildReplicatedState(FDreamFlowReplicatedExecutionState
         }
     }
 
-    TArray<FName> VariableNames;
-    RuntimeVariables.GenerateKeyArray(VariableNames);
-    VariableNames.Sort(FNameLexicalLess());
+    DreamFlowExecutorPrivate::AppendReplicatedValues(RuntimeVariables, OutState.Variables);
+    OutState.NodeStates = NodeRuntimeStates;
+    DreamFlowExecutorPrivate::SortNodeRuntimeStates(OutState.NodeStates);
+    OutState.SubFlowStack = GetActiveSubFlowStack();
 
-    for (const FName VariableName : VariableNames)
-    {
-        if (const FDreamFlowValue* Value = RuntimeVariables.Find(VariableName))
-        {
-            FDreamFlowReplicatedVariableValue& ReplicatedVariable = OutState.Variables.AddDefaulted_GetRef();
-            ReplicatedVariable.Name = VariableName;
-            ReplicatedVariable.Value = *Value;
-        }
-    }
-
-    DREAMFLOW_LOG(Replication, Verbose, "Built replicated execution state for flow '%s' with %d visited nodes and %d variables.", *GetNameSafe(FlowAsset), OutState.VisitedNodeGuids.Num(), OutState.Variables.Num());
+    DREAMFLOW_LOG(
+        Replication,
+        Verbose,
+        "Built replicated execution state for flow '%s' with %d visited nodes, %d variables, %d node states and %d sub flow entries.",
+        *GetNameSafe(FlowAsset),
+        OutState.VisitedNodeGuids.Num(),
+        OutState.Variables.Num(),
+        OutState.NodeStates.Num(),
+        OutState.SubFlowStack.Num());
 }
 
 void UDreamFlowExecutor::ApplyReplicatedState(const FDreamFlowReplicatedExecutionState& InState)
@@ -594,12 +1480,35 @@ void UDreamFlowExecutor::ApplyReplicatedState(const FDreamFlowReplicatedExecutio
         }
     }
 
-    DREAMFLOW_LOG(Replication, Verbose, "Applied replicated execution state for flow '%s'. Current node='%s', variables=%d.", *GetNameSafe(FlowAsset), CurrentNode != nullptr ? *CurrentNode->GetNodeDisplayName().ToString() : TEXT("<none>"), RuntimeVariables.Num());
+    NodeRuntimeStates = InState.NodeStates;
+    DreamFlowExecutorPrivate::SortNodeRuntimeStates(NodeRuntimeStates);
+    ActiveChildExecutorsByNodeGuid.Reset();
+    CachedSubFlowStack = InState.SubFlowStack;
+
+    DREAMFLOW_LOG(
+        Replication,
+        Verbose,
+        "Applied replicated execution state for flow '%s'. Current node='%s', variables=%d, node states=%d, cached sub flow entries=%d.",
+        *GetNameSafe(FlowAsset),
+        CurrentNode != nullptr ? *CurrentNode->GetNodeDisplayName().ToString() : TEXT("<none>"),
+        RuntimeVariables.Num(),
+        NodeRuntimeStates.Num(),
+        CachedSubFlowStack.Num());
 }
 
 FDreamFlowExecutorRuntimeStateChangedNativeSignature& UDreamFlowExecutor::OnRuntimeStateChangedNative()
 {
     return RuntimeStateChangedNative;
+}
+
+FDreamFlowExecutorVariableChangedNativeSignature& UDreamFlowExecutor::OnVariableChangedNative()
+{
+    return VariableChangedNative;
+}
+
+FDreamFlowExecutorExecutionContextPropertyChangedNativeSignature& UDreamFlowExecutor::OnExecutionContextPropertyChangedNative()
+{
+    return ExecutionContextPropertyChangedNative;
 }
 
 bool UDreamFlowExecutor::HasVariable(FName VariableName) const
@@ -793,9 +1702,33 @@ bool UDreamFlowExecutor::SetVariableValue(FName VariableName, const FDreamFlowVa
         return false;
     }
 
-    const FString PreviousValue = RuntimeVariables.Contains(VariableName) ? RuntimeVariables.FindChecked(VariableName).Describe() : TEXT("<unset>");
+    const FDreamFlowValue* PreviousValue = RuntimeVariables.Find(VariableName);
+    if (PreviousValue != nullptr && DreamFlowExecutorPrivate::AreValuesEquivalent(*PreviousValue, ConvertedValue))
+    {
+        return true;
+    }
+
+    const FString PreviousValueText = PreviousValue != nullptr ? PreviousValue->Describe() : TEXT("<unset>");
     RuntimeVariables.FindOrAdd(VariableName) = ConvertedValue;
-    DREAMFLOW_LOG(Variables, Log, "Variable '%s' changed from '%s' to '%s' on flow '%s'.", *VariableName.ToString(), *PreviousValue, *ConvertedValue.Describe(), *GetNameSafe(FlowAsset));
+    DREAMFLOW_LOG(Variables, Log, "Variable '%s' changed from '%s' to '%s' on flow '%s'.", *VariableName.ToString(), *PreviousValueText, *ConvertedValue.Describe(), *GetNameSafe(FlowAsset));
+    VariableChangedNative.Broadcast(this, VariableName, ConvertedValue);
+
+    if (ParentExecutor != nullptr && bSharesRuntimeVariablesWithParent && ParentExecutor->GetFlowAsset() == FlowAsset)
+    {
+        ParentExecutor->SetVariableValue(VariableName, ConvertedValue);
+    }
+
+    for (const TPair<FGuid, TObjectPtr<UDreamFlowExecutor>>& Pair : ActiveChildExecutorsByNodeGuid)
+    {
+        UDreamFlowExecutor* ChildExecutor = Pair.Value.Get();
+        if (ChildExecutor != nullptr
+            && ChildExecutor->bSharesRuntimeVariablesWithParent
+            && ChildExecutor->GetFlowAsset() == FlowAsset)
+        {
+            ChildExecutor->SetVariableValue(VariableName, ConvertedValue);
+        }
+    }
+
     NotifyDebuggerStateChanged();
     return true;
 }
@@ -805,6 +1738,11 @@ bool UDreamFlowExecutor::ResolveBindingValue(const FDreamFlowValueBinding& Bindi
     if (Binding.SourceType == EDreamFlowValueSourceType::FlowVariable)
     {
         return GetVariableValue(Binding.VariableName, OutValue);
+    }
+
+    if (Binding.SourceType == EDreamFlowValueSourceType::ExecutionContextProperty)
+    {
+        return GetExecutionContextPropertyValue(Binding.PropertyPath, OutValue);
     }
 
     OutValue = Binding.LiteralValue;
@@ -845,9 +1783,19 @@ bool UDreamFlowExecutor::GetBindingVariableName(const FDreamFlowValueBinding& Bi
 bool UDreamFlowExecutor::CanWriteBindingValue(const FDreamFlowValueBinding& Binding) const
 {
     FName VariableName = NAME_None;
-    return GetBindingVariableName(Binding, VariableName)
-        && FlowAsset != nullptr
-        && FlowAsset->HasVariableDefinition(VariableName);
+    if (GetBindingVariableName(Binding, VariableName))
+    {
+        return FlowAsset != nullptr
+            && FlowAsset->HasVariableDefinition(VariableName);
+    }
+
+    if (Binding.SourceType == EDreamFlowValueSourceType::ExecutionContextProperty)
+    {
+        DreamFlowExecutorPrivate::FResolvedPropertyPath ResolvedPath;
+        return DreamFlowExecutorPrivate::TryResolvePropertyPath(ExecutionContext, Binding.PropertyPath, ResolvedPath);
+    }
+
+    return false;
 }
 
 bool UDreamFlowExecutor::GetBindingBoolValue(const FDreamFlowValueBinding& Binding, bool& OutValue) const
@@ -1013,13 +1961,22 @@ bool UDreamFlowExecutor::SetBindingObjectValue(const FDreamFlowValueBinding& Bin
 bool UDreamFlowExecutor::SetBindingValue(const FDreamFlowValueBinding& Binding, const FDreamFlowValue& InValue)
 {
     FName VariableName = NAME_None;
-    if (!GetBindingVariableName(Binding, VariableName))
+    if (GetBindingVariableName(Binding, VariableName))
     {
-        DREAMFLOW_LOG(Variables, Warning, "Failed to write to binding on flow '%s' because only flow-variable bindings are writable.", *GetNameSafe(FlowAsset));
-        return false;
+        return SetVariableValue(VariableName, InValue);
     }
 
-    return SetVariableValue(VariableName, InValue);
+    if (Binding.SourceType == EDreamFlowValueSourceType::ExecutionContextProperty)
+    {
+        return SetExecutionContextPropertyValue(Binding.PropertyPath, InValue);
+    }
+
+    DREAMFLOW_LOG(
+        Variables,
+        Warning,
+        "Failed to write to binding on flow '%s' because only flow-variable and execution-context-property bindings are writable.",
+        *GetNameSafe(FlowAsset));
+    return false;
 }
 
 bool UDreamFlowExecutor::ExecuteCurrentNode()
@@ -1070,7 +2027,6 @@ bool UDreamFlowExecutor::TryConsumeCompletedAsyncNode(FName RequestedOutputPinNa
     UDreamFlowNode* AsyncNode = PendingAsyncNode;
     const FName ResolvedOutputPinName = ResolveCompletedAsyncOutputPin(AsyncNode, RequestedOutputPinName);
     const bool bCanFinishWithoutTransition = AsyncNode->GetChildrenCopy().Num() == 0;
-    UDreamFlowNode* NextNode = !ResolvedOutputPinName.IsNone() ? AsyncNode->GetFirstChildForOutputPin(ResolvedOutputPinName) : nullptr;
     if (ResolvedOutputPinName.IsNone() && !bCanFinishWithoutTransition)
     {
         return false;
@@ -1078,11 +2034,11 @@ bool UDreamFlowExecutor::TryConsumeCompletedAsyncNode(FName RequestedOutputPinNa
 
     if (!ResolvedOutputPinName.IsNone())
     {
-        if (NextNode != nullptr)
+        if (AsyncNode->GetFirstChildForOutputPin(ResolvedOutputPinName) != nullptr)
         {
             ClearAsyncExecutionState();
             DREAMFLOW_LOG(Execution, Log, "Async node '%s' completed through output '%s'.", *AsyncNode->GetNodeDisplayName().ToString(), *ResolvedOutputPinName.ToString());
-            return EnterNode(NextNode);
+            return EnterChildrenForOutputPin(AsyncNode, ResolvedOutputPinName);
         }
 
         if (!bCanFinishWithoutTransition)
@@ -1206,6 +2162,63 @@ void UDreamFlowExecutor::NotifyDebuggerStateChanged()
     }
 }
 
+UDreamFlowExecutor* UDreamFlowExecutor::StartParallelBranchAtNode(UDreamFlowNode* StartNode)
+{
+    if (FlowAsset == nullptr || StartNode == nullptr || !FlowAsset->OwnsNode(StartNode))
+    {
+        return nullptr;
+    }
+
+    UClass* EffectiveClass = GetClass();
+    UDreamFlowExecutor* BranchExecutor = NewObject<UDreamFlowExecutor>(this, EffectiveClass, NAME_None, RF_Transient);
+    if (BranchExecutor == nullptr)
+    {
+        return nullptr;
+    }
+
+    BranchExecutor->Initialize(FlowAsset, ExecutionContext);
+    BranchExecutor->RuntimeVariables = RuntimeVariables;
+    BranchExecutor->NodeRuntimeStates = NodeRuntimeStates;
+    BranchExecutor->bPauseOnBreakpoints = bPauseOnBreakpoints;
+    BranchExecutor->bSharesRuntimeVariablesWithParent = true;
+
+    RegisterChildExecutor(StartNode, BranchExecutor);
+
+    BranchExecutor->bIsRunning = true;
+    BranchExecutor->bIsPaused = false;
+    BranchExecutor->bBreakOnNextNode = false;
+    BranchExecutor->bHasFinished = false;
+    BranchExecutor->RegisterWithDebugger();
+    BranchExecutor->OnFlowStarted.Broadcast();
+    BranchExecutor->BroadcastDebugStateChanged();
+
+    if (!BranchExecutor->ActivateNode(StartNode, true))
+    {
+        BranchExecutor->FinishFlow();
+        return nullptr;
+    }
+
+    return BranchExecutor;
+}
+
+void UDreamFlowExecutor::DetachFromParentExecutor()
+{
+    if (ParentExecutor != nullptr && ParentLinkNodeGuid.IsValid())
+    {
+        const TObjectPtr<UDreamFlowExecutor>* RegisteredExecutor = ParentExecutor->ActiveChildExecutorsByNodeGuid.Find(ParentLinkNodeGuid);
+        if (RegisteredExecutor != nullptr && RegisteredExecutor->Get() == this)
+        {
+            ParentExecutor->ActiveChildExecutorsByNodeGuid.Remove(ParentLinkNodeGuid);
+            ParentExecutor->CachedSubFlowStack.Reset();
+            ParentExecutor->NotifyDebuggerStateChanged();
+        }
+    }
+
+    ParentExecutor = nullptr;
+    ParentLinkNodeGuid.Invalidate();
+    bSharesRuntimeVariablesWithParent = false;
+}
+
 void UDreamFlowExecutor::ClearAsyncExecutionState()
 {
     PendingAsyncNode = nullptr;
@@ -1223,12 +2236,18 @@ void UDreamFlowExecutor::ResetRuntimeState(UDreamFlowAsset* InFlowAsset, UObject
     CurrentNode = nullptr;
     VisitedNodes.Reset();
     RuntimeVariables.Reset();
+    NodeRuntimeStates.Reset();
     ClearAsyncExecutionState();
     bIsRunning = false;
     bIsPaused = false;
     bPauseOnBreakpoints = true;
     bBreakOnNextNode = false;
     bHasFinished = false;
+    ParentExecutor = nullptr;
+    ActiveChildExecutorsByNodeGuid.Reset();
+    ParentLinkNodeGuid.Invalidate();
+    bSharesRuntimeVariablesWithParent = false;
+    CachedSubFlowStack.Reset();
 
     ResetVariablesToDefaults();
 

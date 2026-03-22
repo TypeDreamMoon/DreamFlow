@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "DreamFlowNodeDisplayTypes.h"
 #include "DreamFlowTypes.h"
+#include "DreamFlowVariableTypes.h"
 #include "UObject/SoftObjectPtr.h"
 #include "UObject/Object.h"
 #include "DreamFlowNode.generated.h"
@@ -217,6 +218,21 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Flow|Execution")
     TArray<UDreamFlowExecutor*> GetExecutorsOnThisNode() const;
+
+    UFUNCTION(BlueprintPure, Category = "Flow|Execution|State")
+    bool GetRuntimeStateValue(UDreamFlowExecutor* Executor, FName StateKey, FDreamFlowValue& OutValue) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Flow|Execution|State")
+    bool SetRuntimeStateValue(UDreamFlowExecutor* Executor, FName StateKey, const FDreamFlowValue& InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "Flow|Execution|State")
+    void ResetRuntimeState(UDreamFlowExecutor* Executor) const;
+
+    UFUNCTION(BlueprintPure, Category = "Flow|Execution|Binding")
+    bool ResolveBindingWithExecutor(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FDreamFlowValue& OutValue) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Flow|Execution|Binding")
+    bool SetBindingWithExecutor(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, const FDreamFlowValue& InValue) const;
 
     TSubclassOf<UDreamFlowAsset> GetSupportedFlowAssetType() const;
     bool SupportsFlowAsset(const UDreamFlowAsset* FlowAsset) const;

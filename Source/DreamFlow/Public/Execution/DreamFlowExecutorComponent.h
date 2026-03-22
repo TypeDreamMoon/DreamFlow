@@ -185,6 +185,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables")
     void ResetVariablesToDefaults();
 
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Property")
+    void NotifyExecutionContextChanged();
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Property")
+    bool NotifyExecutionContextPropertyChanged(const FString& PropertyPath);
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_FlowAsset, Category = "DreamFlow")
     TObjectPtr<UDreamFlowAsset> FlowAsset;
 
@@ -267,6 +273,12 @@ protected:
     UFUNCTION(Server, Reliable)
     void ServerResetVariablesToDefaults();
 
+    UFUNCTION(Server, Reliable)
+    void ServerNotifyExecutionContextChanged();
+
+    UFUNCTION(Server, Reliable)
+    void ServerNotifyExecutionContextPropertyChanged(const FString& PropertyPath);
+
     bool IsServerAuthority() const;
     UDreamFlowExecutor* GetOrCreateExecutor(bool bInitializeFromCurrentConfig);
     UDreamFlowExecutor* ResetExecutorToCurrentConfig();
@@ -288,6 +300,8 @@ protected:
     bool CompleteAsyncNodeLocal(FName OutputPinName);
     bool SetVariableValueLocal(FName VariableName, const FDreamFlowValue& InValue);
     void ResetVariablesToDefaultsLocal();
+    void NotifyExecutionContextChangedLocal();
+    bool NotifyExecutionContextPropertyChangedLocal(const FString& PropertyPath);
     void BroadcastReplicatedStateEvents(const FDreamFlowReplicatedExecutionState& PreviousState, const FDreamFlowReplicatedExecutionState& NewState);
     void HandleExecutorRuntimeStateChanged(UDreamFlowExecutor* InExecutor);
 

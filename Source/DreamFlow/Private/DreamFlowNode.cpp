@@ -373,6 +373,34 @@ TArray<UDreamFlowExecutor*> UDreamFlowNode::GetExecutorsOnThisNode() const
     return TArray<UDreamFlowExecutor*>();
 }
 
+bool UDreamFlowNode::GetRuntimeStateValue(UDreamFlowExecutor* Executor, FName StateKey, FDreamFlowValue& OutValue) const
+{
+    return Executor != nullptr && NodeGuid.IsValid() && Executor->GetNodeStateValue(NodeGuid, StateKey, OutValue);
+}
+
+bool UDreamFlowNode::SetRuntimeStateValue(UDreamFlowExecutor* Executor, FName StateKey, const FDreamFlowValue& InValue)
+{
+    return Executor != nullptr && NodeGuid.IsValid() && Executor->SetNodeStateValue(NodeGuid, StateKey, InValue);
+}
+
+void UDreamFlowNode::ResetRuntimeState(UDreamFlowExecutor* Executor) const
+{
+    if (Executor != nullptr && NodeGuid.IsValid())
+    {
+        Executor->ResetNodeState(NodeGuid);
+    }
+}
+
+bool UDreamFlowNode::ResolveBindingWithExecutor(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FDreamFlowValue& OutValue) const
+{
+    return Executor != nullptr && Executor->ResolveBindingValue(Binding, OutValue);
+}
+
+bool UDreamFlowNode::SetBindingWithExecutor(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, const FDreamFlowValue& InValue) const
+{
+    return Executor != nullptr && Executor->SetBindingValue(Binding, InValue);
+}
+
 TSubclassOf<UDreamFlowAsset> UDreamFlowNode::GetSupportedFlowAssetType() const
 {
     if (SupportedFlowAssetType != nullptr)

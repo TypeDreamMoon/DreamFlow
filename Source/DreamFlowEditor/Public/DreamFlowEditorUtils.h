@@ -11,6 +11,14 @@ class UDreamFlowNode;
 class UEdGraph;
 class UEdGraphPin;
 
+struct DREAMFLOWEDITOR_API FDreamFlowReferenceUsage
+{
+    FString Category;
+    FGuid NodeGuid;
+    FText NodeTitle;
+    FString Detail;
+};
+
 class DREAMFLOWEDITOR_API FDreamFlowEditorUtils
 {
 public:
@@ -41,6 +49,8 @@ public:
     static void SynchronizeAssetFromGraph(UDreamFlowAsset* FlowAsset);
     static TArray<TSubclassOf<UDreamFlowNode>> GetLoadedCreatableNodeClasses(const UDreamFlowAsset* FlowAsset = nullptr);
     static bool IsNodeClassCreatable(const UClass* NodeClass, const UDreamFlowAsset* FlowAsset = nullptr);
+    static void CollectReferenceUsages(const UDreamFlowAsset* FlowAsset, TArray<FDreamFlowReferenceUsage>& OutUsages);
+    static FString BuildReferenceUsageReport(const UDreamFlowAsset* FlowAsset);
 
 private:
     static FString GetNodeBlueprintBaseName(const UClass* NodeClass);

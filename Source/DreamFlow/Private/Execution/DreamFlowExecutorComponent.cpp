@@ -673,6 +673,28 @@ void UDreamFlowExecutorComponent::ResetVariablesToDefaults()
     ServerResetVariablesToDefaults();
 }
 
+void UDreamFlowExecutorComponent::NotifyExecutionContextChanged()
+{
+    if (IsServerAuthority())
+    {
+        NotifyExecutionContextChangedLocal();
+        return;
+    }
+
+    ServerNotifyExecutionContextChanged();
+}
+
+bool UDreamFlowExecutorComponent::NotifyExecutionContextPropertyChanged(const FString& PropertyPath)
+{
+    if (IsServerAuthority())
+    {
+        return NotifyExecutionContextPropertyChangedLocal(PropertyPath);
+    }
+
+    ServerNotifyExecutionContextPropertyChanged(PropertyPath);
+    return true;
+}
+
 void UDreamFlowExecutorComponent::HandleFlowStarted()
 {
     OnFlowStarted.Broadcast();
@@ -781,6 +803,16 @@ void UDreamFlowExecutorComponent::ServerSetVariableValue_Implementation(FName Va
 void UDreamFlowExecutorComponent::ServerResetVariablesToDefaults_Implementation()
 {
     ResetVariablesToDefaultsLocal();
+}
+
+void UDreamFlowExecutorComponent::ServerNotifyExecutionContextChanged_Implementation()
+{
+    NotifyExecutionContextChangedLocal();
+}
+
+void UDreamFlowExecutorComponent::ServerNotifyExecutionContextPropertyChanged_Implementation(const FString& PropertyPath)
+{
+    NotifyExecutionContextPropertyChangedLocal(PropertyPath);
 }
 
 bool UDreamFlowExecutorComponent::IsServerAuthority() const
@@ -1037,6 +1069,27 @@ void UDreamFlowExecutorComponent::ResetVariablesToDefaultsLocal()
         RuntimeExecutor->ResetVariablesToDefaults();
         SyncReplicatedStateFromExecutor();
     }
+}
+
+void UDreamFlowExecutorComponent::NotifyExecutionContextChangedLocal()
+{
+    if (UDreamFlowExecutor* RuntimeExecutor = GetOrCreateExecutor(false))
+    {
+        RuntimeExecutor->NotifyExecutionContextChanged();
+        SyncReplicatedStateFromExecutor();
+    }
+}
+
+bool UDreamFlowExecutorComponent::NotifyExecutionContextPropertyChangedLocal(const FString& PropertyPath)
+{
+    if (UDreamFlowExecutor* RuntimeExecutor = GetOrCreateExecutor(false))
+    {
+        const bool bNotified = RuntimeExecutor->NotifyExecutionContextPropertyChanged(PropertyPath);
+        SyncReplicatedStateFromExecutor();
+        return bNotified;
+    }
+
+    return false;
 }
 
 void UDreamFlowExecutorComponent::BroadcastReplicatedStateEvents(
