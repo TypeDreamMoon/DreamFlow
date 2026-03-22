@@ -517,13 +517,47 @@ void SGraphNode_DreamFlow::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
     }
     else
     {
+        PinToAdd->SetShowLabel(false);
+
         RightNodeBox->AddSlot()
             .AutoHeight()
-            .HAlign(HAlign_Right)
+            .HAlign(HAlign_Fill)
             .VAlign(VAlign_Top)
             .Padding(FMargin(4.0f, 0.0f, 0.0f, 4.0f))
             [
-                PinToAdd
+                SNew(SBox)
+                .MinDesiredWidth(104.0f)
+                [
+                    SNew(SHorizontalBox)
+
+                    + SHorizontalBox::Slot()
+                    .FillWidth(1.0f)
+                    .HAlign(HAlign_Right)
+                    .VAlign(VAlign_Center)
+                    .Padding(0.0f, 0.0f, 6.0f, 0.0f)
+                    [
+                        SNew(STextBlock)
+                        .Text_Lambda([PinToAdd]()
+                        {
+                            if (const UEdGraphPin* GraphPin = PinToAdd->GetPinObj())
+                            {
+                                return GraphPin->GetDisplayName();
+                            }
+
+                            return FText::GetEmpty();
+                        })
+                        .TextStyle(FAppStyle::Get(), "SmallText")
+                        .Justification(ETextJustify::Right)
+                        .ColorAndOpacity(FSlateColor(EStyleColor::Foreground))
+                    ]
+
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .VAlign(VAlign_Center)
+                    [
+                        PinToAdd
+                    ]
+                ]
             ];
         OutputPins.Add(PinToAdd);
     }
