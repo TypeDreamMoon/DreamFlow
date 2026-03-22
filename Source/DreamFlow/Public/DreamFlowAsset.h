@@ -7,6 +7,7 @@
 #include "DreamFlowAsset.generated.h"
 
 class UDreamFlowNode;
+class UDreamFlowExecutor;
 class UEdGraph;
 
 UCLASS(BlueprintType)
@@ -49,8 +50,20 @@ public:
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
     TArray<FDreamFlowVariableDefinition> GetVariablesCopy() const;
 
+    UFUNCTION(BlueprintCallable, Category = "Flow|Execution", meta = (DeterminesOutputType = "ExecutorClass"))
+    UDreamFlowExecutor* CreateExecutor(UObject* ExecutionContext, TSubclassOf<UDreamFlowExecutor> ExecutorClass);
+
+    UFUNCTION(BlueprintPure, Category = "Flow|Execution")
+    TArray<UDreamFlowExecutor*> GetActiveExecutors() const;
+
+    UFUNCTION(BlueprintPure, Category = "Flow|Execution")
+    TArray<UDreamFlowExecutor*> GetExecutorsOnNode(const UDreamFlowNode* Node) const;
+
     UFUNCTION(BlueprintCallable, Category = "Flow|Validation")
     void ValidateFlow(TArray<FDreamFlowValidationMessage>& OutMessages) const;
+
+    UFUNCTION(BlueprintPure, Category = "Flow")
+    bool OwnsNode(const UDreamFlowNode* Node) const;
 
     bool HasVariableDefinition(FName VariableName) const;
     const FDreamFlowVariableDefinition* FindVariableDefinition(FName VariableName) const;

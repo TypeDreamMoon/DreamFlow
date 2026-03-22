@@ -24,6 +24,22 @@ namespace DreamFlowExecutorPrivate
 
         return DreamFlowVariable::TryConvertValue(StoredValue, TargetType, OutValue);
     }
+
+    static bool TryGetConvertedBindingValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, const EDreamFlowValueType TargetType, FDreamFlowValue& OutValue)
+    {
+        if (Executor == nullptr)
+        {
+            return false;
+        }
+
+        FDreamFlowValue ResolvedValue;
+        if (!Executor->ResolveBindingValue(Binding, ResolvedValue))
+        {
+            return false;
+        }
+
+        return DreamFlowVariable::TryConvertValue(ResolvedValue, TargetType, OutValue);
+    }
 }
 
 void UDreamFlowExecutor::Initialize(UDreamFlowAsset* InFlowAsset, UObject* InExecutionContext)
@@ -144,11 +160,6 @@ bool UDreamFlowExecutor::Advance()
     return Children.Num() == 1 ? EnterNode(Children[0]) : false;
 }
 
-bool UDreamFlowExecutor::Step()
-{
-    return Advance();
-}
-
 bool UDreamFlowExecutor::MoveToChildByIndex(int32 ChildIndex)
 {
     if (!bIsRunning || bIsPaused || bIsWaitingForAsyncNode || bHasQueuedAsyncCompletion || CurrentNode == nullptr)
@@ -173,11 +184,6 @@ bool UDreamFlowExecutor::MoveToOutputPin(FName OutputPinName)
     }
 
     return EnterNode(CurrentNode->GetFirstChildForOutputPin(OutputPinName));
-}
-
-bool UDreamFlowExecutor::StepToOutputPin(FName OutputPinName)
-{
-    return MoveToOutputPin(OutputPinName);
 }
 
 bool UDreamFlowExecutor::ChooseChild(UDreamFlowNode* ChildNode)
@@ -328,6 +334,26 @@ UDreamFlowAsset* UDreamFlowExecutor::GetFlowAsset() const
     return FlowAsset;
 }
 
+UDreamFlowNode* UDreamFlowExecutor::GetEntryNode() const
+{
+    return FlowAsset != nullptr ? FlowAsset->GetEntryNode() : nullptr;
+}
+
+TArray<UDreamFlowNode*> UDreamFlowExecutor::GetNodes() const
+{
+    return FlowAsset != nullptr ? FlowAsset->GetNodesCopy() : TArray<UDreamFlowNode*>();
+}
+
+UDreamFlowNode* UDreamFlowExecutor::FindNodeByGuid(FGuid NodeGuid) const
+{
+    return FlowAsset != nullptr ? FlowAsset->FindNodeByGuid(NodeGuid) : nullptr;
+}
+
+bool UDreamFlowExecutor::OwnsNode(const UDreamFlowNode* Node) const
+{
+    return FlowAsset != nullptr && FlowAsset->OwnsNode(Node);
+}
+
 UDreamFlowNode* UDreamFlowExecutor::GetCurrentNode() const
 {
     return CurrentNode;
@@ -365,7 +391,7 @@ bool UDreamFlowExecutor::IsCurrentNodeAutomatic() const
         && CurrentNode->GetTransitionMode() == EDreamFlowNodeTransitionMode::Automatic;
 }
 
-bool UDreamFlowExecutor::IsWaitingForManualStep() const
+bool UDreamFlowExecutor::IsWaitingForAdvance() const
 {
     return bIsRunning
         && !bIsPaused
@@ -801,6 +827,199 @@ bool UDreamFlowExecutor::ResolveBindingAsBool(const FDreamFlowValueBinding& Bind
 
     OutValue = ConvertedValue.BoolValue;
     return true;
+}
+
+bool UDreamFlowExecutor::GetBindingVariableName(const FDreamFlowValueBinding& Binding, FName& OutVariableName) const
+{
+    OutVariableName = NAME_None;
+
+    if (Binding.SourceType != EDreamFlowValueSourceType::FlowVariable || Binding.VariableName.IsNone())
+    {
+        return false;
+    }
+
+    OutVariableName = Binding.VariableName;
+    return true;
+}
+
+bool UDreamFlowExecutor::CanWriteBindingValue(const FDreamFlowValueBinding& Binding) const
+{
+    FName VariableName = NAME_None;
+    return GetBindingVariableName(Binding, VariableName)
+        && FlowAsset != nullptr
+        && FlowAsset->HasVariableDefinition(VariableName);
+}
+
+bool UDreamFlowExecutor::GetBindingBoolValue(const FDreamFlowValueBinding& Binding, bool& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedBindingValue(this, Binding, EDreamFlowValueType::Bool, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.BoolValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetBindingIntValue(const FDreamFlowValueBinding& Binding, int32& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedBindingValue(this, Binding, EDreamFlowValueType::Int, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.IntValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetBindingFloatValue(const FDreamFlowValueBinding& Binding, float& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedBindingValue(this, Binding, EDreamFlowValueType::Float, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.FloatValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetBindingNameValue(const FDreamFlowValueBinding& Binding, FName& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedBindingValue(this, Binding, EDreamFlowValueType::Name, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.NameValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetBindingStringValue(const FDreamFlowValueBinding& Binding, FString& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedBindingValue(this, Binding, EDreamFlowValueType::String, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.StringValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetBindingTextValue(const FDreamFlowValueBinding& Binding, FText& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedBindingValue(this, Binding, EDreamFlowValueType::Text, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.TextValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetBindingGameplayTagValue(const FDreamFlowValueBinding& Binding, FGameplayTag& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedBindingValue(this, Binding, EDreamFlowValueType::GameplayTag, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.GameplayTagValue;
+    return true;
+}
+
+bool UDreamFlowExecutor::GetBindingObjectValue(const FDreamFlowValueBinding& Binding, UObject*& OutValue) const
+{
+    FDreamFlowValue ConvertedValue;
+    if (!DreamFlowExecutorPrivate::TryGetConvertedBindingValue(this, Binding, EDreamFlowValueType::Object, ConvertedValue))
+    {
+        return false;
+    }
+
+    OutValue = ConvertedValue.ObjectValue.Get();
+    return true;
+}
+
+bool UDreamFlowExecutor::SetBindingBoolValue(const FDreamFlowValueBinding& Binding, bool InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Bool;
+    Value.BoolValue = InValue;
+    return SetBindingValue(Binding, Value);
+}
+
+bool UDreamFlowExecutor::SetBindingIntValue(const FDreamFlowValueBinding& Binding, int32 InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Int;
+    Value.IntValue = InValue;
+    return SetBindingValue(Binding, Value);
+}
+
+bool UDreamFlowExecutor::SetBindingFloatValue(const FDreamFlowValueBinding& Binding, float InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Float;
+    Value.FloatValue = InValue;
+    return SetBindingValue(Binding, Value);
+}
+
+bool UDreamFlowExecutor::SetBindingNameValue(const FDreamFlowValueBinding& Binding, FName InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Name;
+    Value.NameValue = InValue;
+    return SetBindingValue(Binding, Value);
+}
+
+bool UDreamFlowExecutor::SetBindingStringValue(const FDreamFlowValueBinding& Binding, const FString& InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::String;
+    Value.StringValue = InValue;
+    return SetBindingValue(Binding, Value);
+}
+
+bool UDreamFlowExecutor::SetBindingTextValue(const FDreamFlowValueBinding& Binding, const FText& InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Text;
+    Value.TextValue = InValue;
+    return SetBindingValue(Binding, Value);
+}
+
+bool UDreamFlowExecutor::SetBindingGameplayTagValue(const FDreamFlowValueBinding& Binding, FGameplayTag InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::GameplayTag;
+    Value.GameplayTagValue = InValue;
+    return SetBindingValue(Binding, Value);
+}
+
+bool UDreamFlowExecutor::SetBindingObjectValue(const FDreamFlowValueBinding& Binding, UObject* InValue)
+{
+    FDreamFlowValue Value;
+    Value.Type = EDreamFlowValueType::Object;
+    Value.ObjectValue = InValue;
+    return SetBindingValue(Binding, Value);
+}
+
+bool UDreamFlowExecutor::SetBindingValue(const FDreamFlowValueBinding& Binding, const FDreamFlowValue& InValue)
+{
+    FName VariableName = NAME_None;
+    if (!GetBindingVariableName(Binding, VariableName))
+    {
+        DREAMFLOW_LOG(Variables, Warning, "Failed to write to binding on flow '%s' because only flow-variable bindings are writable.", *GetNameSafe(FlowAsset));
+        return false;
+    }
+
+    return SetVariableValue(VariableName, InValue);
 }
 
 bool UDreamFlowExecutor::ExecuteCurrentNode()

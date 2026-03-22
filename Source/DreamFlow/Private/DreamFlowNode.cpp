@@ -1,7 +1,9 @@
 #include "DreamFlowNode.h"
 
 #include "DreamFlowAsset.h"
+#include "Engine/Engine.h"
 #include "Execution/DreamFlowExecutor.h"
+#include "Execution/DreamFlowDebuggerSubsystem.h"
 #include "Engine/Texture2D.h"
 #include "UObject/Field.h"
 #include "UObject/Class.h"
@@ -219,12 +221,12 @@ FName UDreamFlowNode::ResolveAutomaticTransitionOutputPin_Implementation(UObject
 
 bool UDreamFlowNode::ContinueFlow(UDreamFlowExecutor* Executor)
 {
-    return Executor != nullptr ? Executor->Step() : false;
+    return Executor != nullptr ? Executor->Advance() : false;
 }
 
 bool UDreamFlowNode::ContinueFlowFromOutputPin(UDreamFlowExecutor* Executor, FName OutputPinName)
 {
-    return Executor != nullptr ? Executor->StepToOutputPin(OutputPinName) : false;
+    return Executor != nullptr ? Executor->MoveToOutputPin(OutputPinName) : false;
 }
 
 void UDreamFlowNode::SetChildren(const TArray<UDreamFlowNode*>& InChildren)
@@ -334,6 +336,41 @@ UDreamFlowNode* UDreamFlowNode::GetFirstChildForOutputPin(FName OutputPinName) c
     }
 
     return nullptr;
+}
+
+UDreamFlowAsset* UDreamFlowNode::GetOwningFlowAsset() const
+{
+    return GetTypedOuter<UDreamFlowAsset>();
+}
+
+TArray<UDreamFlowExecutor*> UDreamFlowNode::GetActiveExecutors() const
+{
+    if (GEngine == nullptr)
+    {
+        return TArray<UDreamFlowExecutor*>();
+    }
+
+    if (UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>())
+    {
+        return DebuggerSubsystem->GetExecutorsForAsset(GetOwningFlowAsset());
+    }
+
+    return TArray<UDreamFlowExecutor*>();
+}
+
+TArray<UDreamFlowExecutor*> UDreamFlowNode::GetExecutorsOnThisNode() const
+{
+    if (GEngine == nullptr)
+    {
+        return TArray<UDreamFlowExecutor*>();
+    }
+
+    if (UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>())
+    {
+        return DebuggerSubsystem->GetExecutorsForNode(this);
+    }
+
+    return TArray<UDreamFlowExecutor*>();
 }
 
 TSubclassOf<UDreamFlowAsset> UDreamFlowNode::GetSupportedFlowAssetType() const

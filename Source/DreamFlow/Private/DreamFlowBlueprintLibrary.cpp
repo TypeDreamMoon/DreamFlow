@@ -3,6 +3,24 @@
 #include "DreamFlowAsset.h"
 #include "DreamFlowNode.h"
 #include "Execution/DreamFlowExecutor.h"
+#include "UObject/UObjectGlobals.h"
+
+UDreamFlowExecutor* UDreamFlowBlueprintLibrary::CreateFlowExecutor(
+    UObject* WorldContextObject,
+    UDreamFlowAsset* FlowAsset,
+    UObject* ExecutionContext,
+    TSubclassOf<UDreamFlowExecutor> ExecutorClass)
+{
+    UObject* Outer = WorldContextObject != nullptr ? WorldContextObject : GetTransientPackage();
+    UClass* EffectiveExecutorClass = ExecutorClass != nullptr ? ExecutorClass.Get() : UDreamFlowExecutor::StaticClass();
+    UDreamFlowExecutor* Executor = NewObject<UDreamFlowExecutor>(Outer, EffectiveExecutorClass);
+    if (Executor != nullptr)
+    {
+        Executor->Initialize(FlowAsset, ExecutionContext != nullptr ? ExecutionContext : WorldContextObject);
+    }
+
+    return Executor;
+}
 
 UDreamFlowNode* UDreamFlowBlueprintLibrary::GetEntryNode(const UDreamFlowAsset* FlowAsset)
 {
@@ -22,6 +40,11 @@ TArray<UDreamFlowNode*> UDreamFlowBlueprintLibrary::GetChildren(const UDreamFlow
 TArray<FDreamFlowNodeOutputPin> UDreamFlowBlueprintLibrary::GetNodeOutputPins(const UDreamFlowNode* FlowNode)
 {
     return FlowNode ? FlowNode->GetOutputPins() : TArray<FDreamFlowNodeOutputPin>();
+}
+
+TArray<FDreamFlowNodeOutputLink> UDreamFlowBlueprintLibrary::GetNodeOutputLinks(const UDreamFlowNode* FlowNode)
+{
+    return FlowNode ? FlowNode->GetOutputLinksCopy() : TArray<FDreamFlowNodeOutputLink>();
 }
 
 UDreamFlowNode* UDreamFlowBlueprintLibrary::GetFirstChildForOutputPin(const UDreamFlowNode* FlowNode, FName OutputPinName)
@@ -47,6 +70,27 @@ UDreamFlowNode* UDreamFlowBlueprintLibrary::FindNodeByGuid(const UDreamFlowAsset
 TArray<FDreamFlowVariableDefinition> UDreamFlowBlueprintLibrary::GetFlowVariables(const UDreamFlowAsset* FlowAsset)
 {
     return FlowAsset ? FlowAsset->GetVariablesCopy() : TArray<FDreamFlowVariableDefinition>();
+}
+
+bool UDreamFlowBlueprintLibrary::HasFlowVariableDefinition(const UDreamFlowAsset* FlowAsset, FName VariableName)
+{
+    return FlowAsset != nullptr && FlowAsset->HasVariableDefinition(VariableName);
+}
+
+bool UDreamFlowBlueprintLibrary::FindFlowVariableDefinition(const UDreamFlowAsset* FlowAsset, FName VariableName, FDreamFlowVariableDefinition& OutDefinition)
+{
+    if (FlowAsset == nullptr)
+    {
+        return false;
+    }
+
+    if (const FDreamFlowVariableDefinition* VariableDefinition = FlowAsset->FindVariableDefinition(VariableName))
+    {
+        OutDefinition = *VariableDefinition;
+        return true;
+    }
+
+    return false;
 }
 
 bool UDreamFlowBlueprintLibrary::GetExecutorBoolVariable(const UDreamFlowExecutor* Executor, FName VariableName, bool& OutValue)
@@ -201,6 +245,221 @@ FDreamFlowValue UDreamFlowBlueprintLibrary::MakeObjectFlowValue(UObject* Value)
     FlowValue.Type = EDreamFlowValueType::Object;
     FlowValue.ObjectValue = Value;
     return FlowValue;
+}
+
+FDreamFlowValueBinding UDreamFlowBlueprintLibrary::MakeLiteralFlowBinding(const FDreamFlowValue& LiteralValue)
+{
+    FDreamFlowValueBinding Binding;
+    Binding.SourceType = EDreamFlowValueSourceType::Literal;
+    Binding.LiteralValue = LiteralValue;
+    Binding.VariableName = NAME_None;
+    return Binding;
+}
+
+FDreamFlowValueBinding UDreamFlowBlueprintLibrary::MakeVariableFlowBinding(FName VariableName)
+{
+    FDreamFlowValueBinding Binding;
+    Binding.SourceType = EDreamFlowValueSourceType::FlowVariable;
+    Binding.VariableName = VariableName;
+    return Binding;
+}
+
+EDreamFlowValueSourceType UDreamFlowBlueprintLibrary::GetFlowBindingSourceType(const FDreamFlowValueBinding& Binding)
+{
+    return Binding.SourceType;
+}
+
+bool UDreamFlowBlueprintLibrary::IsLiteralFlowBinding(const FDreamFlowValueBinding& Binding)
+{
+    return Binding.SourceType == EDreamFlowValueSourceType::Literal;
+}
+
+bool UDreamFlowBlueprintLibrary::IsVariableFlowBinding(const FDreamFlowValueBinding& Binding)
+{
+    return Binding.SourceType == EDreamFlowValueSourceType::FlowVariable;
+}
+
+FName UDreamFlowBlueprintLibrary::GetFlowBindingVariableName(const FDreamFlowValueBinding& Binding)
+{
+    return Binding.VariableName;
+}
+
+FDreamFlowValue UDreamFlowBlueprintLibrary::GetFlowBindingLiteralValue(const FDreamFlowValueBinding& Binding)
+{
+    return Binding.LiteralValue;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorBindingVariableName(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FName& OutVariableName)
+{
+    return Executor ? Executor->GetBindingVariableName(Binding, OutVariableName) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::CanExecutorWriteBinding(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding)
+{
+    return Executor ? Executor->CanWriteBindingValue(Binding) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorBindingBoolValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, bool& OutValue)
+{
+    return Executor ? Executor->GetBindingBoolValue(Binding, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorBindingIntValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, int32& OutValue)
+{
+    return Executor ? Executor->GetBindingIntValue(Binding, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorBindingFloatValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, float& OutValue)
+{
+    return Executor ? Executor->GetBindingFloatValue(Binding, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorBindingNameValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FName& OutValue)
+{
+    return Executor ? Executor->GetBindingNameValue(Binding, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorBindingStringValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FString& OutValue)
+{
+    return Executor ? Executor->GetBindingStringValue(Binding, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorBindingTextValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FText& OutValue)
+{
+    return Executor ? Executor->GetBindingTextValue(Binding, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorBindingGameplayTagValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FGameplayTag& OutValue)
+{
+    return Executor ? Executor->GetBindingGameplayTagValue(Binding, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorBindingObjectValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, UObject*& OutValue)
+{
+    return Executor ? Executor->GetBindingObjectValue(Binding, OutValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::GetExecutorBindingValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FDreamFlowValue& OutValue)
+{
+    return Executor ? Executor->ResolveBindingValue(Binding, OutValue) : false;
+}
+
+FDreamFlowValueBinding UDreamFlowBlueprintLibrary::SetFlowBindingSourceType(const FDreamFlowValueBinding& Binding, EDreamFlowValueSourceType SourceType)
+{
+    FDreamFlowValueBinding Result = Binding;
+    Result.SourceType = SourceType;
+    return Result;
+}
+
+FDreamFlowValueBinding UDreamFlowBlueprintLibrary::SetFlowBindingVariableName(const FDreamFlowValueBinding& Binding, FName VariableName)
+{
+    FDreamFlowValueBinding Result = Binding;
+    Result.VariableName = VariableName;
+    return Result;
+}
+
+FDreamFlowValueBinding UDreamFlowBlueprintLibrary::SetFlowBindingLiteralValue(const FDreamFlowValueBinding& Binding, const FDreamFlowValue& LiteralValue)
+{
+    FDreamFlowValueBinding Result = Binding;
+    Result.LiteralValue = LiteralValue;
+    return Result;
+}
+
+FDreamFlowValueBinding UDreamFlowBlueprintLibrary::SetFlowBindingAsLiteral(const FDreamFlowValueBinding& Binding, const FDreamFlowValue& LiteralValue)
+{
+    FDreamFlowValueBinding Result = Binding;
+    Result.SourceType = EDreamFlowValueSourceType::Literal;
+    Result.VariableName = NAME_None;
+    Result.LiteralValue = LiteralValue;
+    return Result;
+}
+
+FDreamFlowValueBinding UDreamFlowBlueprintLibrary::SetFlowBindingAsVariable(const FDreamFlowValueBinding& Binding, FName VariableName)
+{
+    FDreamFlowValueBinding Result = Binding;
+    Result.SourceType = EDreamFlowValueSourceType::FlowVariable;
+    Result.VariableName = VariableName;
+    return Result;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorBindingBoolValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, bool InValue)
+{
+    return Executor ? Executor->SetBindingBoolValue(Binding, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorBindingIntValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, int32 InValue)
+{
+    return Executor ? Executor->SetBindingIntValue(Binding, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorBindingFloatValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, float InValue)
+{
+    return Executor ? Executor->SetBindingFloatValue(Binding, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorBindingNameValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FName InValue)
+{
+    return Executor ? Executor->SetBindingNameValue(Binding, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorBindingStringValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, const FString& InValue)
+{
+    return Executor ? Executor->SetBindingStringValue(Binding, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorBindingTextValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, const FText& InValue)
+{
+    return Executor ? Executor->SetBindingTextValue(Binding, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorBindingGameplayTagValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FGameplayTag InValue)
+{
+    return Executor ? Executor->SetBindingGameplayTagValue(Binding, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorBindingObjectValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, UObject* InValue)
+{
+    return Executor ? Executor->SetBindingObjectValue(Binding, InValue) : false;
+}
+
+bool UDreamFlowBlueprintLibrary::SetExecutorBindingValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, const FDreamFlowValue& InValue)
+{
+    return Executor ? Executor->SetBindingValue(Binding, InValue) : false;
+}
+
+FString UDreamFlowBlueprintLibrary::DescribeFlowValue(const FDreamFlowValue& Value)
+{
+    return Value.Describe();
+}
+
+FString UDreamFlowBlueprintLibrary::DescribeCompactFlowValue(const FDreamFlowValue& Value)
+{
+    return Value.DescribeCompact();
+}
+
+FString UDreamFlowBlueprintLibrary::DescribeFlowBinding(const FDreamFlowValueBinding& Binding)
+{
+    return Binding.Describe();
+}
+
+FString UDreamFlowBlueprintLibrary::DescribeCompactFlowBinding(const FDreamFlowValueBinding& Binding)
+{
+    return Binding.DescribeCompact();
+}
+
+bool UDreamFlowBlueprintLibrary::ConvertFlowValue(const FDreamFlowValue& InValue, EDreamFlowValueType TargetType, FDreamFlowValue& OutValue)
+{
+    return DreamFlowVariable::TryConvertValue(InValue, TargetType, OutValue);
+}
+
+bool UDreamFlowBlueprintLibrary::CompareFlowValues(const FDreamFlowValue& LeftValue, const FDreamFlowValue& RightValue, EDreamFlowComparisonOperation Operation, bool& OutResult)
+{
+    return DreamFlowVariable::TryCompareValues(LeftValue, RightValue, Operation, OutResult);
+}
+
+bool UDreamFlowBlueprintLibrary::NodeSupportsFlowAsset(const UDreamFlowNode* FlowNode, const UDreamFlowAsset* FlowAsset)
+{
+    return FlowNode != nullptr && FlowNode->SupportsFlowAsset(FlowAsset);
 }
 
 void UDreamFlowBlueprintLibrary::ValidateFlow(const UDreamFlowAsset* FlowAsset, TArray<FDreamFlowValidationMessage>& OutMessages)

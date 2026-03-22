@@ -38,19 +38,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool Advance();
 
-    /** Advances a manual node through its default continuation path. */
-    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
-    bool Step();
-
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool MoveToChildByIndex(int32 ChildIndex);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool MoveToOutputPin(FName OutputPinName);
-
-    /** Advances a manual node through the specified output pin. */
-    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
-    bool StepToOutputPin(FName OutputPinName);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool ChooseChild(UDreamFlowNode* ChildNode);
@@ -80,6 +72,18 @@ public:
     UDreamFlowAsset* GetFlowAsset() const;
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
+    UDreamFlowNode* GetEntryNode() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
+    TArray<UDreamFlowNode*> GetNodes() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
+    UDreamFlowNode* FindNodeByGuid(FGuid NodeGuid) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
+    bool OwnsNode(const UDreamFlowNode* Node) const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
     UDreamFlowNode* GetCurrentNode() const;
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
@@ -92,7 +96,7 @@ public:
     bool IsCurrentNodeAutomatic() const;
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
-    bool IsWaitingForManualStep() const;
+    bool IsWaitingForAdvance() const;
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
     TArray<UDreamFlowNode*> GetVisitedNodes() const;
@@ -220,6 +224,82 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
     bool ResolveBindingAsBool(const FDreamFlowValueBinding& Binding, bool& OutValue) const;
+
+    /** Returns the bound flow-variable name when this binding targets a writable runtime variable. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    bool GetBindingVariableName(const FDreamFlowValueBinding& Binding, FName& OutVariableName) const;
+
+    /** Returns true when this binding points at a writable flow variable on the current executor. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    bool CanWriteBindingValue(const FDreamFlowValueBinding& Binding) const;
+
+    /** Read a binding as a bool. Returns false when the binding cannot be resolved or converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    bool GetBindingBoolValue(const FDreamFlowValueBinding& Binding, bool& OutValue) const;
+
+    /** Read a binding as an int. Returns false when the binding cannot be resolved or converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    bool GetBindingIntValue(const FDreamFlowValueBinding& Binding, int32& OutValue) const;
+
+    /** Read a binding as a float. Returns false when the binding cannot be resolved or converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    bool GetBindingFloatValue(const FDreamFlowValueBinding& Binding, float& OutValue) const;
+
+    /** Read a binding as a name. Returns false when the binding cannot be resolved or converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    bool GetBindingNameValue(const FDreamFlowValueBinding& Binding, FName& OutValue) const;
+
+    /** Read a binding as a string. Returns false when the binding cannot be resolved or converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    bool GetBindingStringValue(const FDreamFlowValueBinding& Binding, FString& OutValue) const;
+
+    /** Read a binding as text. Returns false when the binding cannot be resolved or converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    bool GetBindingTextValue(const FDreamFlowValueBinding& Binding, FText& OutValue) const;
+
+    /** Read a binding as a gameplay tag. Returns false when the binding cannot be resolved or converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    bool GetBindingGameplayTagValue(const FDreamFlowValueBinding& Binding, FGameplayTag& OutValue) const;
+
+    /** Read a binding as an object reference. Returns false when the binding cannot be resolved or converted. */
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    bool GetBindingObjectValue(const FDreamFlowValueBinding& Binding, UObject*& OutValue) const;
+
+    /** Write a bool through a variable-backed binding. Returns false for literal bindings. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    bool SetBindingBoolValue(const FDreamFlowValueBinding& Binding, bool InValue);
+
+    /** Write an int through a variable-backed binding. Returns false for literal bindings. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    bool SetBindingIntValue(const FDreamFlowValueBinding& Binding, int32 InValue);
+
+    /** Write a float through a variable-backed binding. Returns false for literal bindings. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    bool SetBindingFloatValue(const FDreamFlowValueBinding& Binding, float InValue);
+
+    /** Write a name through a variable-backed binding. Returns false for literal bindings. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    bool SetBindingNameValue(const FDreamFlowValueBinding& Binding, FName InValue);
+
+    /** Write a string through a variable-backed binding. Returns false for literal bindings. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    bool SetBindingStringValue(const FDreamFlowValueBinding& Binding, const FString& InValue);
+
+    /** Write a text through a variable-backed binding. Returns false for literal bindings. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    bool SetBindingTextValue(const FDreamFlowValueBinding& Binding, const FText& InValue);
+
+    /** Write a gameplay tag through a variable-backed binding. Returns false for literal bindings. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    bool SetBindingGameplayTagValue(const FDreamFlowValueBinding& Binding, FGameplayTag InValue);
+
+    /** Write an object reference through a variable-backed binding. Returns false for literal bindings. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    bool SetBindingObjectValue(const FDreamFlowValueBinding& Binding, UObject* InValue);
+
+    /** Low-level raw struct binding write. Returns false when the binding does not target a flow variable. */
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding|Low Level")
+    bool SetBindingValue(const FDreamFlowValueBinding& Binding, const FDreamFlowValue& InValue);
 
     UPROPERTY(BlueprintAssignable, Category = "DreamFlow|Execution")
     FDreamFlowExecutorEventSignature OnFlowStarted;

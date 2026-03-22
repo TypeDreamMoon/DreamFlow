@@ -1,5 +1,6 @@
 #include "DreamFlowAsset.h"
 #include "DreamFlowAsyncNode.h"
+#include "DreamFlowBlueprintLibrary.h"
 #include "DreamFlowCoreNodes.h"
 #include "DreamFlowEntryNode.h"
 #include "DreamFlowSettings.h"
@@ -30,6 +31,14 @@ namespace
         UDreamFlowNode* CompletedNode = nullptr;
     };
 
+    struct FDreamFlowDelayTestGraph
+    {
+        UDreamFlowAsset* Asset = nullptr;
+        UDreamFlowEntryNode* EntryNode = nullptr;
+        UDreamFlowDelayNode* DelayNode = nullptr;
+        UDreamFlowNode* CompletedNode = nullptr;
+    };
+
     struct FDreamFlowFinishTestGraph
     {
         UDreamFlowAsset* Asset = nullptr;
@@ -43,6 +52,14 @@ namespace
         FDreamFlowValue Value;
         Value.Type = EDreamFlowValueType::Bool;
         Value.BoolValue = bValue;
+        return Value;
+    }
+
+    static FDreamFlowValue MakeFloatValue(const float InValue)
+    {
+        FDreamFlowValue Value;
+        Value.Type = EDreamFlowValueType::Float;
+        Value.FloatValue = InValue;
         return Value;
     }
 
@@ -149,6 +166,38 @@ namespace
 
         return Graph;
     }
+
+    static FDreamFlowDelayTestGraph BuildDelayFlowAsset()
+    {
+        FDreamFlowDelayTestGraph Graph;
+        Graph.Asset = NewObject<UDreamFlowAsset>(GetTransientPackage(), NAME_None, RF_Transient);
+
+        FDreamFlowVariableDefinition DurationVariable;
+        DurationVariable.Name = TEXT("DelayDuration");
+        DurationVariable.Description = FText::FromString(TEXT("Controls the delay duration for the async delay node test."));
+        DurationVariable.DefaultValue = MakeFloatValue(0.0f);
+        Graph.Asset->Variables.Add(DurationVariable);
+
+        Graph.EntryNode = NewObject<UDreamFlowEntryNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.DelayNode = NewObject<UDreamFlowDelayNode>(Graph.Asset, NAME_None, RF_Transient);
+        Graph.CompletedNode = NewObject<UDreamFlowNode>(Graph.Asset, NAME_None, RF_Transient);
+
+        Graph.CompletedNode->Title = FText::FromString(TEXT("After Delay"));
+        Graph.DelayNode->DurationBinding.SourceType = EDreamFlowValueSourceType::FlowVariable;
+        Graph.DelayNode->DurationBinding.VariableName = DurationVariable.Name;
+
+        Graph.EntryNode->SetOutputLinks({ MakeOutputLink(TEXT("Out"), Graph.DelayNode) });
+        Graph.DelayNode->SetOutputLinks({ MakeOutputLink(TEXT("Completed"), Graph.CompletedNode) });
+
+        Graph.Asset->ReplaceNodes({
+            Graph.EntryNode,
+            Graph.DelayNode,
+            Graph.CompletedNode
+        });
+        Graph.Asset->SetEntryNodeInternal(Graph.EntryNode);
+
+        return Graph;
+    }
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -227,18 +276,18 @@ bool FDreamFlowManualMultiOutputStepTest::RunTest(const FString& Parameters)
 
     TestTrue(TEXT("The flow should start successfully for a manual multi-output node."), Executor->StartFlow());
     TestEqual(TEXT("Execution should stop on the manual branch node instead of auto-transitioning."), Executor->GetCurrentNode(), static_cast<UDreamFlowNode*>(Graph.BranchNode));
-    TestTrue(TEXT("The executor should report that it is waiting for a manual step."), Executor->IsWaitingForManualStep());
+    TestTrue(TEXT("The executor should report that it is waiting for manual advance."), Executor->IsWaitingForAdvance());
     TestFalse(TEXT("The manual branch node should not be treated as automatic."), Executor->IsCurrentNodeAutomatic());
     TestEqual(TEXT("Two output pins should be available on the manual branch node."), Executor->GetAvailableOutputPins().Num(), 2);
-    TestFalse(TEXT("Default Step should stay blocked when the manual node exposes multiple outputs."), Executor->Step());
-    TestTrue(TEXT("StepToOutputPin should allow choosing the true branch explicitly."), Executor->StepToOutputPin(TEXT("True")));
-    TestEqual(TEXT("Stepping through the true output pin should enter the true node."), Executor->GetCurrentNode(), Graph.TrueNode);
+    TestFalse(TEXT("Advance should stay blocked when the manual node exposes multiple outputs."), Executor->Advance());
+    TestTrue(TEXT("MoveToOutputPin should allow choosing the true branch explicitly."), Executor->MoveToOutputPin(TEXT("True")));
+    TestEqual(TEXT("Advancing through the true output pin should enter the true node."), Executor->GetCurrentNode(), Graph.TrueNode);
 
     UDreamFlowExecutor* NodeDrivenExecutor = NewObject<UDreamFlowExecutor>(GetTransientPackage(), NAME_None, RF_Transient);
     NodeDrivenExecutor->Initialize(Graph.Asset, nullptr);
     TestTrue(TEXT("A second executor should also start successfully."), NodeDrivenExecutor->StartFlow());
-    TestTrue(TEXT("Node helper flow continuation should step through the requested output pin."), Graph.BranchNode->ContinueFlowFromOutputPin(NodeDrivenExecutor, TEXT("False")));
-    TestEqual(TEXT("Node helper output stepping should enter the false node."), NodeDrivenExecutor->GetCurrentNode(), Graph.FalseNode);
+    TestTrue(TEXT("Node helper flow continuation should advance through the requested output pin."), Graph.BranchNode->ContinueFlowFromOutputPin(NodeDrivenExecutor, TEXT("False")));
+    TestEqual(TEXT("Node helper output continuation should enter the false node."), NodeDrivenExecutor->GetCurrentNode(), Graph.FalseNode);
 
     return true;
 }
@@ -283,7 +332,12 @@ bool FDreamFlowComponentVariableMutationKeepsRuntimeStateTest::RunTest(const FSt
     ExecutorComponent->FlowAsset = Graph.Asset;
 
     TestTrue(TEXT("Component-backed flow should start successfully."), ExecutorComponent->StartFlow());
+    TestEqual(TEXT("Component should expose the assigned flow asset."), ExecutorComponent->GetFlowAsset(), Graph.Asset);
     TestEqual(TEXT("Manual entry start should leave the executor on the entry node."), ExecutorComponent->GetCurrentNode(), static_cast<UDreamFlowNode*>(Graph.EntryNode));
+    TestTrue(TEXT("Component should report that the flow is running after StartFlow."), ExecutorComponent->IsRunning());
+    TestEqual(TEXT("Component debug state should mirror the running executor."), ExecutorComponent->GetDebugState(), EDreamFlowExecutorDebugState::Running);
+    TestEqual(TEXT("Component should expose entry-node children while waiting for manual continuation."), ExecutorComponent->GetAvailableChildren().Num(), 1);
+    TestEqual(TEXT("Component should expose the visited entry node."), ExecutorComponent->GetVisitedNodes().Num(), 1);
 
     TestTrue(TEXT("Writing a variable at runtime should succeed without recreating the executor."), ExecutorComponent->SetVariableBoolValue(TEXT("CanContinue"), true));
     TestNotNull(TEXT("A runtime executor should still exist after mutating variables."), ExecutorComponent->GetExecutor());
@@ -296,6 +350,40 @@ bool FDreamFlowComponentVariableMutationKeepsRuntimeStateTest::RunTest(const FSt
 
     TestTrue(TEXT("The flow should still be able to advance after mutating variables."), ExecutorComponent->Advance());
     TestEqual(TEXT("Advancing after the variable mutation should continue through the graph normally."), ExecutorComponent->GetCurrentNode(), Graph.TrueNode);
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowBlueprintLibraryHelpersTest,
+    "DreamFlow.Core.Blueprint.LibraryHelpers",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowBlueprintLibraryHelpersTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FDreamFlowBranchTestGraph Graph = BuildBranchingFlowAsset(false);
+    UDreamFlowExecutor* Executor = UDreamFlowBlueprintLibrary::CreateFlowExecutor(GetTransientPackage(), Graph.Asset, nullptr, UDreamFlowExecutor::StaticClass());
+    TestNotNull(TEXT("Blueprint library should be able to create an initialized executor."), Executor);
+    TestEqual(TEXT("Created executor should point at the requested flow asset."), Executor != nullptr ? Executor->GetFlowAsset() : nullptr, Graph.Asset);
+
+    FDreamFlowVariableDefinition VariableDefinition;
+    TestTrue(TEXT("Blueprint library should find declared flow variables."), UDreamFlowBlueprintLibrary::FindFlowVariableDefinition(Graph.Asset, TEXT("CanContinue"), VariableDefinition));
+    TestEqual(TEXT("The found variable definition should match the declared name."), VariableDefinition.Name, FName(TEXT("CanContinue")));
+
+    TestTrue(TEXT("Blueprint library should report node compatibility against the owning asset."), UDreamFlowBlueprintLibrary::NodeSupportsFlowAsset(Graph.BranchNode, Graph.Asset));
+    TestEqual(TEXT("Blueprint library should expose node output links."), UDreamFlowBlueprintLibrary::GetNodeOutputLinks(Graph.BranchNode).Num(), 2);
+
+    const FDreamFlowValue IntValue = UDreamFlowBlueprintLibrary::MakeIntFlowValue(7);
+    FDreamFlowValue FloatValue;
+    TestTrue(TEXT("Blueprint library should convert low-level flow values."), UDreamFlowBlueprintLibrary::ConvertFlowValue(IntValue, EDreamFlowValueType::Float, FloatValue));
+    TestEqual(TEXT("Converted flow values should preserve the numeric value."), FloatValue.FloatValue, 7.0f);
+    TestEqual(TEXT("Blueprint library should describe low-level values."), UDreamFlowBlueprintLibrary::DescribeFlowValue(IntValue), FString(TEXT("7")));
+
+    bool bComparisonResult = false;
+    TestTrue(TEXT("Blueprint library should compare low-level flow values."), UDreamFlowBlueprintLibrary::CompareFlowValues(IntValue, UDreamFlowBlueprintLibrary::MakeIntFlowValue(7), EDreamFlowComparisonOperation::Equal, bComparisonResult));
+    TestTrue(TEXT("The comparison result should report equality."), bComparisonResult);
 
     return true;
 }
@@ -368,6 +456,26 @@ bool FDreamFlowAsyncManualCompletionTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Completing the async node should resume the flow."), Executor->CompleteAsyncNode());
     TestFalse(TEXT("Executor should no longer wait for async completion after completion."), Executor->IsWaitingForAsyncNode());
     TestEqual(TEXT("Flow should continue through the async node's completed output."), Executor->GetCurrentNode(), Graph.CompletedNode);
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowDelayBindingTest,
+    "DreamFlow.Core.Execution.DelayBinding",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowDelayBindingTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FDreamFlowDelayTestGraph Graph = BuildDelayFlowAsset();
+    UDreamFlowExecutor* Executor = NewObject<UDreamFlowExecutor>(GetTransientPackage(), NAME_None, RF_Transient);
+    Executor->Initialize(Graph.Asset, nullptr);
+
+    TestTrue(TEXT("Delay test flow should start successfully."), Executor->StartFlow());
+    TestFalse(TEXT("A zero-duration delay binding should complete immediately without leaving the executor in waiting mode."), Executor->IsWaitingForAsyncNode());
+    TestEqual(TEXT("Delay binding should allow the flow to continue to the completed node immediately."), Executor->GetCurrentNode(), Graph.CompletedNode);
 
     return true;
 }
@@ -447,6 +555,130 @@ bool FDreamFlowBindingCompactDescriptionTest::RunTest(const FString& Parameters)
     LiteralBinding.SourceType = EDreamFlowValueSourceType::Literal;
     LiteralBinding.LiteralValue = LiteralValue;
     TestEqual(TEXT("Literal bindings should reuse the compact value summary."), LiteralBinding.DescribeCompact(), FString(TEXT("Type: Bool  Value: True")));
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowBindingBlueprintHelpersTest,
+    "DreamFlow.Core.Display.BindingBlueprintHelpers",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowBindingBlueprintHelpersTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FDreamFlowValue LiteralValue = MakeBoolValue(true);
+
+    const FDreamFlowValueBinding LiteralBinding = UDreamFlowBlueprintLibrary::MakeLiteralFlowBinding(LiteralValue);
+    TestTrue(TEXT("Literal binding helper should mark the binding as literal."), UDreamFlowBlueprintLibrary::IsLiteralFlowBinding(LiteralBinding));
+    TestFalse(TEXT("Literal binding helper should not mark the binding as variable-driven."), UDreamFlowBlueprintLibrary::IsVariableFlowBinding(LiteralBinding));
+    TestEqual(TEXT("Literal binding helper should preserve the literal value."), UDreamFlowBlueprintLibrary::GetFlowBindingLiteralValue(LiteralBinding).BoolValue, true);
+
+    const FDreamFlowValueBinding VariableBinding = UDreamFlowBlueprintLibrary::MakeVariableFlowBinding(TEXT("QuestState"));
+    TestTrue(TEXT("Variable binding helper should mark the binding as variable-driven."), UDreamFlowBlueprintLibrary::IsVariableFlowBinding(VariableBinding));
+    TestEqual(TEXT("Variable binding helper should preserve the variable name."), UDreamFlowBlueprintLibrary::GetFlowBindingVariableName(VariableBinding), FName(TEXT("QuestState")));
+
+    FDreamFlowValueBinding UpdatedBinding = UDreamFlowBlueprintLibrary::SetFlowBindingVariableName(VariableBinding, TEXT("StoryState"));
+    TestEqual(TEXT("Binding variable setter should update the variable name."), UpdatedBinding.VariableName, FName(TEXT("StoryState")));
+
+    UpdatedBinding = UDreamFlowBlueprintLibrary::SetFlowBindingAsLiteral(UpdatedBinding, UDreamFlowBlueprintLibrary::MakeIntFlowValue(12));
+    TestTrue(TEXT("Binding mode setter should switch the binding back to literal mode."), UDreamFlowBlueprintLibrary::IsLiteralFlowBinding(UpdatedBinding));
+    TestEqual(TEXT("Binding literal setter should update the literal payload."), UpdatedBinding.LiteralValue.IntValue, 12);
+    TestTrue(TEXT("Binding source type getter should reflect the current mode."), UDreamFlowBlueprintLibrary::GetFlowBindingSourceType(UpdatedBinding) == EDreamFlowValueSourceType::Literal);
+
+    UpdatedBinding = UDreamFlowBlueprintLibrary::SetFlowBindingAsVariable(UpdatedBinding, TEXT("FinalState"));
+    TestTrue(TEXT("Binding mode setter should switch the binding to variable mode."), UDreamFlowBlueprintLibrary::IsVariableFlowBinding(UpdatedBinding));
+    TestEqual(TEXT("Binding mode setter should update the variable name."), UpdatedBinding.VariableName, FName(TEXT("FinalState")));
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowBindingRuntimeReadWriteTest,
+    "DreamFlow.Core.Execution.BindingRuntimeReadWrite",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowBindingRuntimeReadWriteTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FDreamFlowBranchTestGraph Graph = BuildBranchingFlowAsset(false);
+    UDreamFlowExecutor* Executor = NewObject<UDreamFlowExecutor>(GetTransientPackage(), NAME_None, RF_Transient);
+    Executor->Initialize(Graph.Asset, nullptr);
+
+    const FDreamFlowValueBinding VariableBinding = UDreamFlowBlueprintLibrary::MakeVariableFlowBinding(TEXT("CanContinue"));
+    const FDreamFlowValueBinding LiteralBinding = UDreamFlowBlueprintLibrary::MakeLiteralFlowBinding(MakeBoolValue(false));
+
+    FName BoundVariableName = NAME_None;
+    bool bResolvedBoolValue = true;
+
+    TestTrue(TEXT("Variable bindings should expose their writable target variable name."), Executor->GetBindingVariableName(VariableBinding, BoundVariableName));
+    TestEqual(TEXT("Binding target variable name should match the selected flow variable."), BoundVariableName, FName(TEXT("CanContinue")));
+    TestTrue(TEXT("Variable-backed bindings should report that they are writable."), Executor->CanWriteBindingValue(VariableBinding));
+    TestFalse(TEXT("Literal bindings should report that they are not writable."), Executor->CanWriteBindingValue(LiteralBinding));
+
+    TestTrue(TEXT("Bindings should resolve the current runtime variable value."), Executor->GetBindingBoolValue(VariableBinding, bResolvedBoolValue));
+    TestFalse(TEXT("The bound variable should start at its default value before mutation."), bResolvedBoolValue);
+
+    TestTrue(TEXT("Binding writes should update the underlying runtime variable."), Executor->SetBindingBoolValue(VariableBinding, true));
+    TestTrue(TEXT("Typed binding reads should return the updated value after a write."), Executor->GetBindingBoolValue(VariableBinding, bResolvedBoolValue));
+    TestTrue(TEXT("The bound variable should reflect the new value after writing through the binding."), bResolvedBoolValue);
+
+    FDreamFlowValue RawBindingValue;
+    TestTrue(TEXT("Low-level blueprint helpers should resolve binding values through an executor."), UDreamFlowBlueprintLibrary::GetExecutorBindingValue(Executor, VariableBinding, RawBindingValue));
+    TestTrue(TEXT("Low-level resolved binding values should expose the updated payload."), RawBindingValue.BoolValue);
+    TestTrue(TEXT("Blueprint helpers should report variable-backed bindings as writable."), UDreamFlowBlueprintLibrary::CanExecutorWriteBinding(Executor, VariableBinding));
+    TestFalse(TEXT("Blueprint helpers should still reject literal bindings as writable."), UDreamFlowBlueprintLibrary::CanExecutorWriteBinding(Executor, LiteralBinding));
+    TestTrue(TEXT("Blueprint helpers should support writing runtime values through a binding."), UDreamFlowBlueprintLibrary::SetExecutorBindingBoolValue(Executor, VariableBinding, false));
+    TestTrue(TEXT("Binding reads should continue to work after helper-driven writes."), Executor->GetBindingBoolValue(VariableBinding, bResolvedBoolValue));
+    TestFalse(TEXT("Helper-driven writes should update the runtime variable value."), bResolvedBoolValue);
+
+    TestFalse(TEXT("Attempting to write through a literal binding should fail safely."), Executor->SetBindingBoolValue(LiteralBinding, true));
+    TestTrue(TEXT("Literal bindings should remain readable as literal values."), UDreamFlowBlueprintLibrary::GetExecutorBindingBoolValue(Executor, LiteralBinding, bResolvedBoolValue));
+    TestFalse(TEXT("Literal binding reads should continue to return their literal payload."), bResolvedBoolValue);
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FDreamFlowCrossAccessTest,
+    "DreamFlow.Core.Execution.CrossAccess",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDreamFlowCrossAccessTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FDreamFlowBranchTestGraph Graph = BuildBranchingFlowAsset(false);
+
+    UDreamFlowExecutor* Executor = Graph.Asset->CreateExecutor(nullptr, UDreamFlowExecutor::StaticClass());
+    TestNotNull(TEXT("Flow assets should be able to create executors directly."), Executor);
+    TestEqual(TEXT("Created executor should point back to its flow asset."), Executor != nullptr ? Executor->GetFlowAsset() : nullptr, Graph.Asset);
+    TestEqual(TEXT("Executors should expose the flow entry node directly."), Executor != nullptr ? Executor->GetEntryNode() : nullptr, static_cast<UDreamFlowNode*>(Graph.EntryNode));
+    TestTrue(TEXT("Executors should report that asset-owned nodes belong to the flow."), Executor != nullptr && Executor->OwnsNode(Graph.BranchNode));
+    TestEqual(TEXT("Executors should be able to resolve nodes by GUID through the flow asset."), Executor != nullptr ? Executor->FindNodeByGuid(Graph.BranchNode->NodeGuid) : nullptr, static_cast<UDreamFlowNode*>(Graph.BranchNode));
+    TestEqual(TEXT("Executors should expose the full node list through the owning asset."), Executor != nullptr ? Executor->GetNodes().Num() : 0, Graph.Asset->GetNodesCopy().Num());
+
+    TestEqual(TEXT("Nodes should expose their owning flow asset."), Graph.BranchNode->GetOwningFlowAsset(), Graph.Asset);
+    TestTrue(TEXT("Flow assets should report ownership for nodes in their graph."), Graph.Asset->OwnsNode(Graph.BranchNode));
+
+    TestEqual(TEXT("No active executors should be registered before the flow starts."), Graph.Asset->GetActiveExecutors().Num(), 0);
+    TestTrue(TEXT("The created executor should be able to start the flow."), Executor != nullptr && Executor->StartFlow());
+
+    TArray<UDreamFlowExecutor*> AssetExecutors = Graph.Asset->GetActiveExecutors();
+    TestTrue(TEXT("Flow assets should be able to find active executors for themselves."), AssetExecutors.Contains(Executor));
+
+    TArray<UDreamFlowExecutor*> NodeAssetExecutors = Graph.EntryNode->GetActiveExecutors();
+    TestTrue(TEXT("Nodes should be able to query active executors for their owning flow asset."), NodeAssetExecutors.Contains(Executor));
+
+    TArray<UDreamFlowExecutor*> EntryExecutors = Graph.Asset->GetExecutorsOnNode(Graph.EntryNode);
+    TestTrue(TEXT("Flow assets should be able to query executors currently stopped on a node."), EntryExecutors.Contains(Executor));
+
+    TArray<UDreamFlowExecutor*> DirectNodeExecutors = Graph.EntryNode->GetExecutorsOnThisNode();
+    TestTrue(TEXT("Nodes should be able to query executors currently stopped on themselves."), DirectNodeExecutors.Contains(Executor));
+
+    TestEqual(TEXT("The manual-start flow should remain on the entry node after StartFlow."), Executor->GetCurrentNode(), static_cast<UDreamFlowNode*>(Graph.EntryNode));
 
     return true;
 }

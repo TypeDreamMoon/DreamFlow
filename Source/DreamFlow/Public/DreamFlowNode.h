@@ -209,6 +209,15 @@ public:
     UFUNCTION(BlueprintPure, Category = "Flow")
     UDreamFlowNode* GetFirstChildForOutputPin(FName OutputPinName) const;
 
+    UFUNCTION(BlueprintPure, Category = "Flow")
+    UDreamFlowAsset* GetOwningFlowAsset() const;
+
+    UFUNCTION(BlueprintPure, Category = "Flow|Execution")
+    TArray<UDreamFlowExecutor*> GetActiveExecutors() const;
+
+    UFUNCTION(BlueprintPure, Category = "Flow|Execution")
+    TArray<UDreamFlowExecutor*> GetExecutorsOnThisNode() const;
+
     TSubclassOf<UDreamFlowAsset> GetSupportedFlowAssetType() const;
     bool SupportsFlowAsset(const UDreamFlowAsset* FlowAsset) const;
     bool SupportsFlowAssetClass(const UClass* FlowAssetClass) const;

@@ -16,6 +16,9 @@ class DREAMFLOW_API UDreamFlowBlueprintLibrary : public UBlueprintFunctionLibrar
     GENERATED_BODY()
 
 public:
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution", meta = (WorldContext = "WorldContextObject", DefaultToSelf = "WorldContextObject", DeterminesOutputType = "ExecutorClass"))
+    static UDreamFlowExecutor* CreateFlowExecutor(UObject* WorldContextObject, UDreamFlowAsset* FlowAsset, UObject* ExecutionContext, TSubclassOf<UDreamFlowExecutor> ExecutorClass);
+
     UFUNCTION(BlueprintPure, Category = "DreamFlow")
     static UDreamFlowNode* GetEntryNode(const UDreamFlowAsset* FlowAsset);
 
@@ -27,6 +30,9 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow")
     static TArray<FDreamFlowNodeOutputPin> GetNodeOutputPins(const UDreamFlowNode* FlowNode);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow")
+    static TArray<FDreamFlowNodeOutputLink> GetNodeOutputLinks(const UDreamFlowNode* FlowNode);
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow")
     static UDreamFlowNode* GetFirstChildForOutputPin(const UDreamFlowNode* FlowNode, FName OutputPinName);
@@ -42,6 +48,12 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
     static TArray<FDreamFlowVariableDefinition> GetFlowVariables(const UDreamFlowAsset* FlowAsset);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    static bool HasFlowVariableDefinition(const UDreamFlowAsset* FlowAsset, FName VariableName);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
+    static bool FindFlowVariableDefinition(const UDreamFlowAsset* FlowAsset, FName VariableName, FDreamFlowVariableDefinition& OutDefinition);
 
     /** Read an executor variable as a bool. */
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
@@ -138,6 +150,123 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Low Level")
     static FDreamFlowValue MakeObjectFlowValue(UObject* Value);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding", meta = (AutoCreateRefTerm = "LiteralValue"))
+    static FDreamFlowValueBinding MakeLiteralFlowBinding(const FDreamFlowValue& LiteralValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static FDreamFlowValueBinding MakeVariableFlowBinding(FName VariableName);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static EDreamFlowValueSourceType GetFlowBindingSourceType(const FDreamFlowValueBinding& Binding);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static bool IsLiteralFlowBinding(const FDreamFlowValueBinding& Binding);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static bool IsVariableFlowBinding(const FDreamFlowValueBinding& Binding);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static FName GetFlowBindingVariableName(const FDreamFlowValueBinding& Binding);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static FDreamFlowValue GetFlowBindingLiteralValue(const FDreamFlowValueBinding& Binding);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static bool GetExecutorBindingVariableName(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FName& OutVariableName);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static bool CanExecutorWriteBinding(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static bool GetExecutorBindingBoolValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, bool& OutValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static bool GetExecutorBindingIntValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, int32& OutValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static bool GetExecutorBindingFloatValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, float& OutValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static bool GetExecutorBindingNameValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FName& OutValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static bool GetExecutorBindingStringValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FString& OutValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static bool GetExecutorBindingTextValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FText& OutValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static bool GetExecutorBindingGameplayTagValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FGameplayTag& OutValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding")
+    static bool GetExecutorBindingObjectValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, UObject*& OutValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding|Low Level")
+    static bool GetExecutorBindingValue(const UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FDreamFlowValue& OutValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding", meta = (AutoCreateRefTerm = "Binding"))
+    static FDreamFlowValueBinding SetFlowBindingSourceType(const FDreamFlowValueBinding& Binding, EDreamFlowValueSourceType SourceType);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding", meta = (AutoCreateRefTerm = "Binding"))
+    static FDreamFlowValueBinding SetFlowBindingVariableName(const FDreamFlowValueBinding& Binding, FName VariableName);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding", meta = (AutoCreateRefTerm = "Binding,LiteralValue"))
+    static FDreamFlowValueBinding SetFlowBindingLiteralValue(const FDreamFlowValueBinding& Binding, const FDreamFlowValue& LiteralValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding", meta = (AutoCreateRefTerm = "Binding,LiteralValue"))
+    static FDreamFlowValueBinding SetFlowBindingAsLiteral(const FDreamFlowValueBinding& Binding, const FDreamFlowValue& LiteralValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Binding", meta = (AutoCreateRefTerm = "Binding"))
+    static FDreamFlowValueBinding SetFlowBindingAsVariable(const FDreamFlowValueBinding& Binding, FName VariableName);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    static bool SetExecutorBindingBoolValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, bool InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    static bool SetExecutorBindingIntValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, int32 InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    static bool SetExecutorBindingFloatValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, float InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    static bool SetExecutorBindingNameValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FName InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    static bool SetExecutorBindingStringValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, const FString& InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    static bool SetExecutorBindingTextValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, const FText& InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    static bool SetExecutorBindingGameplayTagValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, FGameplayTag InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding")
+    static bool SetExecutorBindingObjectValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, UObject* InValue);
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Variables|Binding|Low Level")
+    static bool SetExecutorBindingValue(UDreamFlowExecutor* Executor, const FDreamFlowValueBinding& Binding, const FDreamFlowValue& InValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Low Level")
+    static FString DescribeFlowValue(const FDreamFlowValue& Value);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Low Level")
+    static FString DescribeCompactFlowValue(const FDreamFlowValue& Value);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Low Level")
+    static FString DescribeFlowBinding(const FDreamFlowValueBinding& Binding);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Low Level")
+    static FString DescribeCompactFlowBinding(const FDreamFlowValueBinding& Binding);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Low Level")
+    static bool ConvertFlowValue(const FDreamFlowValue& InValue, EDreamFlowValueType TargetType, FDreamFlowValue& OutValue);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables|Low Level")
+    static bool CompareFlowValues(const FDreamFlowValue& LeftValue, const FDreamFlowValue& RightValue, EDreamFlowComparisonOperation Operation, bool& OutResult);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow")
+    static bool NodeSupportsFlowAsset(const UDreamFlowNode* FlowNode, const UDreamFlowAsset* FlowAsset);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Validation")
     static void ValidateFlow(const UDreamFlowAsset* FlowAsset, TArray<FDreamFlowValidationMessage>& OutMessages);

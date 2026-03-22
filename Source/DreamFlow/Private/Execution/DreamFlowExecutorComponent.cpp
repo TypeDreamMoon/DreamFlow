@@ -150,11 +150,6 @@ bool UDreamFlowExecutorComponent::Advance()
     return true;
 }
 
-bool UDreamFlowExecutorComponent::Step()
-{
-    return Advance();
-}
-
 bool UDreamFlowExecutorComponent::MoveToChildByIndex(int32 ChildIndex)
 {
     if (IsServerAuthority())
@@ -177,11 +172,6 @@ bool UDreamFlowExecutorComponent::MoveToOutputPin(FName OutputPinName)
     DREAMFLOW_LOG(Replication, Verbose, "Forwarding MoveToOutputPin('%s') request for flow '%s'.", *OutputPinName.ToString(), *GetNameSafe(FlowAsset));
     ServerMoveToOutputPin(OutputPinName);
     return true;
-}
-
-bool UDreamFlowExecutorComponent::StepToOutputPin(FName OutputPinName)
-{
-    return MoveToOutputPin(OutputPinName);
 }
 
 bool UDreamFlowExecutorComponent::ChooseChild(UDreamFlowNode* ChildNode)
@@ -239,6 +229,16 @@ UDreamFlowExecutor* UDreamFlowExecutorComponent::GetExecutor() const
     return Executor;
 }
 
+UDreamFlowAsset* UDreamFlowExecutorComponent::GetFlowAsset() const
+{
+    return FlowAsset;
+}
+
+UObject* UDreamFlowExecutorComponent::GetExecutionContext() const
+{
+    return Executor != nullptr ? Executor->GetExecutionContext() : GetOwner();
+}
+
 UDreamFlowNode* UDreamFlowExecutorComponent::GetCurrentNode() const
 {
     if (Executor != nullptr)
@@ -247,6 +247,26 @@ UDreamFlowNode* UDreamFlowExecutorComponent::GetCurrentNode() const
     }
 
     return FlowAsset != nullptr ? FlowAsset->FindNodeByGuid(ReplicatedExecutionState.CurrentNodeGuid) : nullptr;
+}
+
+TArray<UDreamFlowNode*> UDreamFlowExecutorComponent::GetAvailableChildren() const
+{
+    if (Executor != nullptr)
+    {
+        return Executor->GetAvailableChildren();
+    }
+
+    if (IsWaitingForAsyncNode())
+    {
+        return TArray<UDreamFlowNode*>();
+    }
+
+    if (UDreamFlowNode* CurrentNode = GetCurrentNode())
+    {
+        return CurrentNode->GetChildrenCopy();
+    }
+
+    return TArray<UDreamFlowNode*>();
 }
 
 TArray<FDreamFlowNodeOutputPin> UDreamFlowExecutorComponent::GetAvailableOutputPins() const
@@ -288,16 +308,130 @@ bool UDreamFlowExecutorComponent::IsCurrentNodeAutomatic() const
     return false;
 }
 
-bool UDreamFlowExecutorComponent::IsWaitingForManualStep() const
+bool UDreamFlowExecutorComponent::IsWaitingForAdvance() const
 {
     if (Executor != nullptr)
     {
-        return Executor->IsWaitingForManualStep();
+        return Executor->IsWaitingForAdvance();
     }
 
     return GetCurrentNode() != nullptr
         && ReplicatedExecutionState.DebugState == EDreamFlowExecutorDebugState::Running
         && !IsCurrentNodeAutomatic();
+}
+
+TArray<UDreamFlowNode*> UDreamFlowExecutorComponent::GetVisitedNodes() const
+{
+    if (Executor != nullptr)
+    {
+        return Executor->GetVisitedNodes();
+    }
+
+    TArray<UDreamFlowNode*> VisitedNodes;
+    if (FlowAsset == nullptr)
+    {
+        return VisitedNodes;
+    }
+
+    for (const FGuid& NodeGuid : ReplicatedExecutionState.VisitedNodeGuids)
+    {
+        if (UDreamFlowNode* Node = FlowAsset->FindNodeByGuid(NodeGuid))
+        {
+            VisitedNodes.AddUnique(Node);
+        }
+    }
+
+    return VisitedNodes;
+}
+
+bool UDreamFlowExecutorComponent::IsRunning() const
+{
+    if (Executor != nullptr)
+    {
+        return Executor->IsRunning();
+    }
+
+    return ReplicatedExecutionState.DebugState == EDreamFlowExecutorDebugState::Running
+        || ReplicatedExecutionState.DebugState == EDreamFlowExecutorDebugState::Waiting
+        || ReplicatedExecutionState.DebugState == EDreamFlowExecutorDebugState::Paused;
+}
+
+bool UDreamFlowExecutorComponent::PauseExecution()
+{
+    if (IsServerAuthority())
+    {
+        return PauseExecutionLocal();
+    }
+
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding PauseExecution request for flow '%s'.", *GetNameSafe(FlowAsset));
+    ServerPauseExecution();
+    return true;
+}
+
+bool UDreamFlowExecutorComponent::ContinueExecution()
+{
+    if (IsServerAuthority())
+    {
+        return ContinueExecutionLocal();
+    }
+
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding ContinueExecution request for flow '%s'.", *GetNameSafe(FlowAsset));
+    ServerContinueExecution();
+    return true;
+}
+
+bool UDreamFlowExecutorComponent::StepExecution()
+{
+    if (IsServerAuthority())
+    {
+        return StepExecutionLocal();
+    }
+
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding StepExecution request for flow '%s'.", *GetNameSafe(FlowAsset));
+    ServerStepExecution();
+    return true;
+}
+
+void UDreamFlowExecutorComponent::SetPauseOnBreakpoints(bool bEnabled)
+{
+    if (IsServerAuthority())
+    {
+        SetPauseOnBreakpointsLocal(bEnabled);
+        return;
+    }
+
+    DREAMFLOW_LOG(Replication, Verbose, "Forwarding SetPauseOnBreakpoints(%d) request for flow '%s'.", bEnabled ? 1 : 0, *GetNameSafe(FlowAsset));
+    ServerSetPauseOnBreakpoints(bEnabled);
+}
+
+bool UDreamFlowExecutorComponent::IsPaused() const
+{
+    if (Executor != nullptr)
+    {
+        return Executor->IsPaused();
+    }
+
+    return ReplicatedExecutionState.DebugState == EDreamFlowExecutorDebugState::Paused;
+}
+
+bool UDreamFlowExecutorComponent::GetPauseOnBreakpoints() const
+{
+    if (Executor != nullptr)
+    {
+        return Executor->GetPauseOnBreakpoints();
+    }
+
+    return ReplicatedExecutionState.bPauseOnBreakpoints;
+}
+
+EDreamFlowExecutorDebugState UDreamFlowExecutorComponent::GetDebugState() const
+{
+    if (Executor != nullptr)
+    {
+        return Executor->GetDebugState();
+    }
+
+    return ReplicatedExecutionState.DebugState;
 }
 
 bool UDreamFlowExecutorComponent::HasVariable(FName VariableName) const
@@ -599,6 +733,26 @@ void UDreamFlowExecutorComponent::ServerAdvance_Implementation()
     AdvanceLocal();
 }
 
+void UDreamFlowExecutorComponent::ServerPauseExecution_Implementation()
+{
+    PauseExecutionLocal();
+}
+
+void UDreamFlowExecutorComponent::ServerContinueExecution_Implementation()
+{
+    ContinueExecutionLocal();
+}
+
+void UDreamFlowExecutorComponent::ServerStepExecution_Implementation()
+{
+    StepExecutionLocal();
+}
+
+void UDreamFlowExecutorComponent::ServerSetPauseOnBreakpoints_Implementation(bool bEnabled)
+{
+    SetPauseOnBreakpointsLocal(bEnabled);
+}
+
 void UDreamFlowExecutorComponent::ServerMoveToChildByIndex_Implementation(int32 ChildIndex)
 {
     MoveToChildByIndexLocal(ChildIndex);
@@ -789,6 +943,41 @@ bool UDreamFlowExecutorComponent::AdvanceLocal()
     const bool bAdvanced = RuntimeExecutor != nullptr && RuntimeExecutor->Advance();
     SyncReplicatedStateFromExecutor();
     return bAdvanced;
+}
+
+bool UDreamFlowExecutorComponent::PauseExecutionLocal()
+{
+    UDreamFlowExecutor* RuntimeExecutor = GetOrCreateExecutor(false);
+    const bool bPaused = RuntimeExecutor != nullptr && RuntimeExecutor->PauseExecution();
+    SyncReplicatedStateFromExecutor();
+    return bPaused;
+}
+
+bool UDreamFlowExecutorComponent::ContinueExecutionLocal()
+{
+    UDreamFlowExecutor* RuntimeExecutor = GetOrCreateExecutor(false);
+    const bool bContinued = RuntimeExecutor != nullptr && RuntimeExecutor->ContinueExecution();
+    SyncReplicatedStateFromExecutor();
+    return bContinued;
+}
+
+bool UDreamFlowExecutorComponent::StepExecutionLocal()
+{
+    UDreamFlowExecutor* RuntimeExecutor = GetOrCreateExecutor(false);
+    const bool bStepped = RuntimeExecutor != nullptr && RuntimeExecutor->StepExecution();
+    SyncReplicatedStateFromExecutor();
+    return bStepped;
+}
+
+void UDreamFlowExecutorComponent::SetPauseOnBreakpointsLocal(bool bEnabled)
+{
+    UClass* EffectiveClass = ExecutorClass != nullptr ? ExecutorClass.Get() : UDreamFlowExecutor::StaticClass();
+    const bool bShouldInitializeExecutor = Executor == nullptr || Executor->GetClass() != EffectiveClass;
+    if (UDreamFlowExecutor* RuntimeExecutor = GetOrCreateExecutor(bShouldInitializeExecutor))
+    {
+        RuntimeExecutor->SetPauseOnBreakpoints(bEnabled);
+        SyncReplicatedStateFromExecutor();
+    }
 }
 
 bool UDreamFlowExecutorComponent::MoveToChildByIndexLocal(int32 ChildIndex)

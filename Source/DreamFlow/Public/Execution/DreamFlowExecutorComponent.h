@@ -34,19 +34,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool Advance();
 
-    /** Advances a manual node through its default continuation path. */
-    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
-    bool Step();
-
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool MoveToChildByIndex(int32 ChildIndex);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool MoveToOutputPin(FName OutputPinName);
-
-    /** Advances a manual node through the specified output pin. */
-    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
-    bool StepToOutputPin(FName OutputPinName);
 
     UFUNCTION(BlueprintCallable, Category = "DreamFlow|Execution")
     bool ChooseChild(UDreamFlowNode* ChildNode);
@@ -67,7 +59,16 @@ public:
     UDreamFlowExecutor* GetExecutor() const;
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
+    UDreamFlowAsset* GetFlowAsset() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
+    UObject* GetExecutionContext() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
     UDreamFlowNode* GetCurrentNode() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
+    TArray<UDreamFlowNode*> GetAvailableChildren() const;
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
     TArray<FDreamFlowNodeOutputPin> GetAvailableOutputPins() const;
@@ -76,7 +77,34 @@ public:
     bool IsCurrentNodeAutomatic() const;
 
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
-    bool IsWaitingForManualStep() const;
+    bool IsWaitingForAdvance() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
+    TArray<UDreamFlowNode*> GetVisitedNodes() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Execution")
+    bool IsRunning() const;
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Debug")
+    bool PauseExecution();
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Debug")
+    bool ContinueExecution();
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Debug")
+    bool StepExecution();
+
+    UFUNCTION(BlueprintCallable, Category = "DreamFlow|Debug")
+    void SetPauseOnBreakpoints(bool bEnabled);
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Debug")
+    bool IsPaused() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Debug")
+    bool GetPauseOnBreakpoints() const;
+
+    UFUNCTION(BlueprintPure, Category = "DreamFlow|Debug")
+    EDreamFlowExecutorDebugState GetDebugState() const;
 
     /** Returns true if the component's executor currently exposes a variable with this name. */
     UFUNCTION(BlueprintPure, Category = "DreamFlow|Variables")
@@ -210,6 +238,18 @@ protected:
     void ServerAdvance();
 
     UFUNCTION(Server, Reliable)
+    void ServerPauseExecution();
+
+    UFUNCTION(Server, Reliable)
+    void ServerContinueExecution();
+
+    UFUNCTION(Server, Reliable)
+    void ServerStepExecution();
+
+    UFUNCTION(Server, Reliable)
+    void ServerSetPauseOnBreakpoints(bool bEnabled);
+
+    UFUNCTION(Server, Reliable)
     void ServerMoveToChildByIndex(int32 ChildIndex);
 
     UFUNCTION(Server, Reliable)
@@ -238,6 +278,10 @@ protected:
     bool RestartFlowLocal();
     void FinishFlowLocal();
     bool AdvanceLocal();
+    bool PauseExecutionLocal();
+    bool ContinueExecutionLocal();
+    bool StepExecutionLocal();
+    void SetPauseOnBreakpointsLocal(bool bEnabled);
     bool MoveToChildByIndexLocal(int32 ChildIndex);
     bool MoveToOutputPinLocal(FName OutputPinName);
     bool ChooseChildByGuidLocal(const FGuid& ChildNodeGuid);

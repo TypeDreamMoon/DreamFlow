@@ -89,6 +89,17 @@ namespace
             }
         }
     }
+
+    static bool IsDefaultLiteralBinding(const FDreamFlowValueBinding& Binding, const FDreamFlowValue& DefaultValue)
+    {
+        if (Binding.SourceType != EDreamFlowValueSourceType::Literal || !Binding.VariableName.IsNone())
+        {
+            return false;
+        }
+
+        bool bEqual = false;
+        return DreamFlowVariable::TryCompareValues(Binding.LiteralValue, DefaultValue, EDreamFlowComparisonOperation::Equal, bEqual) && bEqual;
+    }
 }
 
 FText UDreamFlowCoreNode::GetNodeCategory_Implementation() const
@@ -499,10 +510,29 @@ UDreamFlowDelayNode::UDreamFlowDelayNode()
 {
     Title = FText::FromString(TEXT("Delay"));
     Description = FText::FromString(TEXT("Waits for a duration, then resumes through the Completed output."));
+    DurationBinding.LiteralValue.Type = EDreamFlowValueType::Float;
+    DurationBinding.LiteralValue.FloatValue = 1.0f;
 
 #if WITH_EDITORONLY_DATA
     NodeTint = FLinearColor(0.58f, 0.34f, 0.84f, 1.0f);
 #endif
+}
+
+void UDreamFlowDelayNode::PostLoad()
+{
+    Super::PostLoad();
+
+    FDreamFlowValue DefaultDurationValue;
+    DefaultDurationValue.Type = EDreamFlowValueType::Float;
+    DefaultDurationValue.FloatValue = 1.0f;
+
+    if (IsDefaultLiteralBinding(DurationBinding, DefaultDurationValue) && !FMath::IsNearlyEqual(DurationSeconds, 1.0f))
+    {
+        DurationBinding.SourceType = EDreamFlowValueSourceType::Literal;
+        DurationBinding.VariableName = NAME_None;
+        DurationBinding.LiteralValue = DefaultDurationValue;
+        DurationBinding.LiteralValue.FloatValue = DurationSeconds;
+    }
 }
 
 FText UDreamFlowDelayNode::GetNodeDisplayName_Implementation() const
@@ -523,7 +553,7 @@ FText UDreamFlowDelayNode::GetNodeAccentLabel_Implementation() const
 TArray<FDreamFlowNodeDisplayItem> UDreamFlowDelayNode::GetNodeDisplayItems_Implementation() const
 {
     TArray<FDreamFlowNodeDisplayItem> Items = Super::GetNodeDisplayItems_Implementation();
-    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Duration")), FString::Printf(TEXT("%.2fs"), DurationSeconds)));
+    Items.Add(MakeTextPreviewItem(FText::FromString(TEXT("Duration")), DurationBinding.DescribeCompact()));
     return Items;
 }
 
@@ -534,7 +564,15 @@ void UDreamFlowDelayNode::StartAsyncNode_Implementation(UObject* Context, UDream
         return;
     }
 
-    if (DurationSeconds <= KINDA_SMALL_NUMBER)
+    float ResolvedDurationSeconds = 0.0f;
+    if (Executor == nullptr || !Executor->GetBindingFloatValue(DurationBinding, ResolvedDurationSeconds))
+    {
+        DREAMFLOW_LOG(Execution, Warning, "Delay node '%s' failed to resolve its duration binding. Completing immediately.", *GetNodeDisplayName().ToString());
+        AsyncContext->Complete();
+        return;
+    }
+
+    if (ResolvedDurationSeconds <= KINDA_SMALL_NUMBER)
     {
         AsyncContext->Complete();
         return;
@@ -564,5 +602,23 @@ void UDreamFlowDelayNode::StartAsyncNode_Implementation(UObject* Context, UDream
     });
 
     FTimerHandle DelayTimerHandle;
-    World->GetTimerManager().SetTimer(DelayTimerHandle, CompletionDelegate, DurationSeconds, false);
+    World->GetTimerManager().SetTimer(DelayTimerHandle, CompletionDelegate, ResolvedDurationSeconds, false);
+}
+
+void UDreamFlowDelayNode::ValidateNode(const UDreamFlowAsset* OwningAsset, TArray<FDreamFlowValidationMessage>& OutMessages) const
+{
+    ValidateBinding(OwningAsset, this, DurationBinding, FText::FromString(TEXT("Duration binding")), OutMessages);
+
+    if (DurationBinding.SourceType == EDreamFlowValueSourceType::Literal)
+    {
+        FDreamFlowValue ConvertedValue;
+        if (!DreamFlowVariable::TryConvertValue(DurationBinding.LiteralValue, EDreamFlowValueType::Float, ConvertedValue))
+        {
+            AddValidationMessage(
+                OutMessages,
+                this,
+                EDreamFlowValidationSeverity::Warning,
+                FText::FromString(TEXT("The delay duration must resolve to a float-compatible value.")));
+        }
+    }
 }

@@ -117,6 +117,33 @@ TArray<UDreamFlowExecutor*> UDreamFlowDebuggerSubsystem::GetExecutorsForAsset(co
     return Result;
 }
 
+TArray<UDreamFlowExecutor*> UDreamFlowDebuggerSubsystem::GetExecutorsForNode(const UDreamFlowNode* Node)
+{
+    CleanupExecutors();
+
+    TArray<UDreamFlowExecutor*> Result;
+    if (Node == nullptr || !Node->NodeGuid.IsValid())
+    {
+        return Result;
+    }
+
+    const UDreamFlowAsset* OwningAsset = Node->GetTypedOuter<UDreamFlowAsset>();
+    for (const TWeakObjectPtr<UDreamFlowExecutor>& WeakExecutor : ActiveExecutors)
+    {
+        UDreamFlowExecutor* Executor = WeakExecutor.Get();
+        UDreamFlowNode* CurrentNode = Executor != nullptr ? Executor->GetCurrentNode() : nullptr;
+        if (Executor != nullptr
+            && CurrentNode != nullptr
+            && CurrentNode->NodeGuid == Node->NodeGuid
+            && DreamFlowDebuggerSubsystemPrivate::AreEquivalentAssets(Executor->GetFlowAsset(), OwningAsset))
+        {
+            Result.Add(Executor);
+        }
+    }
+
+    return Result;
+}
+
 bool UDreamFlowDebuggerSubsystem::IsNodeCurrentExecutionLocation(const UDreamFlowAsset* FlowAsset, const FGuid& NodeGuid, bool& bOutIsBreakpointHit) const
 {
     bOutIsBreakpointHit = false;

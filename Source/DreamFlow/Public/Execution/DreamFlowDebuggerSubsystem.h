@@ -43,6 +43,7 @@ public:
     void NotifyExecutionPaused(UDreamFlowExecutor* Executor, const UDreamFlowNode* Node, bool bHitBreakpoint);
 
     TArray<UDreamFlowExecutor*> GetExecutorsForAsset(const UDreamFlowAsset* FlowAsset);
+    TArray<UDreamFlowExecutor*> GetExecutorsForNode(const UDreamFlowNode* Node);
     bool IsNodeCurrentExecutionLocation(const UDreamFlowAsset* FlowAsset, const FGuid& NodeGuid, bool& bOutIsBreakpointHit) const;
     bool GetMostRecentBreakpointHit(FDreamFlowExecutionLocation& OutLocation) const;
     uint64 GetBreakpointHitSerial() const;

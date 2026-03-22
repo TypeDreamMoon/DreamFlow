@@ -2,8 +2,12 @@
 
 #include "DreamFlowLog.h"
 #include "DreamFlowNode.h"
+#include "Engine/Engine.h"
+#include "Execution/DreamFlowDebuggerSubsystem.h"
+#include "Execution/DreamFlowExecutor.h"
 #include "Containers/Queue.h"
 #include "EdGraph/EdGraph.h"
+#include "UObject/UObjectGlobals.h"
 
 UDreamFlowAsset::UDreamFlowAsset()
 {
@@ -48,6 +52,49 @@ UDreamFlowNode* UDreamFlowAsset::FindNodeByGuid(const FGuid& InNodeGuid) const
 TArray<FDreamFlowVariableDefinition> UDreamFlowAsset::GetVariablesCopy() const
 {
     return Variables;
+}
+
+UDreamFlowExecutor* UDreamFlowAsset::CreateExecutor(UObject* ExecutionContext, TSubclassOf<UDreamFlowExecutor> ExecutorClass)
+{
+    UClass* EffectiveExecutorClass = ExecutorClass != nullptr ? ExecutorClass.Get() : UDreamFlowExecutor::StaticClass();
+    UObject* Outer = ExecutionContext != nullptr ? ExecutionContext : GetTransientPackage();
+    UDreamFlowExecutor* Executor = NewObject<UDreamFlowExecutor>(Outer, EffectiveExecutorClass, NAME_None, RF_Transient);
+    if (Executor != nullptr)
+    {
+        Executor->Initialize(this, ExecutionContext);
+    }
+
+    return Executor;
+}
+
+TArray<UDreamFlowExecutor*> UDreamFlowAsset::GetActiveExecutors() const
+{
+    if (GEngine == nullptr)
+    {
+        return TArray<UDreamFlowExecutor*>();
+    }
+
+    if (UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>())
+    {
+        return DebuggerSubsystem->GetExecutorsForAsset(this);
+    }
+
+    return TArray<UDreamFlowExecutor*>();
+}
+
+TArray<UDreamFlowExecutor*> UDreamFlowAsset::GetExecutorsOnNode(const UDreamFlowNode* Node) const
+{
+    if (!OwnsNode(Node) || GEngine == nullptr)
+    {
+        return TArray<UDreamFlowExecutor*>();
+    }
+
+    if (UDreamFlowDebuggerSubsystem* DebuggerSubsystem = GEngine->GetEngineSubsystem<UDreamFlowDebuggerSubsystem>())
+    {
+        return DebuggerSubsystem->GetExecutorsForNode(Node);
+    }
+
+    return TArray<UDreamFlowExecutor*>();
 }
 
 void UDreamFlowAsset::ValidateFlow(TArray<FDreamFlowValidationMessage>& OutMessages) const
@@ -350,6 +397,16 @@ void UDreamFlowAsset::SetEntryNodeInternal(UDreamFlowNode* InEntryNode)
 const TArray<TObjectPtr<UDreamFlowNode>>& UDreamFlowAsset::GetNodes() const
 {
     return Nodes;
+}
+
+bool UDreamFlowAsset::OwnsNode(const UDreamFlowNode* Node) const
+{
+    if (Node == nullptr)
+    {
+        return false;
+    }
+
+    return EntryNode == Node || Nodes.Contains(Node);
 }
 
 bool UDreamFlowAsset::HasVariableDefinition(FName VariableName) const

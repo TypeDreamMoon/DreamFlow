@@ -232,23 +232,26 @@ The executor currently supports:
 - `RestartFlow`
 - `FinishFlow`
 - `Advance`
-- `Step`
 - `MoveToChildByIndex`
 - `ChooseChild`
 - `MoveToOutputPin`
-- `StepToOutputPin`
 - `GetCurrentNode`
 - `GetPendingAsyncNode`
 - `GetAvailableChildren`
 - `GetAvailableOutputPins`
 - `IsCurrentNodeAutomatic`
-- `IsWaitingForManualStep`
+- `IsWaitingForAdvance`
 - `IsWaitingForAsyncNode`
+- `GetVisitedNodes`
+- `IsRunning`
 - `CompleteAsyncNode`
 - `PauseExecution`
 - `ContinueExecution`
 - `StepExecution`
 - `SetPauseOnBreakpoints`
+- `IsPaused`
+- `GetPauseOnBreakpoints`
+- `GetDebugState`
 - `HasVariable`
 - `GetVariableValue`
 - `SetVariableValue`
@@ -258,6 +261,7 @@ The executor currently supports:
 
 `UDreamFlowBlueprintLibrary` also exposes helper constructors such as:
 
+- `CreateFlowExecutor`
 - `MakeBoolFlowValue`
 - `MakeIntFlowValue`
 - `MakeFloatFlowValue`
@@ -265,6 +269,14 @@ The executor currently supports:
 - `MakeStringFlowValue`
 - `MakeTextFlowValue`
 - `MakeGameplayTagFlowValue`
+
+It also exposes low-level helper nodes for:
+
+- finding flow variable definitions
+- checking node-to-asset compatibility
+- reading node output links
+- converting and comparing `FDreamFlowValue`
+- describing `FDreamFlowValue` and `FDreamFlowValueBinding` for UI/debug output
 
 And it exposes Blueprint delegates for:
 
@@ -296,7 +308,7 @@ Runtime logs are emitted through `LogDreamFlow`, so they can also be filtered th
 - The replicated snapshot also carries async waiting state so clients know when a flow is blocked
 - Clients build a mirrored local executor from that replicated snapshot, so Blueprint reads such as `GetCurrentNode` and `GetVariable...Value` still work remotely
 - Client calls such as `StartFlow`, `Advance`, `ChooseChild`, `MoveToOutputPin`, `SetVariable...Value`, and `ResetVariablesToDefaults` are forwarded to the server with RPCs
-- Manual multi-output nodes can be driven safely over the network with `StepToOutputPin`
+- Manual multi-output nodes can be driven safely over the network with `MoveToOutputPin`
 
 Notes:
 
